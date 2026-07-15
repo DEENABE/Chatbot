@@ -1,0 +1,70 @@
+{
+  "name": "chanakya-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.js",
+  "author": "Chanakya AI",
+  "description": "Chanakya AI Desktop Assistant - Secure offline AI assistant",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "electron": "electron .",
+    "electron:build": "node scripts/prepare-backend.cjs && vite build && electron-builder --win"
+  },
+  "build": {
+    "appId": "com.chanakya.ai",
+    "productName": "Chanakya AI",
+    "directories": {
+      "output": "release-build"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json",
+      "tools/**/*"
+    ],
+    "afterPack": "scripts/afterPack.cjs",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerSidebar": null,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Chanakya AI"
+    },
+    "asar": false
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
+    "@react-spring/web": "^10.1.2",
+    "axios": "^1.9.0",
+    "framer-motion": "^12.12.1",
+    "lucide-react": "^0.511.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-markdown": "^10.1.0",
+    "tesseract.js": "^7.0.0",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.4.1",
+    "autoprefixer": "^10.4.21",
+    "electron": "37.2.1",
+    "electron-builder": "^26.15.3",
+    "postcss": "^8.5.3",
+    "tailwindcss": "^3.4.17",
+    "vite": "^6.3.5"
+  }
+}
