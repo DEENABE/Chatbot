@@ -64,3 +64,6 @@ Desktop.ini
 test.json
 backend/test_doc.txt
 *.local
+
+#--------claude ignore--------
+.claude/
