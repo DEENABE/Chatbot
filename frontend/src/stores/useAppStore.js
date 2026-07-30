@@ -203,11 +203,18 @@ export const useAppStore = create((set, get) => ({
   isExpanded: false,
   toggleExpand: async () => {
     const nextMode = !get().isExpanded;
+    // Swap the view BEFORE resizing the window. Awaiting the IPC first left the
+    // window at chat size while React still rendered the bubble, so the resize
+    // showed an empty pane for a frame or two.
+    set({ isExpanded: nextMode });
     if (window.electronAPI) {
-      const expanded = await window.electronAPI.toggleExpand(nextMode);
-      set({ isExpanded: expanded });
-    } else {
-      set({ isExpanded: nextMode });
+      try {
+        const expanded = await window.electronAPI.toggleExpand(nextMode);
+        // Reconcile only if the main process disagreed (e.g. a rejected toggle).
+        if (expanded !== nextMode) set({ isExpanded: expanded });
+      } catch {
+        set({ isExpanded: !nextMode });
+      }
     }
   },
 

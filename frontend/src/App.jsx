@@ -68,18 +68,34 @@ export default function App() {
   return (
     <Suspense
       fallback={
-        <div className="w-screen h-screen flex flex-col items-center justify-center bg-[#09090a] text-white select-none">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-blue-500/20 border-t-blue-500 mb-4" />
-          <div className="text-[10px] uppercase font-bold tracking-widest text-stone-500 animate-pulse font-mono">
-            Chanakya AI Desktop Assistant
-          </div>
+        <div
+          className={`w-screen h-screen flex flex-col items-center justify-center text-white select-none ${
+            isExpanded ? 'bg-[#09090a]' : 'bg-transparent'
+          }`}
+        >
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-blue-500/20 border-t-blue-500" />
+          {isExpanded && (
+            <div className="mt-4 text-[10px] uppercase font-bold tracking-widest text-stone-500 animate-pulse font-mono">
+              Chanakya AI Desktop Assistant
+            </div>
+          )}
         </div>
       }
     >
-      <div className="relative w-screen h-screen overflow-hidden bg-[#060608] flex items-center justify-center noise">
-        {/* Soft neon ambient orbs */}
-        <div className="orb-glow -top-32 -left-32" style={{ background: accentColor }} />
-        <div className="orb-glow -bottom-32 -right-32" style={{ background: '#7c3aed' }} />
+      <div
+        className={`relative w-screen h-screen overflow-hidden flex items-center justify-center ${
+          isExpanded ? 'bg-[#060608] noise' : 'bg-transparent'
+        }`}
+      >
+        {/* Soft neon ambient orbs — only in the chat window. In bubble mode the
+            window is 80px, so these would just paint a dark square behind the
+            floating avatar. */}
+        {isExpanded && (
+          <>
+            <div className="orb-glow -top-32 -left-32" style={{ background: accentColor }} />
+            <div className="orb-glow -bottom-32 -right-32" style={{ background: '#7c3aed' }} />
+          </>
+        )}
 
         {isExpanded ? <MainLayout /> : <FloatingBubble />}
         

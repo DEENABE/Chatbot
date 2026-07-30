@@ -5,7 +5,10 @@
 :root {
   color-scheme: dark;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  background: #060608;
+  /* The Electron window is transparent: painting an opaque colour here draws a
+     dark square around the floating bubble. Each view supplies its own
+     background instead. */
+  background: transparent;
 }
 
 /* Premium custom scrollbar */
@@ -28,10 +31,11 @@
 
 body {
   margin: 0;
-  min-width: 320px;
+  /* min-width would force a horizontal scrollbar in the 80px bubble window. */
+  min-width: 0;
   min-height: 100vh;
   overflow: hidden;
-  background: #060608;
+  background: transparent;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

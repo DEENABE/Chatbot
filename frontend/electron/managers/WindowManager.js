@@ -9,6 +9,9 @@ let isToolbarMode = false;
 let isDragging = false;
 let dragOffset = { x: 0, y: 0 };
 let preOcrBounds = null;
+// Where the bubble sat before the chat opened, so collapsing puts it back
+// instead of deriving a new spot from the (possibly resized) chat window.
+let preExpandBubblePos = null;
 
 export function getMainWindow() {
   return mainWindow;
@@ -27,9 +30,12 @@ export function createWindow() {
     y: startY,
     frame: false,
     transparent: true,
+    // Without an explicit fully-transparent colour the window paints an opaque
+    // frame for a beat while resizing between bubble and chat size.
+    backgroundColor: '#00000000',
     alwaysOnTop: true,
     resizable: false,
-    hasShadow: false, 
+    hasShadow: false,
     skipTaskbar: true,
     webPreferences: {
       contextIsolation: true,
@@ -70,27 +76,34 @@ export function toggleExpand(expand) {
   const [currentW, currentH] = mainWindow.getSize();
 
   if (isExpanded) {
-    let newX = currentX - (CHAT_WIDTH - currentW);
-    let newY = currentY - (CHAT_HEIGHT - currentH);
+    // Remember the bubble's spot so collapsing returns it there.
+    preExpandBubblePos = { x: currentX, y: currentY };
 
-    newX = Math.max(10, Math.min(screenW - CHAT_WIDTH - 10, newX));
-    newY = Math.max(10, Math.min(screenH - CHAT_HEIGHT - 10, newY));
+    // Grow from the bubble's corner, then clamp so the whole chat stays on
+    // screen (a bubble near an edge would otherwise open half off-screen).
+    const newX = Math.max(10, Math.min(screenW - CHAT_WIDTH - 10, currentX - (CHAT_WIDTH - currentW)));
+    const newY = Math.max(10, Math.min(screenH - CHAT_HEIGHT - 10, currentY - (CHAT_HEIGHT - currentH)));
 
     mainWindow.setResizable(true);
-    mainWindow.setBounds({ x: newX, y: newY, width: CHAT_WIDTH, height: CHAT_HEIGHT }, true);
+    mainWindow.setBounds({ x: newX, y: newY, width: CHAT_WIDTH, height: CHAT_HEIGHT });
     mainWindow.setSkipTaskbar(false);
   } else {
-    let newX = currentX + (currentW - BUBBLE_SIZE);
-    let newY = currentY + (currentH - BUBBLE_SIZE);
+    // Prefer the remembered position; fall back to the chat's bottom-right
+    // corner when there is none (e.g. the app started expanded).
+    const fallbackX = currentX + (currentW - BUBBLE_SIZE);
+    const fallbackY = currentY + (currentH - BUBBLE_SIZE);
+    const targetX = preExpandBubblePos ? preExpandBubblePos.x : fallbackX;
+    const targetY = preExpandBubblePos ? preExpandBubblePos.y : fallbackY;
+    preExpandBubblePos = null;
 
-    newX = Math.max(10, Math.min(screenW - BUBBLE_SIZE - 10, newX));
-    newY = Math.max(10, Math.min(screenH - BUBBLE_SIZE - 10, newY));
+    const newX = Math.max(10, Math.min(screenW - BUBBLE_SIZE - 10, targetX));
+    const newY = Math.max(10, Math.min(screenH - BUBBLE_SIZE - 10, targetY));
 
     mainWindow.setResizable(false);
-    mainWindow.setBounds({ x: newX, y: newY, width: BUBBLE_SIZE, height: BUBBLE_SIZE }, true);
+    mainWindow.setBounds({ x: newX, y: newY, width: BUBBLE_SIZE, height: BUBBLE_SIZE });
     mainWindow.setSkipTaskbar(true);
   }
-  
+
   return isExpanded;
 }
 
@@ -185,11 +198,17 @@ function collapseToBubble() {
   const [currentX, currentY] = mainWindow.getPosition();
   const [currentW, currentH] = mainWindow.getSize();
 
-  const newX = Math.max(10, Math.min(screenW - BUBBLE_SIZE - 10, currentX + (currentW - BUBBLE_SIZE)));
-  const newY = Math.max(10, Math.min(screenH - BUBBLE_SIZE - 10, currentY + (currentH - BUBBLE_SIZE)));
+  // Same rule as toggleExpand: go back to where the bubble was, or the chat's
+  // bottom-right corner if we never recorded one.
+  const targetX = preExpandBubblePos ? preExpandBubblePos.x : currentX + (currentW - BUBBLE_SIZE);
+  const targetY = preExpandBubblePos ? preExpandBubblePos.y : currentY + (currentH - BUBBLE_SIZE);
+  preExpandBubblePos = null;
+
+  const newX = Math.max(10, Math.min(screenW - BUBBLE_SIZE - 10, targetX));
+  const newY = Math.max(10, Math.min(screenH - BUBBLE_SIZE - 10, targetY));
 
   mainWindow.setResizable(false);
-  mainWindow.setBounds({ x: newX, y: newY, width: BUBBLE_SIZE, height: BUBBLE_SIZE }, true);
+  mainWindow.setBounds({ x: newX, y: newY, width: BUBBLE_SIZE, height: BUBBLE_SIZE });
   mainWindow.setSkipTaskbar(true);
 }
 
