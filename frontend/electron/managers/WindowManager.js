@@ -1,7 +1,7 @@
 import { BrowserWindow, screen } from 'electron';
 import path from 'path';
 import { getPreloadPath, isPacked, rootDir } from '../utils/pathHelper.js';
-import { BUBBLE_SIZE, CHAT_WIDTH, CHAT_HEIGHT, TOOLBAR_HEIGHT } from '../utils/constants.js';
+import { BUBBLE_SIZE, CHAT_WIDTH, CHAT_HEIGHT, TOOLBAR_HEIGHT, HOVER_WIDTH } from '../utils/constants.js';
 
 let mainWindow = null;
 let isExpanded = false;
@@ -132,18 +132,21 @@ export function setToolbarMode(enable) {
   if (enable === isToolbarMode) return isToolbarMode;
   isToolbarMode = enable;
 
+  const { width: screenW } = screen.getPrimaryDisplay().workAreaSize;
   const [currentX, currentY] = mainWindow.getPosition();
-  const [, currentH] = mainWindow.getSize();
+  const [currentW, currentH] = mainWindow.getSize();
 
-  if (enable) {
-    const newY = currentY + currentH - TOOLBAR_HEIGHT;
-    mainWindow.setResizable(true);
-    mainWindow.setBounds({ x: currentX, y: Math.max(0, newY), width: BUBBLE_SIZE, height: TOOLBAR_HEIGHT }, true);
-  } else {
-    const newY = currentY + currentH - BUBBLE_SIZE;
-    mainWindow.setResizable(false);
-    mainWindow.setBounds({ x: currentX, y: newY, width: BUBBLE_SIZE, height: BUBBLE_SIZE }, true);
-  }
+  // The avatar sits at the bottom of the window, horizontally centred. Anchor
+  // the bottom edge and grow symmetrically sideways so it stays put while the
+  // speech bubble and quick actions appear above it.
+  const targetW = enable ? HOVER_WIDTH : BUBBLE_SIZE;
+  const targetH = enable ? TOOLBAR_HEIGHT : BUBBLE_SIZE;
+  const newY = Math.max(0, currentY + currentH - targetH);
+  const centredX = currentX + Math.round((currentW - targetW) / 2);
+  const newX = Math.max(0, Math.min(screenW - targetW, centredX));
+
+  mainWindow.setResizable(enable);
+  mainWindow.setBounds({ x: newX, y: newY, width: targetW, height: targetH });
   return isToolbarMode;
 }
 

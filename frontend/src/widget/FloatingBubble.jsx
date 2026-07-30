@@ -5,6 +5,10 @@ import { presets } from '../animations/presets.js';
 import { Mic, Monitor, Crop, Video, Minus } from 'lucide-react';
 import chanakyaDefault from '../assets/chanakya_default.png';
 import chanakyaHover from '../assets/chanakya_hover.png';
+import { nextLine } from './greetings.js';
+
+/** Don't speak the greeting again within this window (ms). */
+const VOICE_COOLDOWN = 90_000;
 
 const quickActions = [
   { id: 'mic', icon: Mic, label: 'Voice Input', electronOnly: false },
@@ -24,11 +28,14 @@ export default function FloatingBubble() {
 
   const [isHovered, setIsHovered] = useState(false);
   const [showToolbar, setShowToolbar] = useState(false);
+  const [greeting, setGreeting] = useState('');
 
   const bubbleRef = useRef(null);
   const dragThreshold = useRef({ isDragging: false, startX: 0, startY: 0 });
   const hoverTimeoutRef = useRef(null);
   const leaveTimeoutRef = useRef(null);
+  const hasGreetedRef = useRef(false);
+  const lastSpokenAtRef = useRef(0);
 
   // Spring values for the Magnetic Pull effect
   const mX = useMotionValue(0);
@@ -52,8 +59,26 @@ export default function FloatingBubble() {
     return () => {
       if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
       if (leaveTimeoutRef.current) clearTimeout(leaveTimeoutRef.current);
+      window.speechSynthesis?.cancel();
     };
   }, []);
+
+  /**
+   * Say the greeting out loud. Opt-in, and rate-limited — a voice on every
+   * hover would be unbearable, and the speech bubble already carries the text.
+   */
+  const speakGreeting = (text) => {
+    if (!settings.voiceGreeting || !('speechSynthesis' in window)) return;
+    const now = Date.now();
+    if (now - lastSpokenAtRef.current < VOICE_COOLDOWN) return;
+    lastSpokenAtRef.current = now;
+
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.02;
+    utterance.pitch = 1.05;
+    window.speechSynthesis.speak(utterance);
+  };
 
   const handleMouseMove = (e) => {
     if (!bubbleRef.current || dragThreshold.current.isDragging) return;
@@ -72,23 +97,35 @@ export default function FloatingBubble() {
     pY.set(Math.max(-4, Math.min(4, dy * eyeFactor)));
   };
 
-  const handleMouseEnter = () => {
+  const handleMouseEnter = async () => {
     setIsHovered(true);
     // Cancel any pending collapse
     if (leaveTimeoutRef.current) {
       clearTimeout(leaveTimeoutRef.current);
       leaveTimeoutRef.current = null;
     }
-    // Show toolbar after a brief hover if user is logged in
-    if (user && !showToolbar) {
-      hoverTimeoutRef.current = setTimeout(async () => {
-        if (isElectron) {
-          try { await window.electronAPI.setToolbarMode(true); } catch (err) {
-            console.warn('Toolbar mode failed:', err);
-          }
-        }
-        setShowToolbar(true);
-      }, 350);
+    if (!user) return;
+
+    // Grow the window right away so the speech bubble has somewhere to appear;
+    // the quick actions still fade in after a beat so a passing cursor does not
+    // fire the whole toolbar.
+    if (isElectron && !showToolbar) {
+      try { await window.electronAPI.setToolbarMode(true); } catch (err) {
+        console.warn('Hover mode failed:', err);
+      }
+    }
+
+    const line = nextLine({
+      isFirstHover: !hasGreetedRef.current,
+      displayName: user.displayName?.split(' ')[0],
+      previous: greeting,
+    });
+    hasGreetedRef.current = true;
+    setGreeting(line);
+    speakGreeting(line);
+
+    if (!showToolbar) {
+      hoverTimeoutRef.current = setTimeout(() => setShowToolbar(true), 350);
     }
   };
 
@@ -99,17 +136,18 @@ export default function FloatingBubble() {
       clearTimeout(hoverTimeoutRef.current);
       hoverTimeoutRef.current = null;
     }
-    // Collapse toolbar with a delay
-    if (showToolbar) {
-      leaveTimeoutRef.current = setTimeout(async () => {
-        if (isElectron) {
-          try { await window.electronAPI.setToolbarMode(false); } catch (err) {
-            console.warn('Toolbar collapse failed:', err);
-          }
+    // Drop the greeting and shrink back, with a delay so crossing a gap between
+    // the avatar and the action buttons does not collapse everything.
+    setGreeting('');
+    window.speechSynthesis?.cancel();
+    leaveTimeoutRef.current = setTimeout(async () => {
+      if (isElectron) {
+        try { await window.electronAPI.setToolbarMode(false); } catch (err) {
+          console.warn('Hover collapse failed:', err);
         }
-        setShowToolbar(false);
-      }, 500);
-    }
+      }
+      setShowToolbar(false);
+    }, 500);
     // Reset magnetic/pupil springs
     mX.set(0);
     mY.set(0);
@@ -224,6 +262,41 @@ export default function FloatingBubble() {
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
     >
+      {/* Speech bubble — Chanakya says what it can help with, so the user does
+          not have to open the chat to find out. */}
+      <AnimatePresence>
+        {greeting && user && (
+          <motion.div
+            key="greeting"
+            initial={{ opacity: 0, y: 10, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 6, scale: 0.95 }}
+            transition={{ type: 'spring', stiffness: 420, damping: 26 }}
+            className="relative mb-3 max-w-[260px] px-3.5 py-2.5 rounded-2xl rounded-br-md"
+            style={{
+              background: 'linear-gradient(135deg, rgba(24, 24, 30, 0.96), rgba(14, 14, 17, 0.98))',
+              border: `1px solid ${accent}35`,
+              boxShadow: `0 6px 22px rgba(0,0,0,0.55), 0 0 18px ${accent}20`,
+              backdropFilter: 'blur(10px)',
+              WebkitBackdropFilter: 'blur(10px)',
+            }}
+          >
+            <p className="text-[11.5px] leading-snug text-stone-200 text-center font-medium">
+              {greeting}
+            </p>
+            {/* Tail pointing down at the avatar */}
+            <div
+              className="absolute -bottom-[5px] left-1/2 -translate-x-1/2 w-2.5 h-2.5 rotate-45"
+              style={{
+                background: 'rgba(14, 14, 17, 0.98)',
+                borderRight: `1px solid ${accent}35`,
+                borderBottom: `1px solid ${accent}35`,
+              }}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Quick Actions Toolbar - slides in above the avatar when logged in & hovered */}
       <AnimatePresence>
         {showToolbar && user && (

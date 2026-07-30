@@ -149,6 +149,25 @@ export default function SettingsModal({ open, onClose }) {
                 </button>
               </div>
 
+              {/* Spoken hover greeting */}
+              <div className="flex justify-between items-center text-xs">
+                <div>
+                  <div className="font-semibold text-stone-300">Spoken Greeting</div>
+                  <div className="text-[9px] text-stone-500">Chanakya says its hover greeting aloud</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => updateSetting('voiceGreeting', !settings.voiceGreeting)}
+                  className="text-stone-400 hover:text-white transition-colors"
+                >
+                  {settings.voiceGreeting ? (
+                    <ToggleRight size={28} style={{ color: accent }} />
+                  ) : (
+                    <ToggleLeft size={28} />
+                  )}
+                </button>
+              </div>
+
               {/* Offline Security Notice */}
               <div className="flex gap-2.5 rounded-xl border border-white/[0.04] bg-[#09090a]/40 p-2.5 text-[9px] text-stone-500 leading-4 mt-2">
                 <ShieldAlert size={14} style={{ color: accent }} className="shrink-0 mt-0.5" />
