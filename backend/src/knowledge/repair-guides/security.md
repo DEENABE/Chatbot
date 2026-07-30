@@ -40,6 +40,38 @@
   `Get-MpComputerStatus | Select-Object RealTimeProtectionEnabled`
   `Get-MpThreatDetection | Measure-Object | Select-Object Count`
 
+## Subdomain playbooks
+
+The prompt may name a narrower area, e.g. "security (certificates)". Use the
+matching playbook; fall back to the general sections above when none fits.
+
+### certificates — expiry and trust failures
+- Certificates expiring soon in the machine store:
+  `Get-ChildItem Cert:\LocalMachine\My | Where-Object NotAfter -lt (Get-Date).AddDays(30) | Select-Object Subject, NotAfter, Thumbprint`
+- Already-expired certificates:
+  `Get-ChildItem Cert:\LocalMachine\My | Where-Object NotAfter -lt (Get-Date) | Select-Object Subject, NotAfter`
+- Verify a certificate chain:
+  `Test-Certificate -Cert (Get-Item Cert:\LocalMachine\My\<thumbprint>) -ErrorAction SilentlyContinue`
+- Trusted roots (spot unexpected entries):
+  `Get-ChildItem Cert:\LocalMachine\Root | Select-Object -First 10 Subject, NotAfter`
+- Report expiry and chain problems; renewing or installing a certificate is a
+  manual, admin-owned step — never delete certificates automatically.
+
+### security-incident — triage after a suspected compromise
+- Processes running from user-writable locations:
+  `Get-Process | Where-Object Path -like '*\Users\*' | Select-Object Name, Id, Path`
+- Persistence via Run keys:
+  `Get-ItemProperty 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run', 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' -ErrorAction SilentlyContinue`
+- Recently created scheduled tasks:
+  `Get-ScheduledTask | Where-Object { $_.Date -gt (Get-Date).AddDays(-7) } | Select-Object TaskName, TaskPath, Date`
+- Unexpected local admins:
+  `Get-LocalGroupMember -Group Administrators | Select-Object Name, PrincipalSource`
+- Outbound connections and their owners:
+  `Get-NetTCPConnection -State Established | Select-Object RemoteAddress, RemotePort, OwningProcess | Sort-Object RemoteAddress -Unique`
+- Collect evidence first and report it. Do not delete files, kill processes, or
+  remove accounts automatically — recommend a Defender Offline scan and, for a
+  confirmed compromise, isolating the machine from the network.
+
 ## Notes
 - Never DISABLE protection as a "fix" — only enable/strengthen it. If the user
   asks to turn off Defender or the firewall, explain the risk and offer a

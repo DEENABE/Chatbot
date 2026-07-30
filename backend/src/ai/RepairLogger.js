@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { config } from '../config.js';
+import { domainLabel, normalizeSubdomain } from '../knowledge/subdomains.js';
 
 const storageDir = path.dirname(config.dbFile);
 const LOG_FILE = path.join(storageDir, 'repair-sessions.json');
@@ -41,7 +42,8 @@ function writeAll(sessions) {
  *
  * @param {Object} session
  * @param {string} session.goal
- * @param {string} session.domain
+ * @param {string} session.domain - One of the six canonical domains.
+ * @param {string} [session.subdomain] - Granular label inside the domain.
  * @param {string[]} [session.plan]
  * @param {Array} session.steps - Executed steps { command, stdout, stderr, exitCode } or { command, blocked, reason }.
  * @param {boolean} session.resolved
@@ -57,6 +59,10 @@ export function logSession(session) {
     createdAt: new Date().toISOString(),
     goal: session.goal,
     domain: session.domain,
+    // Granular label inside the domain (e.g. "audio" under "windows"). Kept
+    // only when it is a known subdomain, so the training prompt never carries
+    // a stray value.
+    subdomain: normalizeSubdomain(session.domain, session.subdomain),
     plan: session.plan || [],
     steps: (session.steps || []).map((s) => ({
       command: s.command,
@@ -119,14 +125,14 @@ export function exportTrainingData() {
       s.recommendation ? `\nRecommendation: ${s.recommendation}` : ''
     ].join('');
 
-    // Enrich the domain with the original granular label when present, so the
-    // model still learns fine-grained specialization (e.g. "windows (audio)")
-    // while staying within the six canonical domains the classifier routes to.
-    const domainLabel = s.subdomain ? `${s.domain} (${s.subdomain})` : s.domain;
+    // Enrich the domain with the granular label when present, so the model
+    // learns fine-grained specialization (e.g. "windows (audio)") while
+    // staying within the six canonical domains the classifier routes to.
+    const label = domainLabel(s.domain, s.subdomain);
 
     return {
       messages: [
-        { role: 'system', content: `You are a Windows repair expert specializing in ${domainLabel} problems. Diagnose with read-only commands first, then apply safe fixes.` },
+        { role: 'system', content: `You are a Windows repair expert specializing in ${label} problems. Diagnose with read-only commands first, then apply safe fixes.` },
         { role: 'user', content: s.goal },
         { role: 'assistant', content: assistant.trim() }
       ]

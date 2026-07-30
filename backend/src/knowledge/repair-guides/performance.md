@@ -41,6 +41,64 @@
 - Confirm the space was actually reclaimed before finishing:
   `Get-PSDrive C | Select-Object @{N='FreeGB';E={[int]($_.Free/1GB)}}`
 
+## Subdomain playbooks
+
+The prompt may name a narrower area, e.g. "performance (gpu)". Use the matching
+playbook; fall back to the general sections above when none fits.
+
+### cpu — high or stuck processor usage
+- Top consumers by accumulated CPU:
+  `Get-Process | Sort-Object CPU -Descending | Select-Object -First 5 Name, Id, CPU`
+- Live processor load:
+  `Get-CimInstance Win32_Processor | Select-Object Name, LoadPercentage, NumberOfCores`
+- Per-process CPU sample:
+  `Get-Counter '\Process(*)\% Processor Time' -MaxSamples 1 | Select-Object -ExpandProperty CounterSamples | Sort-Object CookedValue -Descending | Select-Object -First 5 InstanceName, CookedValue`
+- `System` (PID 4) and `MsMpEng` cannot be killed and are expected to be busy
+  at times. Sustained high `System` CPU means a driver, not an app.
+
+### gpu — graphics load, driver, or thermal issues
+- Adapter and driver:
+  `Get-CimInstance Win32_VideoController | Select-Object Name, DriverVersion, AdapterRAM, Status`
+- GPU engine utilisation:
+  `Get-Counter '\GPU Engine(*)\Utilization Percentage' -MaxSamples 1 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty CounterSamples | Where-Object CookedValue -gt 0 | Sort-Object CookedValue -Descending | Select-Object -First 5 InstanceName, CookedValue`
+- Display device health:
+  `Get-PnpDevice -Class Display | Select-Object Status, FriendlyName`
+- A GPU in `Error` state or an old driver is the usual cause of stutter and
+  crashes; recommend a vendor driver update rather than tweaking settings.
+
+### memory — RAM pressure and leaks
+- Free vs total:
+  `Get-CimInstance Win32_OperatingSystem | Select-Object @{N='FreeGB';E={[math]::Round($_.FreePhysicalMemory/1MB,1)}}, @{N='TotalGB';E={[math]::Round($_.TotalVisibleMemorySize/1MB,1)}}`
+- Biggest working sets:
+  `Get-Process | Sort-Object WorkingSet64 -Descending | Select-Object -First 5 Name, @{N='MB';E={[int]($_.WorkingSet64/1MB)}}`
+- Installed physical modules:
+  `Get-CimInstance Win32_PhysicalMemory | Select-Object BankLabel, @{N='GB';E={[int]($_.Capacity/1GB)}}, Speed`
+- A single app growing steadily over hours is a leak — restarting that app is
+  the fix; adding RAM only delays it.
+
+### boot — slow startup or long login
+- Disk media type (the biggest boot factor):
+  `Get-PhysicalDisk | Select-Object MediaType, HealthStatus, @{N='GB';E={[int]($_.Size/1GB)}}`
+- Startup programs:
+  `Get-CimInstance Win32_StartupCommand | Select-Object Name, Command, Location`
+- Last boot time and uptime:
+  `Get-CimInstance Win32_OperatingSystem | Select-Object LastBootUpTime`
+- Boot-time events:
+  `Get-WinEvent -FilterHashtable @{LogName='System'; Id=100} -MaxEvents 5 -ErrorAction SilentlyContinue | Select-Object TimeCreated`
+- On an HDD the media type dominates; trim startup apps, then recommend an SSD.
+
+### power — battery, sleep, and wake problems
+- Active power scheme:
+  `powercfg /getactivescheme`
+- Available sleep states:
+  `powercfg /a`
+- What last woke the machine:
+  `powercfg /lastwake`
+- Devices allowed to wake the system:
+  `powercfg /devicequery wake_armed`
+- A brief freeze after wake is normal device re-initialisation. Random wakes
+  usually come from a network adapter or scheduled task in the list above.
+
 ## Notes
 - Never kill critical processes (System, lsass, csrss, winlogon, services).
   These are protected and will return "Access is denied" — that is expected, not

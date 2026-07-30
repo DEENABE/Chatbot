@@ -54,6 +54,49 @@
 - Verify the fix actually worked before finishing:
   `Test-NetConnection 8.8.8.8 -InformationLevel Quiet`
 
+## Subdomain playbooks
+
+The prompt may name a narrower area, e.g. "network (dns-advanced)". Use the
+matching playbook; fall back to the general sections above when none fits.
+
+### dns-advanced — resolution failures and slow lookups
+- Measure resolver latency:
+  `Measure-Command { Resolve-DnsName <host> } | Select-Object TotalMilliseconds`
+- Query a specific server to isolate the resolver:
+  `Resolve-DnsName <host> -Server 1.1.1.1 | Select-Object -First 1 Name, IPAddress`
+- Current servers per interface:
+  `Get-DnsClientServerAddress -AddressFamily IPv4 | Select-Object InterfaceAlias, ServerAddresses`
+- Inspect the cache:
+  `Get-DnsClientCache | Select-Object -First 10 Entry, Data`
+- Check the hosts file for overrides:
+  `Select-String -Path "$env:SystemRoot\System32\drivers\etc\hosts" -Pattern '<domain>'`
+- If a public resolver answers but the configured one does not, the resolver is
+  the fault — switch DNS rather than resetting the whole stack.
+
+### vpn / proxy — tunnels and intercepted traffic
+- VPN-related services:
+  `Get-Service RasMan, *vpn* -ErrorAction SilentlyContinue | Select-Object Name, Status`
+- System proxy:
+  `netsh winhttp show proxy`
+- Reset the proxy to direct:
+  `netsh winhttp reset proxy`
+- VPN adapters:
+  `Get-NetAdapter | Where-Object InterfaceDescription -match 'VPN|TAP|WAN Miniport' | Select-Object Name, Status`
+- A proxy pointing at a dead local port (127.0.0.1:xxxx) left behind by an
+  uninstalled app silently black-holes all traffic — check this early.
+
+### iis / server — local web services not responding
+- Site and app-pool state (needs the IIS module):
+  `Get-Service W3SVC | Select-Object Status`
+- What is listening on a port:
+  `Get-NetTCPConnection -State Listen | Where-Object LocalPort -eq <port> | Select-Object LocalAddress, LocalPort, OwningProcess`
+- Map the owning process:
+  `Get-Process -Id <pid> | Select-Object Name, Path`
+- Test the endpoint locally:
+  `Test-NetConnection 127.0.0.1 -Port <port> -InformationLevel Quiet`
+- If nothing is listening, the service is down; if it listens but refuses, look
+  at the firewall rule for that program.
+
 ## Notes
 - Prefer least-disruptive fixes first (flush DNS, renew IP) before resetting
   adapters or the TCP stack.
