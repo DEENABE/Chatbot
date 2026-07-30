@@ -289,7 +289,7 @@ export default function FloatingBubble() {
         ref={bubbleRef}
         onMouseDown={handleMouseDown}
         onMouseEnter={handleMouseEnter}
-        className="w-[55px] h-[55px] rounded-full flex items-center justify-center cursor-grab active:cursor-grabbing relative"
+        className="w-[68px] h-[68px] rounded-full flex items-center justify-center cursor-grab active:cursor-grabbing relative"
         style={{
           x: settings.animationsEnabled ? bubbleX : 0,
           y: settings.animationsEnabled ? bubbleY : 0,
@@ -333,7 +333,7 @@ export default function FloatingBubble() {
 
         {/* Cartoon Avatar with responsive eye-tracking look parallax */}
         <motion.div
-          className="w-[40px] h-[40px] rounded-full relative pointer-events-none overflow-hidden border border-white/10 bg-zinc-950/80 flex items-center justify-center shadow-inner"
+          className="w-[50px] h-[50px] rounded-full relative pointer-events-none overflow-hidden border border-white/10 bg-zinc-950/80 flex items-center justify-center shadow-inner"
           style={{
             x: settings.animationsEnabled ? pupilX : 0,
             y: settings.animationsEnabled ? pupilY : 0,

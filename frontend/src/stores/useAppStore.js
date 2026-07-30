@@ -211,6 +211,11 @@ export const useAppStore = create((set, get) => ({
     }
   },
 
+  // Minimize / close both collapse the window back to the bubble, so the store
+  // has to follow suit — otherwise the app restores as an expanded chat while
+  // the renderer is still rendering the collapsed view.
+  collapseToBubble: () => set({ isExpanded: false }),
+
   // Input Text prompt
   inputText: '',
   setInputText: (text) => set({ inputText: text }),

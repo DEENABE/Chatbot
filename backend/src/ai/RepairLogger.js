@@ -119,9 +119,14 @@ export function exportTrainingData() {
       s.recommendation ? `\nRecommendation: ${s.recommendation}` : ''
     ].join('');
 
+    // Enrich the domain with the original granular label when present, so the
+    // model still learns fine-grained specialization (e.g. "windows (audio)")
+    // while staying within the six canonical domains the classifier routes to.
+    const domainLabel = s.subdomain ? `${s.domain} (${s.subdomain})` : s.domain;
+
     return {
       messages: [
-        { role: 'system', content: `You are a Windows repair expert specializing in ${s.domain} problems. Diagnose with read-only commands first, then apply safe fixes.` },
+        { role: 'system', content: `You are a Windows repair expert specializing in ${domainLabel} problems. Diagnose with read-only commands first, then apply safe fixes.` },
         { role: 'user', content: s.goal },
         { role: 'assistant', content: assistant.trim() }
       ]

@@ -1,0 +1,21 @@
+# Ollama Modelfile for the fine-tuned Chanakya repair agent.
+# Put this next to the downloaded .gguf file, fix the FROM line to match the
+# real filename, then run:  ollama create chanakya-repair -f Modelfile
+
+FROM ./chanakya-repair.Q4_K_M.gguf
+
+# Qwen2.5 ChatML template
+TEMPLATE """{{ if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{ end }}{{ if .Prompt }}<|im_start|>user
+{{ .Prompt }}<|im_end|>
+{{ end }}<|im_start|>assistant
+{{ .Response }}<|im_end|>
+"""
+
+PARAMETER temperature 0.1
+PARAMETER num_ctx 8192
+PARAMETER stop "<|im_start|>"
+PARAMETER stop "<|im_end|>"
+
+SYSTEM """You are Chanakya-Fix, an autonomous Windows troubleshooting agent running locally. Diagnose with read-only commands first (Get-*, Test-*), understand the root cause, then apply a safe fix. Never run destructive commands. Base every conclusion on real command output."""

@@ -167,19 +167,34 @@ export function handleDragEnd() {
   }
 }
 
+// Collapse back to the bubble before minimizing. Without this the window is
+// restored at chat size while the renderer still thinks it is expanded, so the
+// bubble and the chat state disagree and the UI comes back in a broken layout.
 export function minimizeWindow() {
-  mainWindow?.minimize();
+  if (!mainWindow) return false;
+  if (isExpanded) collapseToBubble();
+  mainWindow.minimize();
+  return isExpanded;
+}
+
+/** Shrink the window back to the corner bubble and reset the mode flags. */
+function collapseToBubble() {
+  isExpanded = false;
+  isToolbarMode = false;
+  const { width: screenW, height: screenH } = screen.getPrimaryDisplay().workAreaSize;
+  const [currentX, currentY] = mainWindow.getPosition();
+  const [currentW, currentH] = mainWindow.getSize();
+
+  const newX = Math.max(10, Math.min(screenW - BUBBLE_SIZE - 10, currentX + (currentW - BUBBLE_SIZE)));
+  const newY = Math.max(10, Math.min(screenH - BUBBLE_SIZE - 10, currentY + (currentH - BUBBLE_SIZE)));
+
+  mainWindow.setResizable(false);
+  mainWindow.setBounds({ x: newX, y: newY, width: BUBBLE_SIZE, height: BUBBLE_SIZE }, true);
+  mainWindow.setSkipTaskbar(true);
 }
 
 export function closeWindow() {
-  if (isExpanded) {
-    isExpanded = false;
-    isToolbarMode = false;
-    const { width: screenW, height: screenH } = screen.getPrimaryDisplay().workAreaSize;
-    const newX = screenW - BUBBLE_SIZE - 20;
-    const newY = screenH - BUBBLE_SIZE - 20;
-    mainWindow?.setResizable(false);
-    mainWindow?.setBounds({ x: newX, y: newY, width: BUBBLE_SIZE, height: BUBBLE_SIZE }, true);
-    mainWindow?.setSkipTaskbar(true);
-  }
+  if (!mainWindow || !isExpanded) return false;
+  collapseToBubble();
+  return false;
 }

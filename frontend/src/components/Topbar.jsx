@@ -11,6 +11,7 @@ export default function Topbar() {
   const isModelsLoading = useAppStore((state) => state.isModelsLoading);
   
   const toggleExpand = useAppStore((state) => state.toggleExpand);
+  const collapseToBubble = useAppStore((state) => state.collapseToBubble);
   const selectedAgentProfile = useAppStore((state) => state.selectedAgentProfile);
   const selectAgentProfile = useAppStore((state) => state.selectAgentProfile);
   
@@ -31,12 +32,16 @@ export default function Topbar() {
     return () => clearInterval(interval);
   }, [fetchModels, fetchMetrics]);
 
+  // Both actions shrink the window back to the bubble in the main process, so
+  // mirror that in the store to keep the rendered view in sync on restore.
   const handleMinimize = () => {
     if (window.electronAPI) window.electronAPI.minimize();
+    collapseToBubble();
   };
 
   const handleClose = () => {
     if (window.electronAPI) window.electronAPI.close();
+    collapseToBubble();
   };
 
   const handleModelChange = (e) => {
