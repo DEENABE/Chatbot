@@ -1,108 +1,80 @@
 /**
  * @module widget/avatar3d/AvatarScene
- * @description Renders the Mixamo character and drives it from avatarDirector
- * state. Self-contained: on any load failure (most likely — no model file has
- * been supplied yet) it calls `onFallback` and renders nothing, so the caller
- * can keep showing the existing 2D avatar instead of a broken scene.
+ * @description Mounts the 3D character and drives it from avatarDirector
+ * state. Renders ProceduralAvatar — a hand-built rigged character, no model
+ * file required — so there's something real to look at immediately instead of
+ * waiting on a Mixamo export. `mixamoLoader.js`/`animationMap.js` are kept for
+ * later: if you do want to swap in a nicer downloaded character, that pipeline
+ * still works, it's just not the active path right now.
  *
- * Camera framing (position/target below) is a reasonable guess for a
- * head-and-shoulders "portrait" shot of a ~1.7m Mixamo character standing at
- * the origin — nobody has looked at the actual render yet, so treat the
- * numbers as a starting point to adjust once a model is in place, not as
- * verified correct.
+ * On any genuine WebGL failure (old GPU driver, disabled hardware
+ * acceleration) this calls `onFallback` and renders nothing, so the caller
+ * can keep showing the 2D avatar rather than a blank/broken canvas.
+ *
+ * The camera sits at [0,0,0.85] looking down -Z with no rotation, and
+ * ProceduralAvatar is shifted so its head sits at world origin — that's
+ * exact, computed from the character's own known geometry (see the comment
+ * inside ProceduralAvatar.jsx), not a guess. What hasn't been checked is
+ * whether it *looks* right: there's no tool in this session that can render
+ * and look at a WebGL scene, so the first real look is you running the app.
  */
 
-import React, { useEffect, useRef, useState } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import React, { useEffect, useState } from 'react';
+import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
-import { loadMixamoCharacter } from './mixamoLoader.js';
-import { BASE_MODEL_URL, CLIP_URLS, ANIMATION_FOR_STATE, ANIMATION_FOR_GESTURE } from './animationMap.js';
+import ProceduralAvatar from './ProceduralAvatar.jsx';
 
-function CharacterRig({ characterRef, avatarState }) {
-  useFrame(() => {
-    characterRef.current?.update();
-  });
-
-  // Cross-fade to whatever clip the current director state calls for.
-  useEffect(() => {
-    const character = characterRef.current;
-    if (!character) return;
-
-    const gestureClip = avatarState.gesture && ANIMATION_FOR_GESTURE[avatarState.gesture];
-    if (gestureClip && character.play(gestureClip, { loop: false })) {
-      // Gesture clips are one-shots; fall back to the state's loop after they
-      // finish playing (rough estimate rather than listening for `finished`,
-      // since clip length varies per export).
-      const timer = setTimeout(() => {
-        character.play(ANIMATION_FOR_STATE[avatarState.state] || 'Idle');
-      }, 1200);
-      return () => clearTimeout(timer);
-    }
-
-    character.play(ANIMATION_FOR_STATE[avatarState.state] || 'Idle');
-  }, [avatarState.state, avatarState.gesture, characterRef]);
-
-  return null;
+/** @returns {boolean} Whether this machine can create a WebGL context at all. */
+function supportsWebGL() {
+  try {
+    const canvas = document.createElement('canvas');
+    return !!(canvas.getContext('webgl2') || canvas.getContext('webgl'));
+  } catch {
+    return false;
+  }
 }
 
 /**
  * @param {Object} props
- * @param {import('./avatarDirector.js').AvatarDirectorState} props.avatarState
- * @param {() => void} [props.onFallback] - Called once if the base model can't be loaded.
- * @param {() => void} [props.onReady] - Called once the character is loaded and playing.
- * @param {boolean} [props.debugOrbit=false] - Enable mouse-drag camera orbit, for tuning framing during setup.
+ * @param {import('../avatarDirector.js').AvatarDirectorState} props.avatarState
+ * @param {() => void} [props.onFallback] - Called once if WebGL isn't usable here.
+ * @param {() => void} [props.onReady] - Called once the character has mounted.
+ * @param {string} [props.accent]
+ * @param {boolean} [props.debugOrbit=false] - Mouse-drag camera orbit, for adjusting framing.
  */
-export default function AvatarScene({ avatarState, onFallback, onReady, debugOrbit = false }) {
-  const [ready, setReady] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const characterRef = useRef(null);
-  const groupRef = useRef(null);
+export default function AvatarScene({ avatarState, onFallback, onReady, accent, debugOrbit = false }) {
+  const [supported] = useState(supportsWebGL);
 
   useEffect(() => {
-    let cancelled = false;
-
-    loadMixamoCharacter({ baseUrl: BASE_MODEL_URL, clipUrls: CLIP_URLS })
-      .then((character) => {
-        if (cancelled) {
-          character.dispose();
-          return;
-        }
-        characterRef.current = character;
-        groupRef.current?.add(character.root);
-        character.play('Idle');
-        setReady(true);
-        onReady?.();
-      })
-      .catch((err) => {
-        console.warn('[avatar3d] No 3D model loaded, staying on the 2D avatar:', err.message);
-        if (!cancelled) setFailed(true);
-      });
-
-    return () => {
-      cancelled = true;
-      characterRef.current?.dispose();
-    };
-    // Intentionally load once; swapping model files mid-session isn't supported.
+    if (!supported) {
+      onFallback?.();
+      return;
+    }
+    onReady?.();
+    // Fires once on mount — the procedural character has no async loading
+    // step, so "ready" just means "WebGL is usable here".
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [supported]);
 
-  useEffect(() => {
-    if (failed) onFallback?.();
-  }, [failed, onFallback]);
-
-  if (failed) return null;
+  if (!supported) return null;
 
   return (
     <Canvas
-      camera={{ position: [0, 1.55, 1.05], fov: 32 }}
+      camera={{ position: [0, 0, 0.85], fov: 30 }}
       gl={{ alpha: true, antialias: true }}
       style={{ background: 'transparent' }}
+      onCreated={({ gl }) => gl.setClearColor(0x000000, 0)}
     >
-      <ambientLight intensity={0.7} />
-      <directionalLight position={[1.5, 2.5, 2]} intensity={1.1} castShadow />
-      <group ref={groupRef} position={[0, 0, 0]} />
-      {ready && <CharacterRig characterRef={characterRef} avatarState={avatarState} />}
-      {debugOrbit && <OrbitControls target={[0, 1.5, 0]} />}
+      <ambientLight intensity={0.75} />
+      <directionalLight position={[1.2, 1.5, 1.6]} intensity={1.15} />
+      <directionalLight position={[-1, 0.5, -1]} intensity={0.3} />
+      {/* Head sits at world origin: torso group is at y=1.0, neck/head pivot is
+          a further +0.42 inside it (see ProceduralAvatar.jsx), so -1.42 here
+          centres the head exactly in front of the camera. */}
+      <group position={[0, -1.42, 0]}>
+        <ProceduralAvatar avatarState={avatarState} accent={accent} />
+      </group>
+      {debugOrbit && <OrbitControls target={[0, 0, 0]} />}
     </Canvas>
   );
 }

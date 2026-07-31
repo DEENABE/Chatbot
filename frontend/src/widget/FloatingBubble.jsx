@@ -8,8 +8,10 @@ import chanakyaHover from '../assets/chanakya_hover.png';
 import { nextLine, firstNameOf } from './greetings.js';
 import { speak, stopSpeaking } from '../services/speak.js';
 import { deriveAvatarState, BLINK_INTERVAL_MS, BLINK_DURATION_MS } from './avatarDirector.js';
-// Lazy: pulls in three.js only when a 3D model is actually there to show. Most
-// sessions have no Mixamo files yet, so this should never cost anything.
+// Lazy: three.js only loads when this component actually mounts, so it costs
+// nothing until the avatar is on screen. Renders a hand-rigged 3D character
+// (ProceduralAvatar — no model file needed) over the 2D photo once WebGL is
+// confirmed usable; see avatar3d/AvatarScene.jsx.
 const AvatarScene = React.lazy(() => import('./avatar3d/AvatarScene.jsx'));
 
 /** emotion -> glow colour. Neutral falls back to the user's accent colour. */
@@ -72,8 +74,9 @@ export default function FloatingBubble() {
   const [showToolbar, setShowToolbar] = useState(false);
   const [greeting, setGreeting] = useState('');
   const [isBlinking, setIsBlinking] = useState(false);
-  // Stays false until a real Mixamo model loads (no file shipped yet, so this
-  // will normally stay false and the 2D photo underneath keeps showing).
+  // True once WebGL is confirmed usable and the 3D character has mounted —
+  // the 2D photo underneath fades out at that point. Stays false (2D photo
+  // stays visible) only if WebGL genuinely isn't available on this machine.
   const [avatar3dReady, setAvatar3dReady] = useState(false);
   // The greeting just started speaking — the director reads this to pick a
   // warmer emotion/wave gesture for that one moment, not for every reply.
@@ -582,16 +585,18 @@ export default function FloatingBubble() {
                 transition={{ duration: BLINK_DURATION_MS / 2 / 1000 }}
               />
             </motion.div>
-
-            {/* 3D layer — only attempts to mount lazily; silently stays absent
-                until a Mixamo model is placed in public/avatar3d/. See
-                avatar3d/AvatarScene.jsx and public/avatar3d/README.md. */}
-            <React.Suspense fallback={null}>
-              <div className="absolute inset-0">
-                <AvatarScene avatarState={avatar} onReady={() => setAvatar3dReady(true)} />
-              </div>
-            </React.Suspense>
           </motion.div>
+
+          {/* 3D layer — deliberately NOT inside the rounded-full/overflow-hidden
+              circle above: that's the mask the flat photo needs and the 3D
+              character doesn't. The canvas background is transparent, so only
+              the character's own silhouette is visible — no circular clip, no
+              square edge either. */}
+          <React.Suspense fallback={null}>
+            <div className="absolute inset-0 pointer-events-none">
+              <AvatarScene avatarState={avatar} accent={accent} onReady={() => setAvatar3dReady(true)} />
+            </div>
+          </React.Suspense>
 
           {/* Talking pulse — stands in for lip-sync. Three dots pulsing near the
               chin while a reply streams or the greeting plays; there's no mouth
