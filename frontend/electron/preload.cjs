@@ -16,8 +16,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   close: () => ipcRenderer.send('window-close'),
   resize: (w, h) => ipcRenderer.send('window-resize', w, h),
 
-  // Notifications and continuous listeners
-  showNotification: (title, body) => ipcRenderer.send('show-notification', { title, body }),
+  // Notifications and continuous listeners.
+  // invoke, not send: the main process registers these with ipcMain.handle,
+  // which never sees a send().
+  showNotification: (title, body) => ipcRenderer.invoke('show-notification', { title, body }),
   onWakewordDetected: (callback) => {
     const subscription = (_event, data) => callback(data);
     ipcRenderer.on('wakeword-detected', subscription);
@@ -29,8 +31,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('clipboard-changed', subscription);
   },
   // Text-to-speech via the Windows engine (Web Speech has no voices in Electron)
-  speak: (text, options) => ipcRenderer.invoke('speak-text', { text, ...options }),
-  stopSpeaking: () => ipcRenderer.send('stop-speaking'),
+  speak: (text, options) => ipcRenderer.invoke('tts:speak', { text, ...options }),
+  stopSpeaking: () => ipcRenderer.invoke('tts:stop'),
+  getVoices: () => ipcRenderer.invoke('tts:voices'),
 
   setOcrMode: (enable) => ipcRenderer.invoke('window-set-ocr-mode', enable),
   setToolbarMode: (enable) => ipcRenderer.invoke('window-set-toolbar-mode', enable),

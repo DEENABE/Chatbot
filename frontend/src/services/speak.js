@@ -75,9 +75,9 @@ export async function speak(text, { rate = 1.02, pitch = 1.05 } = {}) {
   // reports zero voices, so speechSynthesis accepts utterances and drops them.
   if (window.electronAPI?.speak) {
     try {
-      // Web Speech rate is a multiplier around 1; SAPI wants -10..10.
-      const sapiRate = Math.round((rate - 1) * 10);
-      const spoke = await window.electronAPI.speak(text, { rate: sapiRate, volume: 100 });
+      // Both sides use a speed multiplier where 1 is normal, so `rate` passes
+      // straight through.
+      const spoke = await window.electronAPI.speak(text, { speed: rate });
       if (spoke) return true;
     } catch {
       // fall through to the browser path
