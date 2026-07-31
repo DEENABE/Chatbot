@@ -6,6 +6,9 @@ import { transcribe, warmUpTranscriber } from '../services/transcriber.js';
 
 export default function VoiceRecorder({ onTranscription, audioSource = 'mic' }) {
   const settings = useAppStore((state) => state.settings);
+  // Mirrored into the store: the avatar (a sibling, not a parent/child of this
+  // component) reacts to real mic state instead of guessing.
+  const setMicListening = useAppStore((state) => state.setMicListening);
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [timer, setTimer] = useState(0);
@@ -65,6 +68,7 @@ export default function VoiceRecorder({ onTranscription, audioSource = 'mic' }) 
     if (audioContextRef.current) {
       audioContextRef.current.close().catch(() => {});
     }
+    setMicListening(false);
   };
 
   const startRecording = async () => {
@@ -134,6 +138,7 @@ export default function VoiceRecorder({ onTranscription, audioSource = 'mic' }) 
 
         if (chunksRef.current.length === 0) {
           setIsRecording(false);
+          setMicListening(false);
           return;
         }
 
@@ -157,11 +162,13 @@ export default function VoiceRecorder({ onTranscription, audioSource = 'mic' }) 
         } finally {
           setIsTranscribing(false);
           setIsRecording(false);
+          setMicListening(false);
         }
       };
 
       recorder.start();
       setIsRecording(true);
+      setMicListening(true);
       startTimer();
       
       // Start painting frequencies

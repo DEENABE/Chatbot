@@ -47,6 +47,14 @@ export const useAppStore = create((set, get) => ({
   bubbleAction: null,
   setBubbleAction: (action) => set({ bubbleAction: action }),
 
+  // Avatar signals — real events the avatar director reacts to, not an LLM
+  // call per message. Kept in the store because the mic (VoiceRecorder) and
+  // the avatar (FloatingBubble) are siblings, not parent/child.
+  micListening: false,
+  setMicListening: (listening) => set({ micListening: listening }),
+  avatarSpeaking: false,
+  setAvatarSpeaking: (speaking) => set({ avatarSpeaking: speaking }),
+
   login: async (username, password) => {
     set({ isAuthLoading: true });
     try {
@@ -532,7 +540,7 @@ export const useAppStore = create((set, get) => ({
     // Auto-Repair mode: run the autonomous diagnose-and-fix agent instead of chat.
     if (get().autoRepairMode) {
       await get()._streamAutoRepair(content, chatId, chatAbortController);
-      set({ isGenerating: false });
+      set({ isGenerating: false, avatarSpeaking: false });
       get().setAbortController(null);
       return;
     }
@@ -601,6 +609,9 @@ export const useAppStore = create((set, get) => ({
             },
             onToken: (token) => {
               tokenCount++;
+              // First token = the model has actually started replying, as
+              // distinct from still deciding what to say.
+              if (tokenCount === 1) set({ avatarSpeaking: true });
               set((state) => ({
                 activeMessages: state.activeMessages.map((m) =>
                   m.id === tempAssistantMessage.id ? { ...m, content: m.content + token } : m
@@ -702,7 +713,7 @@ export const useAppStore = create((set, get) => ({
       }
     }
 
-    set({ isGenerating: false });
+    set({ isGenerating: false, avatarSpeaking: false });
     get().setAbortController(null);
   },
 
@@ -712,7 +723,7 @@ export const useAppStore = create((set, get) => ({
     const ctrl = get().activeAbortController;
     if (ctrl) {
       ctrl.abort();
-      set({ isGenerating: false, activeAbortController: null });
+      set({ isGenerating: false, avatarSpeaking: false, activeAbortController: null });
     }
   },
 

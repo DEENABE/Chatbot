@@ -101,8 +101,14 @@ export async function speak(text, { rate = 1.02, pitch = 1.05 } = {}) {
     utterance.lang = voice.lang;
   }
 
-  synth.speak(utterance);
-  return true;
+  // Resolve when the line actually finishes, not the instant it was queued —
+  // callers (the avatar's speaking state) need to know the real duration, and
+  // synth.speak() alone returns before a word is spoken.
+  return new Promise((resolve) => {
+    utterance.onend = () => resolve(true);
+    utterance.onerror = () => resolve(false);
+    synth.speak(utterance);
+  });
 }
 
 /** Stop anything currently being spoken, on whichever engine is in use. */

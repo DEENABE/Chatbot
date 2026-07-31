@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence, useSpring, useMotionValue } from 'framer-motion';
 import { useAppStore } from '../stores/useAppStore.js';
 import { presets } from '../animations/presets.js';
@@ -7,6 +7,34 @@ import chanakyaDefault from '../assets/chanakya_default.png';
 import chanakyaHover from '../assets/chanakya_hover.png';
 import { nextLine, firstNameOf } from './greetings.js';
 import { speak, stopSpeaking } from '../services/speak.js';
+import { deriveAvatarState, BLINK_INTERVAL_MS, BLINK_DURATION_MS } from './avatarDirector.js';
+
+/** emotion -> glow colour. Neutral falls back to the user's accent colour. */
+const EMOTION_COLORS = {
+  happy: '#ffb020',
+  excited: '#ff5fa2',
+  sad: '#5b7ba6',
+  serious: null, // uses accent
+  surprise: '#ffffff',
+  neutral: null, // uses accent
+};
+
+/** headMovement -> a framer-motion rotate/translate keyframe list. */
+const HEAD_KEYFRAMES = {
+  nod: { y: [0, 3, 0, 2, 0], rotate: 0 },
+  tilt_left: { rotate: [0, -4, -4, 0], y: 0 },
+  tilt_right: { rotate: [0, 4, 4, 0], y: 0 },
+  shake: { rotate: [0, -5, 5, -3, 0], y: 0 },
+  none: { rotate: 0, y: 0 },
+};
+
+/** eyeFocus -> a pupil offset target (px), overriding cursor-follow briefly. */
+const GAZE_OFFSETS = {
+  user: null, // follow the cursor as usual
+  look_left: { x: -4, y: 0 },
+  look_right: { x: 4, y: 0 },
+  look_down: { x: 0, y: 4 },
+};
 
 /**
  * Don't speak again within this window (ms). Long enough that sweeping the
@@ -33,10 +61,17 @@ export default function FloatingBubble() {
   const setOcrScreenshot = useAppStore((state) => state.setOcrScreenshot);
   const setPendingScreenCapture = useAppStore((state) => state.setPendingScreenCapture);
   const setBubbleAction = useAppStore((state) => state.setBubbleAction);
+  const micListening = useAppStore((state) => state.micListening);
+  const isGenerating = useAppStore((state) => state.isGenerating);
+  const avatarSpeaking = useAppStore((state) => state.avatarSpeaking);
 
   const [isHovered, setIsHovered] = useState(false);
   const [showToolbar, setShowToolbar] = useState(false);
   const [greeting, setGreeting] = useState('');
+  const [isBlinking, setIsBlinking] = useState(false);
+  // The greeting just started speaking — the director reads this to pick a
+  // warmer emotion/wave gesture for that one moment, not for every reply.
+  const [justGreeted, setJustGreeted] = useState(false);
   // Which screen edge the window grew away from, so the column lines up with
   // the avatar's old position instead of centring in the widened window.
   const [hoverSide, setHoverSide] = useState('right');
@@ -65,6 +100,14 @@ export default function FloatingBubble() {
   // Filter actions based on environment
   const visibleActions = quickActions.filter(a => !a.electronOnly || isElectron);
 
+  // The avatar's behaviour, recomputed from real signals — not an LLM call, so
+  // this is cheap enough to run on every render. See avatarDirector.js for what
+  // each field means and which parts the renderer below can actually show.
+  const avatar = useMemo(
+    () => deriveAvatarState({ isListening: micListening, isThinking: isGenerating && !avatarSpeaking, isSpeaking: avatarSpeaking, justGreeted }),
+    [micListening, isGenerating, avatarSpeaking, justGreeted]
+  );
+
   // Cleanup timeouts on unmount
   useEffect(() => {
     return () => {
@@ -74,16 +117,56 @@ export default function FloatingBubble() {
     };
   }, []);
 
+  // Natural random blinking while the avatar isn't mid-gesture. Runs on its own
+  // timer rather than tying blink to render, so it keeps going even when
+  // nothing else is changing (the idle state).
+  useEffect(() => {
+    let cancelled = false;
+    let timer;
+    const scheduleBlink = () => {
+      const jitter = BLINK_INTERVAL_MS * (0.6 + Math.random() * 0.8);
+      timer = setTimeout(() => {
+        if (cancelled) return;
+        setIsBlinking(true);
+        setTimeout(() => !cancelled && setIsBlinking(false), BLINK_DURATION_MS);
+        scheduleBlink();
+      }, jitter);
+    };
+    scheduleBlink();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, []);
+
+  // Retarget the gaze when the director calls for something other than
+  // "look at the user" (e.g. thinking looks aside), then hand control back to
+  // the cursor-follow in handleMouseMove.
+  useEffect(() => {
+    const offset = GAZE_OFFSETS[avatar.eyeFocus];
+    if (!offset) return;
+    pX.set(offset.x);
+    pY.set(offset.y);
+  }, [avatar.eyeFocus, pX, pY]);
+
   /**
    * Say the greeting out loud. Opt-in, and rate-limited — a voice on every
    * hover would be unbearable, and the speech bubble already carries the text.
    */
-  const speakGreeting = (text) => {
+  const speakGreeting = async (text) => {
     if (!settings.voiceGreeting) return;
     const now = Date.now();
     if (now - lastSpokenAtRef.current < VOICE_COOLDOWN) return;
     lastSpokenAtRef.current = now;
-    speak(text);
+
+    setJustGreeted(true);
+    useAppStore.getState().setAvatarSpeaking(true);
+    try {
+      await speak(text);
+    } finally {
+      useAppStore.getState().setAvatarSpeaking(false);
+      setJustGreeted(false);
+    }
   };
 
   const handleMouseMove = (e) => {
@@ -265,6 +348,10 @@ export default function FloatingBubble() {
   };
 
   const accent = settings.accentColor || '#3b82f6';
+  // The emotion the director picked, tinting the glow when it says something
+  // more specific than "neutral". Falls back to the user's own accent colour.
+  const glowColor = EMOTION_COLORS[avatar.emotion] || accent;
+  const breathDuration = { slow: 4.2, normal: 2.6, fast: 1.3 }[avatar.breathing] || 2.6;
 
   return (
     <div
@@ -405,7 +492,8 @@ export default function FloatingBubble() {
         animate={settings.animationsEnabled && isHovered ? { scale: 1.08 } : { scale: 1 }}
         transition={presets.appleBounce}
       >
-        {/* Glow Ring outer pulse */}
+        {/* Glow Ring outer pulse — hover uses the accent colour; the director's
+            emotion tints it the rest of the time (listening/thinking/speaking). */}
         {isHovered && settings.animationsEnabled && (
           <motion.div
             className="absolute inset-0 rounded-full pointer-events-none"
@@ -424,6 +512,17 @@ export default function FloatingBubble() {
             }}
           />
         )}
+        {!isHovered && settings.animationsEnabled && avatar.state !== 'idle' && (
+          <motion.div
+            className="absolute inset-0 rounded-full pointer-events-none"
+            style={{ border: `1.5px solid ${glowColor}` }}
+            animate={{
+              scale: [1, 1.18, 1],
+              opacity: [avatar.emotionIntensity * 0.5, 0, avatar.emotionIntensity * 0.5],
+            }}
+            transition={{ duration: breathDuration, repeat: Infinity, ease: 'easeInOut' }}
+          />
+        )}
 
         {/* Dashed outer circular accent line */}
         <div
@@ -431,27 +530,85 @@ export default function FloatingBubble() {
           style={{ borderColor: accent }}
         />
 
-        {/* Cartoon Avatar with responsive eye-tracking look parallax */}
+        {/* Cartoon Avatar with responsive eye-tracking look parallax.
+            The outer motion.div plays the director's headMovement as a subtle
+            rotate/bob of the whole photo — the closest a flat image can get to
+            a head nod or tilt without a rig. */}
         <motion.div
-          className="w-[50px] h-[50px] rounded-full relative pointer-events-none overflow-hidden border border-white/10 bg-zinc-950/80 flex items-center justify-center shadow-inner"
-          style={{
-            x: settings.animationsEnabled ? pupilX : 0,
-            y: settings.animationsEnabled ? pupilY : 0,
-          }}
+          animate={settings.animationsEnabled ? HEAD_KEYFRAMES[avatar.headMovement] : {}}
+          transition={{ duration: 0.7, ease: 'easeInOut' }}
+          className="w-[50px] h-[50px] rounded-full relative pointer-events-none"
         >
-          <img
-            src={chanakyaDefault}
-            alt="Chanakya Default"
-            className="absolute inset-0 w-full h-full object-cover"
-          />
-          <motion.img
-            src={chanakyaHover}
-            alt="Chanakya Smiling"
-            className="absolute inset-0 w-full h-full object-cover"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: isHovered ? 1 : 0 }}
-            transition={presets.fade}
-          />
+          <motion.div
+            className="w-full h-full rounded-full relative overflow-hidden border border-white/10 bg-zinc-950/80 flex items-center justify-center shadow-inner"
+            style={{
+              x: settings.animationsEnabled ? pupilX : 0,
+              y: settings.animationsEnabled ? pupilY : 0,
+            }}
+          >
+            <img
+              src={chanakyaDefault}
+              alt="Chanakya Default"
+              className="absolute inset-0 w-full h-full object-cover"
+            />
+            <motion.img
+              src={chanakyaHover}
+              alt="Chanakya Smiling"
+              className="absolute inset-0 w-full h-full object-cover"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: isHovered || avatar.emotion === 'happy' ? 1 : 0 }}
+              transition={presets.fade}
+            />
+            {/* Blink — a thin band at eye height, dark and gone in ~140ms. Not a
+                real eyelid (there isn't one to animate), just a plausible flicker. */}
+            <motion.div
+              className="absolute left-0 right-0 pointer-events-none"
+              style={{ top: '40%', height: '10%', background: 'rgba(5,5,8,0.85)' }}
+              animate={{ opacity: isBlinking ? 1 : 0, scaleY: isBlinking ? 1 : 0 }}
+              transition={{ duration: BLINK_DURATION_MS / 2 / 1000 }}
+            />
+          </motion.div>
+
+          {/* Talking pulse — stands in for lip-sync. Three dots pulsing near the
+              chin while a reply streams or the greeting plays; there's no mouth
+              rig to actually move. */}
+          <AnimatePresence>
+            {avatar.lipSync && settings.animationsEnabled && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.6 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.6 }}
+                className="absolute -bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-[3px] px-1.5 py-1 rounded-full"
+                style={{ background: 'rgba(10,10,12,0.9)', border: `1px solid ${glowColor}55` }}
+              >
+                {[0, 1, 2].map((i) => (
+                  <motion.span
+                    key={i}
+                    className="w-[3px] h-[3px] rounded-full"
+                    style={{ backgroundColor: glowColor }}
+                    animate={{ scaleY: [1, 2.2, 1] }}
+                    transition={{ duration: 0.5, repeat: Infinity, delay: i * 0.12, ease: 'easeInOut' }}
+                  />
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Gesture badge — only for the one gesture worth showing without a
+              hand rig: a wave when the greeting starts speaking. */}
+          <AnimatePresence>
+            {avatar.gesture === 'wave' && settings.animationsEnabled && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.4, rotate: -20 }}
+                animate={{ opacity: 1, scale: 1, rotate: [0, 18, -8, 14, 0] }}
+                exit={{ opacity: 0, scale: 0.4 }}
+                transition={{ duration: 0.8, ease: 'easeInOut' }}
+                className="absolute -top-1 -right-1 text-[14px] leading-none select-none"
+              >
+                👋
+              </motion.div>
+            )}
+          </AnimatePresence>
         </motion.div>
 
         {/* Floating particles around it */}
