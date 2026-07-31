@@ -8,6 +8,9 @@ import chanakyaHover from '../assets/chanakya_hover.png';
 import { nextLine, firstNameOf } from './greetings.js';
 import { speak, stopSpeaking } from '../services/speak.js';
 import { deriveAvatarState, BLINK_INTERVAL_MS, BLINK_DURATION_MS } from './avatarDirector.js';
+// Lazy: pulls in three.js only when a 3D model is actually there to show. Most
+// sessions have no Mixamo files yet, so this should never cost anything.
+const AvatarScene = React.lazy(() => import('./avatar3d/AvatarScene.jsx'));
 
 /** emotion -> glow colour. Neutral falls back to the user's accent colour. */
 const EMOTION_COLORS = {
@@ -69,6 +72,9 @@ export default function FloatingBubble() {
   const [showToolbar, setShowToolbar] = useState(false);
   const [greeting, setGreeting] = useState('');
   const [isBlinking, setIsBlinking] = useState(false);
+  // Stays false until a real Mixamo model loads (no file shipped yet, so this
+  // will normally stay false and the 2D photo underneath keeps showing).
+  const [avatar3dReady, setAvatar3dReady] = useState(false);
   // The greeting just started speaking — the director reads this to pick a
   // warmer emotion/wave gesture for that one moment, not for every reply.
   const [justGreeted, setJustGreeted] = useState(false);
@@ -546,27 +552,45 @@ export default function FloatingBubble() {
               y: settings.animationsEnabled ? pupilY : 0,
             }}
           >
-            <img
-              src={chanakyaDefault}
-              alt="Chanakya Default"
-              className="absolute inset-0 w-full h-full object-cover"
-            />
-            <motion.img
-              src={chanakyaHover}
-              alt="Chanakya Smiling"
-              className="absolute inset-0 w-full h-full object-cover"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: isHovered || avatar.emotion === 'happy' ? 1 : 0 }}
-              transition={presets.fade}
-            />
-            {/* Blink — a thin band at eye height, dark and gone in ~140ms. Not a
-                real eyelid (there isn't one to animate), just a plausible flicker. */}
+            {/* 2D photo — the only thing that has ever actually been visible.
+                Fades out only once a real 3D model has confirmed it loaded, so
+                a missing/broken model file never blanks the avatar. */}
             <motion.div
-              className="absolute left-0 right-0 pointer-events-none"
-              style={{ top: '40%', height: '10%', background: 'rgba(5,5,8,0.85)' }}
-              animate={{ opacity: isBlinking ? 1 : 0, scaleY: isBlinking ? 1 : 0 }}
-              transition={{ duration: BLINK_DURATION_MS / 2 / 1000 }}
-            />
+              className="absolute inset-0"
+              animate={{ opacity: avatar3dReady ? 0 : 1 }}
+              transition={presets.fade}
+            >
+              <img
+                src={chanakyaDefault}
+                alt="Chanakya Default"
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+              <motion.img
+                src={chanakyaHover}
+                alt="Chanakya Smiling"
+                className="absolute inset-0 w-full h-full object-cover"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: isHovered || avatar.emotion === 'happy' ? 1 : 0 }}
+                transition={presets.fade}
+              />
+              {/* Blink — a thin band at eye height, dark and gone in ~140ms. Not a
+                  real eyelid (there isn't one to animate), just a plausible flicker. */}
+              <motion.div
+                className="absolute left-0 right-0 pointer-events-none"
+                style={{ top: '40%', height: '10%', background: 'rgba(5,5,8,0.85)' }}
+                animate={{ opacity: isBlinking ? 1 : 0, scaleY: isBlinking ? 1 : 0 }}
+                transition={{ duration: BLINK_DURATION_MS / 2 / 1000 }}
+              />
+            </motion.div>
+
+            {/* 3D layer — only attempts to mount lazily; silently stays absent
+                until a Mixamo model is placed in public/avatar3d/. See
+                avatar3d/AvatarScene.jsx and public/avatar3d/README.md. */}
+            <React.Suspense fallback={null}>
+              <div className="absolute inset-0">
+                <AvatarScene avatarState={avatar} onReady={() => setAvatar3dReady(true)} />
+              </div>
+            </React.Suspense>
           </motion.div>
 
           {/* Talking pulse — stands in for lip-sync. Three dots pulsing near the
