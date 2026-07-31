@@ -2,8 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Mic, Square, Pause, Play, LoaderCircle, RefreshCw } from 'lucide-react';
 import { useAppStore } from '../stores/useAppStore.js';
-import * as apiService from '../services/api.js';
-import { blobToWav } from '../services/wav.js';
+import { transcribe, warmUpTranscriber } from '../services/transcriber.js';
 
 export default function VoiceRecorder({ onTranscription, audioSource = 'mic' }) {
   const settings = useAppStore((state) => state.settings);
@@ -26,6 +25,9 @@ export default function VoiceRecorder({ onTranscription, audioSource = 'mic' }) 
   const isElectron = window.electronAPI !== undefined;
 
   useEffect(() => {
+    // Start fetching the speech model as soon as the panel opens, so the wait
+    // lands while the user is still deciding to record rather than after.
+    warmUpTranscriber();
     return () => {
       stopRecordingImmediate();
     };
@@ -137,19 +139,13 @@ export default function VoiceRecorder({ onTranscription, audioSource = 'mic' }) 
 
         setIsTranscribing(true);
         try {
-          // MediaRecorder produces WebM/Opus; the previous code just relabelled
-          // it "audio/wav", so the Windows recogniser got a container it cannot
-          // read and returned nothing. Re-encode to real PCM WAV first.
+          // MediaRecorder hands back WebM/Opus whatever we label the blob, so
+          // the recording is decoded before either engine sees it.
           const recorded = new Blob(chunksRef.current, {
             type: recorder.mimeType || 'audio/webm'
           });
-          const wav = await blobToWav(recorded);
 
-          const formData = new FormData();
-          formData.append('audio', wav, 'audio.wav');
-
-          const res = await apiService.transcribe.audio(formData);
-          const text = res.data?.text?.trim();
+          const { text } = await transcribe(recorded);
           if (text) {
             onTranscription(text);
           } else {

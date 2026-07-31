@@ -92,19 +92,31 @@ function toMono(audioBuffer) {
 }
 
 /**
- * Decode any recorded audio blob (WebM/Opus, MP4, …) and re-encode it as a WAV
- * the speech recogniser accepts.
+ * Decode any recorded audio blob (WebM/Opus, MP4, …) down to the mono 16 kHz
+ * samples both transcription paths want.
+ *
+ * @param {Blob} blob - Whatever MediaRecorder produced.
+ * @returns {Promise<Float32Array>} Mono samples at 16 kHz.
+ */
+export async function blobToPcm16k(blob) {
+  const arrayBuffer = await blob.arrayBuffer();
+  const context = new (window.AudioContext || window.webkitAudioContext)();
+  try {
+    const audioBuffer = await context.decodeAudioData(arrayBuffer);
+    return resampleTo16k(toMono(audioBuffer), audioBuffer.sampleRate);
+  } finally {
+    context.close().catch(() => {});
+  }
+}
+
+/**
+ * Decode any recorded audio blob and re-encode it as a WAV the Windows
+ * recogniser accepts.
  *
  * @param {Blob} blob - Whatever MediaRecorder produced.
  * @returns {Promise<Blob>} A real 16 kHz mono PCM WAV.
  */
 export async function blobToWav(blob) {
-  const arrayBuffer = await blob.arrayBuffer();
-  const context = new (window.AudioContext || window.webkitAudioContext)();
-  try {
-    const audioBuffer = await context.decodeAudioData(arrayBuffer);
-    return encodeWav(toMono(audioBuffer), audioBuffer.sampleRate);
-  } finally {
-    context.close().catch(() => {});
-  }
+  const samples = await blobToPcm16k(blob);
+  return encodeWav(samples, TARGET_RATE);
 }

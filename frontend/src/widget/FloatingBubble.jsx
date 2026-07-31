@@ -8,8 +8,13 @@ import chanakyaHover from '../assets/chanakya_hover.png';
 import { nextLine, firstNameOf } from './greetings.js';
 import { speak, stopSpeaking } from '../services/speak.js';
 
-/** Don't speak the greeting again within this window (ms). */
-const VOICE_COOLDOWN = 90_000;
+/**
+ * Don't speak again within this window (ms). Long enough that sweeping the
+ * cursor past the bubble a few times doesn't stutter, short enough that coming
+ * back to it a moment later still gets a spoken line — at 90s it only ever
+ * spoke once, which read as "the voice stopped working".
+ */
+const VOICE_COOLDOWN = 6_000;
 
 // Labels are what the user reads to decide — say what the action does, not what
 // the feature is called internally.
