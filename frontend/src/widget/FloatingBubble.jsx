@@ -6,16 +6,19 @@ import { Mic, Monitor, Crop, Video, Minus } from 'lucide-react';
 import chanakyaDefault from '../assets/chanakya_default.png';
 import chanakyaHover from '../assets/chanakya_hover.png';
 import { nextLine } from './greetings.js';
+import { speak, stopSpeaking } from '../services/speak.js';
 
 /** Don't speak the greeting again within this window (ms). */
 const VOICE_COOLDOWN = 90_000;
 
+// Labels are what the user reads to decide — say what the action does, not what
+// the feature is called internally.
 const quickActions = [
-  { id: 'mic', icon: Mic, label: 'Voice Input', electronOnly: false },
-  { id: 'capture', icon: Monitor, label: 'Screen Capture', electronOnly: true },
-  { id: 'ocr', icon: Crop, label: 'OCR Markup', electronOnly: true },
-  { id: 'record', icon: Video, label: 'Screen Record', electronOnly: true },
-  { id: 'minimize', icon: Minus, label: 'Minimize', electronOnly: true },
+  { id: 'mic', icon: Mic, label: 'Speak to Chanakya', electronOnly: false },
+  { id: 'capture', icon: Monitor, label: 'Capture Screen', electronOnly: true },
+  { id: 'ocr', icon: Crop, label: 'Read Screen Text', electronOnly: true },
+  { id: 'record', icon: Video, label: 'Record Screen', electronOnly: true },
+  { id: 'minimize', icon: Minus, label: 'Hide', electronOnly: true },
 ];
 
 export default function FloatingBubble() {
@@ -29,6 +32,9 @@ export default function FloatingBubble() {
   const [isHovered, setIsHovered] = useState(false);
   const [showToolbar, setShowToolbar] = useState(false);
   const [greeting, setGreeting] = useState('');
+  // Which screen edge the window grew away from, so the column lines up with
+  // the avatar's old position instead of centring in the widened window.
+  const [hoverSide, setHoverSide] = useState('right');
 
   const bubbleRef = useRef(null);
   const dragThreshold = useRef({ isDragging: false, startX: 0, startY: 0 });
@@ -59,7 +65,7 @@ export default function FloatingBubble() {
     return () => {
       if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
       if (leaveTimeoutRef.current) clearTimeout(leaveTimeoutRef.current);
-      window.speechSynthesis?.cancel();
+      stopSpeaking();
     };
   }, []);
 
@@ -68,16 +74,11 @@ export default function FloatingBubble() {
    * hover would be unbearable, and the speech bubble already carries the text.
    */
   const speakGreeting = (text) => {
-    if (!settings.voiceGreeting || !('speechSynthesis' in window)) return;
+    if (!settings.voiceGreeting) return;
     const now = Date.now();
     if (now - lastSpokenAtRef.current < VOICE_COOLDOWN) return;
     lastSpokenAtRef.current = now;
-
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1.02;
-    utterance.pitch = 1.05;
-    window.speechSynthesis.speak(utterance);
+    speak(text);
   };
 
   const handleMouseMove = (e) => {
@@ -97,22 +98,25 @@ export default function FloatingBubble() {
     pY.set(Math.max(-4, Math.min(4, dy * eyeFactor)));
   };
 
-  const handleMouseEnter = async () => {
+  const handleMouseEnter = () => {
     setIsHovered(true);
-    // Cancel any pending collapse
+    // Cancel a pending collapse. This is also what rescues the greeting from
+    // the spurious mouseleave the window resize fires: the re-enter lands
+    // before the timeout runs.
     if (leaveTimeoutRef.current) {
       clearTimeout(leaveTimeoutRef.current);
       leaveTimeoutRef.current = null;
     }
-    if (!user) return;
+    if (!user || greeting) return;
 
-    // Grow the window right away so the speech bubble has somewhere to appear;
-    // the quick actions still fade in after a beat so a passing cursor does not
-    // fire the whole toolbar.
-    if (isElectron && !showToolbar) {
-      try { await window.electronAPI.setToolbarMode(true); } catch (err) {
-        console.warn('Hover mode failed:', err);
-      }
+    // Ask for the bigger window and show the line in the same tick. Awaiting the
+    // IPC first meant the resize could fire a mouseleave that wiped the greeting
+    // before it ever rendered.
+    if (isElectron) {
+      window.electronAPI
+        .setToolbarMode(true)
+        .then((result) => result?.side && setHoverSide(result.side))
+        .catch((err) => console.warn('Hover mode failed:', err));
     }
 
     const line = nextLine({
@@ -124,9 +128,7 @@ export default function FloatingBubble() {
     setGreeting(line);
     speakGreeting(line);
 
-    if (!showToolbar) {
-      hoverTimeoutRef.current = setTimeout(() => setShowToolbar(true), 350);
-    }
+    hoverTimeoutRef.current = setTimeout(() => setShowToolbar(true), 350);
   };
 
   const handleMouseLeave = () => {
@@ -136,18 +138,21 @@ export default function FloatingBubble() {
       clearTimeout(hoverTimeoutRef.current);
       hoverTimeoutRef.current = null;
     }
-    // Drop the greeting and shrink back, with a delay so crossing a gap between
-    // the avatar and the action buttons does not collapse everything.
-    setGreeting('');
-    window.speechSynthesis?.cancel();
+    stopSpeaking();
+
+    // Everything tears down inside the delayed callback, never straight away:
+    // resizing the window makes the cursor cross element boundaries, so an
+    // immediate clear would blank the greeting the moment it appeared.
     leaveTimeoutRef.current = setTimeout(async () => {
+      setGreeting('');
+      setShowToolbar(false);
       if (isElectron) {
         try { await window.electronAPI.setToolbarMode(false); } catch (err) {
           console.warn('Hover collapse failed:', err);
         }
       }
-      setShowToolbar(false);
     }, 500);
+
     // Reset magnetic/pupil springs
     mX.set(0);
     mY.set(0);
@@ -258,8 +263,18 @@ export default function FloatingBubble() {
 
   return (
     <div
-      className="w-screen h-screen flex flex-col items-center justify-end select-none overflow-hidden"
+      // Enter and leave both live here so they stay symmetric. Hanging enter off
+      // the avatar alone meant moving up to the speech bubble or the actions
+      // counted as leaving, and re-entering the avatar re-rolled the greeting.
+      className={`w-screen h-screen flex flex-col justify-end select-none px-[6px] ${
+        showToolbar || greeting
+          ? hoverSide === 'right'
+            ? 'items-end'
+            : 'items-start'
+          : 'items-center'
+      }`}
       onMouseMove={handleMouseMove}
+      onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
       {/* Speech bubble — Chanakya says what it can help with, so the user does
@@ -272,7 +287,9 @@ export default function FloatingBubble() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 6, scale: 0.95 }}
             transition={{ type: 'spring', stiffness: 420, damping: 26 }}
-            className="relative mb-3 max-w-[260px] px-3.5 py-2.5 rounded-2xl rounded-br-md"
+            className={`relative mb-3 max-w-[260px] px-3.5 py-2.5 rounded-2xl ${
+              hoverSide === 'right' ? 'rounded-br-md' : 'rounded-bl-md'
+            }`}
             style={{
               background: 'linear-gradient(135deg, rgba(24, 24, 30, 0.96), rgba(14, 14, 17, 0.98))',
               border: `1px solid ${accent}35`,
@@ -284,9 +301,11 @@ export default function FloatingBubble() {
             <p className="text-[11.5px] leading-snug text-stone-200 text-center font-medium">
               {greeting}
             </p>
-            {/* Tail pointing down at the avatar */}
+            {/* Tail pointing down at the avatar, on whichever side it sits */}
             <div
-              className="absolute -bottom-[5px] left-1/2 -translate-x-1/2 w-2.5 h-2.5 rotate-45"
+              className={`absolute -bottom-[5px] w-2.5 h-2.5 rotate-45 ${
+                hoverSide === 'right' ? 'right-[22px]' : 'left-[22px]'
+              }`}
               style={{
                 background: 'rgba(14, 14, 17, 0.98)',
                 borderRight: `1px solid ${accent}35`,
@@ -324,9 +343,11 @@ export default function FloatingBubble() {
                   }
                 }}
                 title={action.label}
-                className="w-[40px] h-[40px] rounded-full flex items-center justify-center cursor-pointer group relative"
+                // A labelled pill, not a bare icon: five unnamed glyphs gave no
+                // clue that one of them starts voice input.
+                className="w-[168px] h-[38px] pl-3 pr-4 rounded-full flex items-center gap-2.5 cursor-pointer group relative"
                 style={{
-                  background: 'linear-gradient(135deg, rgba(22, 22, 28, 0.92), rgba(12, 12, 14, 0.97))',
+                  background: 'linear-gradient(135deg, rgba(22, 22, 28, 0.94), rgba(12, 12, 14, 0.98))',
                   border: '1px solid rgba(255, 255, 255, 0.08)',
                   boxShadow: '0 3px 10px rgba(0, 0, 0, 0.4)',
                   backdropFilter: 'blur(8px)',
@@ -334,15 +355,17 @@ export default function FloatingBubble() {
                 }}
               >
                 <motion.div
-                  whileHover={{ scale: 1.2 }}
                   whileTap={{ scale: 0.85 }}
-                  className="flex items-center justify-center"
+                  className="flex items-center justify-center shrink-0"
                 >
                   <action.icon
                     size={15}
-                    className="text-stone-500 group-hover:text-white transition-colors duration-200"
+                    className="text-stone-400 group-hover:text-white transition-colors duration-200"
                   />
                 </motion.div>
+                <span className="text-[11px] font-medium text-stone-400 group-hover:text-white transition-colors duration-200 whitespace-nowrap">
+                  {action.label}
+                </span>
                 {/* Hover glow ring */}
                 <div
                   className="absolute inset-0 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none"
@@ -361,7 +384,6 @@ export default function FloatingBubble() {
       <motion.div
         ref={bubbleRef}
         onMouseDown={handleMouseDown}
-        onMouseEnter={handleMouseEnter}
         className="w-[68px] h-[68px] rounded-full flex items-center justify-center cursor-grab active:cursor-grabbing relative"
         style={{
           x: settings.animationsEnabled ? bubbleX : 0,

@@ -136,18 +136,24 @@ export function setToolbarMode(enable) {
   const [currentX, currentY] = mainWindow.getPosition();
   const [currentW, currentH] = mainWindow.getSize();
 
-  // The avatar sits at the bottom of the window, horizontally centred. Anchor
-  // the bottom edge and grow symmetrically sideways so it stays put while the
-  // speech bubble and quick actions appear above it.
   const targetW = enable ? HOVER_WIDTH : BUBBLE_SIZE;
   const targetH = enable ? TOOLBAR_HEIGHT : BUBBLE_SIZE;
   const newY = Math.max(0, currentY + currentH - targetH);
-  const centredX = currentX + Math.round((currentW - targetW) / 2);
-  const newX = Math.max(0, Math.min(screenW - targetW, centredX));
+
+  // Grow away from the nearest screen edge and keep that edge pinned, so the
+  // avatar does not move. Centring the window instead looks fine mid-screen but
+  // the clamp shoves it sideways at an edge — and the edge is where the bubble
+  // lives by default, so the avatar jumped out from under the cursor.
+  const onRightHalf = currentX + currentW / 2 > screenW / 2;
+  const desiredX = onRightHalf ? currentX + currentW - targetW : currentX;
+  const newX = Math.max(0, Math.min(screenW - targetW, desiredX));
 
   mainWindow.setResizable(enable);
   mainWindow.setBounds({ x: newX, y: newY, width: targetW, height: targetH });
-  return isToolbarMode;
+
+  // The renderer aligns its column to the same edge, otherwise the avatar would
+  // sit in the middle of the widened window instead of where it was.
+  return { enabled: isToolbarMode, side: onRightHalf ? 'right' : 'left' };
 }
 
 export function handleDragStart() {

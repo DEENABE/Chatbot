@@ -838,9 +838,10 @@ export const useAppStore = create((set, get) => ({
     alwaysOnTop: localStorage.getItem('chanakya-alwaysontop') !== 'false',
     fontSize: Number(localStorage.getItem('chanakya-fontsize') || '12'),
     animationSpeed: Number(localStorage.getItem('chanakya-animationspeed') || '1'),
-    // Speak the hover greeting aloud. Off by default: the speech bubble is
-    // always shown, but a voice on every hover gets grating fast.
-    voiceGreeting: localStorage.getItem('chanakya-voicegreeting') === 'true'
+    // Speak the hover greeting aloud. On by default — the avatar talking is the
+    // point. Repetition is held back by a 90s cooldown rather than by silence,
+    // and it can be turned off in Settings.
+    voiceGreeting: localStorage.getItem('chanakya-voicegreeting') !== 'false'
   },
   updateSetting: (key, value) => {
     localStorage.setItem(`chanakya-${key.toLowerCase()}`, String(value));

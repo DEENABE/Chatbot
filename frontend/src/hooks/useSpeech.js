@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { pipeline, env } from '@huggingface/transformers';
 import { api } from '../lib/api.js';
+import { speak as speakAloud } from '../services/speak.js';
 
 // Disable local models fallback to avoid CORS issues if not properly set up;
 // Let transformers.js pull directly from HuggingFace cache.
@@ -198,12 +199,11 @@ export function useSpeech({ onTranscript, onError }) {
     }
   }, [listening, transcribing, useWebSpeech, startWebSpeech, stopWebSpeech, startRecording, stopRecording]);
 
+  // Shared helper: it waits for the voice list before speaking. Firing straight
+  // at speechSynthesis drops the utterance silently while voices are still
+  // loading, which is why read-aloud produced no sound.
   const speak = useCallback((text) => {
-    if (!('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text.replace(/\[Source \d+\]/g, ''));
-    utterance.rate = 1;
-    window.speechSynthesis.speak(utterance);
+    speakAloud(String(text || '').replace(/\[Source \d+\]/g, ''), { rate: 1, pitch: 1 });
   }, []);
 
   return { listening, transcribing, supported, audioLevel, toggleListening, speak, useWebSpeech, isModelReady: !!transcriberRef.current };
