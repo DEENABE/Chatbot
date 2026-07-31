@@ -16,6 +16,7 @@
   "build": {
     "appId": "com.chanakya.ai",
     "productName": "Chanakya AI",
+    "electronVersion": "37.10.3",
     "directories": {
       "output": "release-build"
     },
@@ -31,10 +32,6 @@
       {
         "from": "../node_modules/one-time",
         "to": "node_modules/one-time"
-      },
-      {
-        "from": "../node_modules/fn.name",
-        "to": "node_modules/fn.name"
       }
     ],
     "afterPack": "scripts/afterPack.cjs",
