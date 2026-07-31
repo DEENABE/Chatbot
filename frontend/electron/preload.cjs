@@ -28,6 +28,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('clipboard-changed', subscription);
     return () => ipcRenderer.removeListener('clipboard-changed', subscription);
   },
+  // Text-to-speech via the Windows engine (Web Speech has no voices in Electron)
+  speak: (text, options) => ipcRenderer.invoke('speak-text', { text, ...options }),
+  stopSpeaking: () => ipcRenderer.send('stop-speaking'),
+
   setOcrMode: (enable) => ipcRenderer.invoke('window-set-ocr-mode', enable),
   setToolbarMode: (enable) => ipcRenderer.invoke('window-set-toolbar-mode', enable),
   saveFile: (name, base64) => ipcRenderer.invoke('save-file', { name, base64 })

@@ -3,12 +3,16 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Mic, Square, Pause, Play, LoaderCircle, RefreshCw } from 'lucide-react';
 import { useAppStore } from '../stores/useAppStore.js';
 import * as apiService from '../services/api.js';
+import { blobToWav } from '../services/wav.js';
 
 export default function VoiceRecorder({ onTranscription, audioSource = 'mic' }) {
   const settings = useAppStore((state) => state.settings);
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [timer, setTimer] = useState(0);
+  // Transcription used to fail silently, so a recording that produced nothing
+  // looked identical to one that worked.
+  const [error, setError] = useState('');
 
   const mediaRecorderRef = useRef(null);
   const audioContextRef = useRef(null);
@@ -63,6 +67,7 @@ export default function VoiceRecorder({ onTranscription, audioSource = 'mic' }) 
 
   const startRecording = async () => {
     chunksRef.current = [];
+    setError('');
     try {
       let stream;
       if (audioSource === 'system' && isElectron) {
@@ -130,18 +135,29 @@ export default function VoiceRecorder({ onTranscription, audioSource = 'mic' }) 
           return;
         }
 
-        const blob = new Blob(chunksRef.current, { type: 'audio/wav' });
-        const formData = new FormData();
-        formData.append('audio', blob, 'audio.wav');
-
         setIsTranscribing(true);
         try {
+          // MediaRecorder produces WebM/Opus; the previous code just relabelled
+          // it "audio/wav", so the Windows recogniser got a container it cannot
+          // read and returned nothing. Re-encode to real PCM WAV first.
+          const recorded = new Blob(chunksRef.current, {
+            type: recorder.mimeType || 'audio/webm'
+          });
+          const wav = await blobToWav(recorded);
+
+          const formData = new FormData();
+          formData.append('audio', wav, 'audio.wav');
+
           const res = await apiService.transcribe.audio(formData);
-          if (res.data && res.data.text) {
-            onTranscription(res.data.text);
+          const text = res.data?.text?.trim();
+          if (text) {
+            onTranscription(text);
+          } else {
+            setError('No speech detected. Speak clearly and try again.');
           }
         } catch (err) {
-          console.error('Speech recognition route failed:', err);
+          console.error('Speech recognition failed:', err);
+          setError(err.response?.data?.error || 'Could not transcribe that recording.');
         } finally {
           setIsTranscribing(false);
           setIsRecording(false);
@@ -241,6 +257,8 @@ export default function VoiceRecorder({ onTranscription, audioSource = 'mic' }) 
             <LoaderCircle size={14} className="animate-spin" style={{ color: accent }} />
             <span>Decoding voice capture offline...</span>
           </div>
+        ) : error ? (
+          <span className="text-[11px] text-red-400 font-medium text-center px-2">{error}</span>
         ) : (
           <span className="text-[11px] text-stone-500 font-medium">Ready to capture voice input</span>
         )}

@@ -69,10 +69,26 @@ function pickVoice(voices) {
  * @returns {Promise<boolean>}
  */
 export async function speak(text, { rate = 1.02, pitch = 1.05 } = {}) {
-  if (!text || !('speechSynthesis' in window)) return false;
+  if (!text) return false;
+
+  // Prefer the Windows engine when running in Electron: its Web Speech API
+  // reports zero voices, so speechSynthesis accepts utterances and drops them.
+  if (window.electronAPI?.speak) {
+    try {
+      // Web Speech rate is a multiplier around 1; SAPI wants -10..10.
+      const sapiRate = Math.round((rate - 1) * 10);
+      const spoke = await window.electronAPI.speak(text, { rate: sapiRate, volume: 100 });
+      if (spoke) return true;
+    } catch {
+      // fall through to the browser path
+    }
+  }
+
+  if (!('speechSynthesis' in window)) return false;
 
   const synth = window.speechSynthesis;
   const voices = await loadVoices();
+  if (!voices.length) return false;
 
   synth.cancel();
   const utterance = new SpeechSynthesisUtterance(text);
@@ -89,7 +105,8 @@ export async function speak(text, { rate = 1.02, pitch = 1.05 } = {}) {
   return true;
 }
 
-/** Stop anything currently being spoken. */
+/** Stop anything currently being spoken, on whichever engine is in use. */
 export function stopSpeaking() {
+  window.electronAPI?.stopSpeaking?.();
   window.speechSynthesis?.cancel();
 }

@@ -34,6 +34,21 @@ const CAPABILITIES = [
   'Something broken? Describe it and I will investigate.',
 ];
 
+/**
+ * The name to greet the signed-in user by: their display name's first word,
+ * falling back to the username when no display name was set. Capitalised, since
+ * usernames are stored lowercased.
+ *
+ * @param {{displayName?: string, username?: string}} [user]
+ * @returns {string} A first name, or '' when there is nobody to greet.
+ */
+export function firstNameOf(user) {
+  const raw = (user?.displayName || user?.username || '').trim();
+  if (!raw) return '';
+  const first = raw.split(/\s+/)[0];
+  return first.charAt(0).toUpperCase() + first.slice(1);
+}
+
 /** Shown the first time the user hovers in a session. */
 export function openingLine(name) {
   const hour = new Date().getHours();

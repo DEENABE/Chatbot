@@ -5,7 +5,7 @@ import { presets } from '../animations/presets.js';
 import { Mic, Monitor, Crop, Video, Minus } from 'lucide-react';
 import chanakyaDefault from '../assets/chanakya_default.png';
 import chanakyaHover from '../assets/chanakya_hover.png';
-import { nextLine } from './greetings.js';
+import { nextLine, firstNameOf } from './greetings.js';
 import { speak, stopSpeaking } from '../services/speak.js';
 
 /** Don't speak the greeting again within this window (ms). */
@@ -121,7 +121,7 @@ export default function FloatingBubble() {
 
     const line = nextLine({
       isFirstHover: !hasGreetedRef.current,
-      displayName: user.displayName?.split(' ')[0],
+      displayName: firstNameOf(user),
       previous: greeting,
     });
     hasGreetedRef.current = true;
