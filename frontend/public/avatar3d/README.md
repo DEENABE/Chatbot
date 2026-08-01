@@ -1,66 +1,76 @@
-# Chanakya 3D avatar — drop your Mixamo export here
+# Chanakya 3D avatar — getting a face that actually looks right
 
-The app looks for these exact filenames in this folder. None are required —
-if `idle.fbx` is missing, the app quietly keeps the current 2D avatar and
-nothing breaks. Everything else here is optional per-clip.
+**Default behaviour: the app shows the existing 2D photo.** It only switches
+to 3D once `character.glb` exists in this folder — nothing breaks or looks
+worse in the meantime.
 
-## 1. Get a character + rig from Mixamo (free)
+## Why not hand-coded 3D, or Mixamo?
 
-1. Go to [mixamo.com](https://www.mixamo.com) and sign in with a free Adobe
-   account.
-2. **Characters** tab → pick one (e.g. "X Bot" / "Y Bot", or any character you
-   like — they all come pre-rigged).
-3. **Animations** tab → search "Idle" → pick one you like.
-   - Turn **In Place** ON if it's offered, so the character doesn't walk out
-     of frame.
-   - Click **Download**.
-   - Format: **FBX Binary (.fbx)**
-   - **"With Skin"** — this is the one export that carries the mesh.
-   - Save it as `idle.fbx` in this folder.
+Two things were tried and both fell short:
 
-## 2. Add more clips (optional, each one improves a different state)
+- **Hand-built primitive shapes** (spheres/capsules coded directly, no model
+  file) — this is a real, moving, rigged 3D character with actual joints, but
+  it can never look like a sculpted face. Code can't replace an artist.
+- **Mixamo** — great for a rigged *body* with animations, but Mixamo
+  characters are stock models; you can't turn a Chanakya photo into a Mixamo
+  face.
 
-For each animation below: search it on the Animations tab, download as
-**FBX Binary**, **"Without Skin"** this time (skeleton only — smaller file,
-and it reuses the character mesh from `idle.fbx`), save with the exact name:
+**Ready Player Me can generate a stylised 3D head from a photo** — including
+the actual `chanakya_default.png` portrait already in this app — and exports
+a real glTF (`.glb`) with a face, proper materials, and blink/talk-ready morph
+targets. That's the realistic path to a result close to what you're after.
 
-| Animation to search on Mixamo | Save as             | Used when Chanakya is... |
-|---|---|---|
-| "Talking" / "Talking 2"        | `talking.fbx`        | replying / greeting out loud |
-| "Thinking"                     | `thinking.fbx`       | waiting on the model |
-| "Idle Look Around" or similar  | `listening.fbx`      | the mic is recording |
-| "Waving"                       | `waving.fbx`         | the greeting starts |
-| "Nodding"                      | `nodding.fbx`        | a quick acknowledgement |
+## Steps
 
-Any file you don't provide is skipped — the character just keeps using
-`idle.fbx`'s animation for that state instead.
+1. Go to [readyplayer.me](https://readyplayer.me/avatar) (free, no login
+   required for a single avatar; sign up if you want to edit it later).
+2. Choose **Photo** as the creation method.
+3. Upload `frontend/src/assets/chanakya_default.png` (or any clear
+   front-facing portrait you want the face to match).
+4. Pick a **stylised / cartoon** look if offered — closer to the reference
+   image quality than the "realistic" preset.
+5. Adjust hair, facial hair, skin tone etc. in the editor to taste.
+6. **Download** → this gives you a `.glb` URL or file.
+7. Save it as exactly:
+   ```
+   frontend/public/avatar3d/character.glb
+   ```
 
-## Important
+## What the app does with it
 
-- All clips **must come from the same Mixamo character** as `idle.fbx`. The
-  skeleton (bone names) has to match exactly for a clip to play on the model —
-  that's guaranteed if you pick one character and only change the Animations
-  tab, but breaks if you mix characters.
-- Filenames are case-sensitive and must match the table exactly.
-- To change the mapping (different filenames, more states/gestures), edit
-  `frontend/src/widget/avatar3d/animationMap.js`.
+- Loads the glTF and shows it in place of the 2D photo.
+- Blink and a talking-mouth pulse are driven through whatever morph targets
+  the export includes (Ready Player Me avatars ship with ARKit-style blend
+  shapes like `eyesClosed`/`mouthOpen` out of the box, so this should work
+  without extra setup).
+- Gentle idle sway and a breathing motion are applied to the whole model.
+- Deliberately does **not** attempt to rotate individual bones (head turns,
+  arm gestures) yet — every RPM export can name its skeleton slightly
+  differently, and guessing wrong looks more broken than sitting still. That's
+  a good next step once a model is in place and someone can actually look at
+  it moving.
 
 ## Verifying it worked
 
 Nobody has visually confirmed this pipeline renders correctly — there's no
-tool available that can look at a WebGL scene. Once `idle.fbx` is in place,
-run the app and check the DevTools console:
+tool in this session that can look at a WebGL scene. With `character.glb` in
+place, run the app and check the DevTools console (Ctrl+Shift+I):
 
-- `[avatar3d] No 3D model loaded, staying on the 2D avatar: ...` → the base
-  model didn't load; the error after the colon says why (usually a wrong
-  filename or a bad export).
-- `[avatar3d] Clip "X" not found at ...` → that specific optional clip is
-  missing; harmless, the state just falls back to Idle.
-- No warnings at all + the avatar visibly changes from the flat photo →
-  it worked.
+- `[avatar3d] No 3D model loaded, staying on the 2D avatar: ...` → the file
+  isn't at the exact path above, or failed to parse.
+- No warning, and the avatar visibly changes from the flat photo → it worked.
+- `[avatar3d] "..." loaded but has no morph targets` → the model loaded but
+  won't blink/talk; re-export with face tracking / ARKit blend shapes enabled.
 
-Camera framing in `AvatarScene.jsx` (`camera={{ position: [0, 1.55, 1.05], fov: 32 }}`)
-is a guess for a head-and-shoulders shot of a ~1.7 m Mixamo character. If the
-character is off-screen, too close, or too far, that's the number to adjust —
-pass `debugOrbit` to `<AvatarScene />` temporarily to drag the view around and
-find better numbers.
+Camera framing in `AvatarScene.jsx` (a `group` shifted `[0, -1.5, 0]` in front
+of a camera at `[0, 0, 0.85]`) is a guess for a roughly human-height RPM
+avatar — pass `debugOrbit` to `<AvatarScene />` temporarily to drag the camera
+around and find the right numbers once a real model is in place.
+
+## Older, still-present-but-unused code
+
+- `mixamoLoader.js` / `animationMap.js` — the Mixamo FBX pipeline. Not wired
+  into `AvatarScene.jsx` anymore, kept in case a downloaded rigged body is
+  wanted for full-body animation later.
+- `ProceduralAvatar.jsx` — the hand-coded capsule character. Not used by
+  default; kept as a working example of code-driven rig animation.

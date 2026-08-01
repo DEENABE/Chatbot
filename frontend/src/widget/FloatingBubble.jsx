@@ -9,9 +9,10 @@ import { nextLine, firstNameOf } from './greetings.js';
 import { speak, stopSpeaking } from '../services/speak.js';
 import { deriveAvatarState, BLINK_INTERVAL_MS, BLINK_DURATION_MS } from './avatarDirector.js';
 // Lazy: three.js only loads when this component actually mounts, so it costs
-// nothing until the avatar is on screen. Renders a hand-rigged 3D character
-// (ProceduralAvatar — no model file needed) over the 2D photo once WebGL is
-// confirmed usable; see avatar3d/AvatarScene.jsx.
+// nothing until the avatar is on screen. Stays inert — the 2D photo below is
+// what's actually visible — until a real glTF model (e.g. a Ready Player Me
+// export matching Chanakya's face) is placed at public/avatar3d/character.glb;
+// see avatar3d/AvatarScene.jsx and public/avatar3d/README.md.
 const AvatarScene = React.lazy(() => import('./avatar3d/AvatarScene.jsx'));
 
 /** emotion -> glow colour. Neutral falls back to the user's accent colour. */
@@ -74,9 +75,9 @@ export default function FloatingBubble() {
   const [showToolbar, setShowToolbar] = useState(false);
   const [greeting, setGreeting] = useState('');
   const [isBlinking, setIsBlinking] = useState(false);
-  // True once WebGL is confirmed usable and the 3D character has mounted —
-  // the 2D photo underneath fades out at that point. Stays false (2D photo
-  // stays visible) only if WebGL genuinely isn't available on this machine.
+  // True only once a real glTF model has actually loaded — the 2D photo fades
+  // out at that point. Stays false (2D photo stays visible, which is the
+  // normal case right now) until public/avatar3d/character.glb exists.
   const [avatar3dReady, setAvatar3dReady] = useState(false);
   // The greeting just started speaking — the director reads this to pick a
   // warmer emotion/wave gesture for that one moment, not for every reply.
@@ -594,7 +595,7 @@ export default function FloatingBubble() {
               square edge either. */}
           <React.Suspense fallback={null}>
             <div className="absolute inset-0 pointer-events-none">
-              <AvatarScene avatarState={avatar} accent={accent} onReady={() => setAvatar3dReady(true)} />
+              <AvatarScene avatarState={avatar} onReady={() => setAvatar3dReady(true)} />
             </div>
           </React.Suspense>
 
