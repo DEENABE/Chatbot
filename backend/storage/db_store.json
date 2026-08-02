@@ -1,0 +1,74 @@
+{
+  "chunks": [],
+  "chunks_vec": {},
+  "usage_log": [],
+  "users": [
+    {
+      "id": "70d82d6e-b247-4dc4-af0d-d3759789192f",
+      "username": "testuser",
+      "displayName": "Test User",
+      "email": null,
+      "department": null,
+      "role": "Employee",
+      "permissions": "[\"read\",\"write\"]",
+      "passwordHash": "b967bcf18aa7a7dd0c53f4e653a0a5242b2279a4be1028fa1ca5cca6b42e04c32cce1f2508979e1a6a4bae79be56318669947643da8884e021ce21abbffc344e",
+      "salt": "0ed9a9ff017762347ac81fc53487ec7b",
+      "createdAt": "2026-07-03T14:58:08.295Z"
+    },
+    {
+      "id": "db8ba5a8-16fe-466f-a78c-127e7b28bf2a",
+      "username": "deena202",
+      "displayName": "deena",
+      "email": null,
+      "department": null,
+      "role": "Employee",
+      "permissions": "[\"read\",\"write\"]",
+      "passwordHash": "7505f7bc8e193fab40b00c416a796fae3c0e641c568de413aef3a6d92651f6f59c329ec5d27322b2a3f993141ea02d881982a1332d0008b113fc5a99df202677",
+      "salt": "24f0cc0233883137bfdb53baef78ac91",
+      "createdAt": "2026-07-08T16:58:06.336Z"
+    }
+  ],
+  "folders": [],
+  "chats": [
+    {
+      "id": "87a3e39e-2942-4cea-85bf-b1a7cc29d432",
+      "userId": "68bdd9ff-a73a-4921-93bd-13fdacdd9b14",
+      "title": "hello",
+      "folderId": null,
+      "isPinned": 0,
+      "isBookmarked": 0,
+      "createdAt": "2026-07-31T13:13:29.214Z",
+      "updatedAt": "2026-07-31T13:13:29.214Z"
+    },
+    {
+      "id": "f961bedb-8d44-4ede-b329-71db1face49d",
+      "userId": "db8ba5a8-16fe-466f-a78c-127e7b28bf2a",
+      "title": "hai",
+      "folderId": null,
+      "isPinned": 0,
+      "isBookmarked": 0,
+      "createdAt": "2026-07-31T16:19:40.618Z",
+      "updatedAt": "2026-07-31T16:19:40.618Z"
+    }
+  ],
+  "messages": [
+    {
+      "id": "6cb1fac4-c566-48e3-8b9f-c8259054e0c5",
+      "chatId": "87a3e39e-2942-4cea-85bf-b1a7cc29d432",
+      "role": "user",
+      "content": "hello",
+      "sources": null,
+      "createdAt": "2026-07-31T13:13:29.214Z"
+    },
+    {
+      "id": "a52095e3-7a35-4947-ae84-5f4bb4f59386",
+      "chatId": "f961bedb-8d44-4ede-b329-71db1face49d",
+      "role": "user",
+      "content": "hai",
+      "sources": null,
+      "createdAt": "2026-07-31T16:19:40.618Z"
+    }
+  ],
+  "memories": [],
+  "documents": []
+}

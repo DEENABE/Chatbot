@@ -18,20 +18,20 @@ frontend/release-latest/
 # Self-contained backend runtime produced by scripts/prepare-backend.cjs
 frontend/backend-runtime/
 
-# ─── Backend runtime / generated data ───────────────────────────
-backend/storage/
-backend/data/
-# keep the folder structure but not its contents
-!backend/storage/.gitkeep
-# legacy runtime files (older layout)
-backend/storage/uploads/*
-backend/storage/lancedb/*
-backend/storage/history.json
-backend/storage/db_store.json
-backend/storage/repair-sessions.json
-backend/storage/repair-dataset.jsonl
-!backend/storage/uploads/.gitkeep
-!backend/storage/lancedb/.gitkeep
+# # ─── Backend runtime / generated data ───────────────────────────
+# backend/storage/
+# backend/data/
+# # keep the folder structure but not its contents
+# !backend/storage/.gitkeep
+# # legacy runtime files (older layout)
+# backend/storage/uploads/*
+# backend/storage/lancedb/*
+# backend/storage/history.json
+# backend/storage/db_store.json
+# backend/storage/repair-sessions.json
+# backend/storage/repair-dataset.jsonl
+# !backend/storage/uploads/.gitkeep
+# !backend/storage/lancedb/.gitkeep
 
 # ─── Logs ───────────────────────────────────────────────────────
 *.log
