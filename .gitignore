@@ -10,13 +10,13 @@ node_modules/
 !.env.example
 
 # ─── Build output ───────────────────────────────────────────────
-dist/
-build/
-frontend/dist/
-frontend/release-build/
-frontend/release-latest/
-# Self-contained backend runtime produced by scripts/prepare-backend.cjs
-frontend/backend-runtime/
+# dist/
+# build/
+# frontend/dist/
+# frontend/release-build/
+# frontend/release-latest/
+# # Self-contained backend runtime produced by scripts/prepare-backend.cjs
+# frontend/backend-runtime/
 
 # # ─── Backend runtime / generated data ───────────────────────────
 # backend/storage/
