@@ -13,8 +13,8 @@ export async function registerUser(username, displayName, password) {
   if (!lowerName || lowerName.length < 2) {
     throw new Error('Username must be at least 2 characters.');
   }
-  if (!password || password.length < 4) {
-    throw new Error('Password must be at least 4 characters.');
+  if (!password || password.length < 8) {
+    throw new Error('Password must be at least 8 characters.');
   }
 
   // Check if user already exists
@@ -103,8 +103,8 @@ export async function changePassword(userId, currentPassword, newPassword) {
   if (hash !== user.passwordHash) {
     throw new Error('Current password is incorrect.');
   }
-  if (!newPassword || newPassword.length < 4) {
-    throw new Error('New password must be at least 4 characters.');
+  if (!newPassword || newPassword.length < 8) {
+    throw new Error('New password must be at least 8 characters.');
   }
   const { hash: newHash, salt: newSalt } = hashPassword(newPassword);
   db.prepare('UPDATE users SET passwordHash = ?, salt = ? WHERE id = ?').run(newHash, newSalt, userId);
@@ -119,8 +119,8 @@ export async function resetPassword(username, newPassword) {
   if (!user) {
     throw new Error('No account found with that username.');
   }
-  if (!newPassword || newPassword.length < 4) {
-    throw new Error('New password must be at least 4 characters.');
+  if (!newPassword || newPassword.length < 8) {
+    throw new Error('New password must be at least 8 characters.');
   }
   const { hash, salt } = hashPassword(newPassword);
   db.prepare('UPDATE users SET passwordHash = ?, salt = ? WHERE id = ?').run(hash, salt, user.id);

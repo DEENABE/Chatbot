@@ -5,6 +5,17 @@ import { addFeedback, getSessions, exportTrainingData } from '../ai/RepairLogger
 
 export const repairRouter = Router();
 
+// Every route here either runs unattended PowerShell or reads/exports
+// diagnostic session data, so all of them get the same x-user-id requirement
+// the rest of the API uses — none of them had any auth check at all before.
+repairRouter.use((request, response, next) => {
+  const userId = request.headers['x-user-id'] || '';
+  if (!userId) {
+    return response.status(401).json({ error: 'Authentication required' });
+  }
+  next();
+});
+
 // Record user feedback on a repair ("did it work?") — becomes training signal.
 repairRouter.post('/feedback', (request, response) => {
   const { sessionId, worked, note } = request.body || {};

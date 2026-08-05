@@ -13,6 +13,16 @@ export const agentRouter = Router();
  *   thought | command | output | blocked | final | error | aborted
  */
 agentRouter.post('/', async (request, response) => {
+  // This endpoint runs unattended PowerShell on the host — every other route
+  // that touches user data requires x-user-id, but this one (and /api/repair)
+  // didn't require anything at all, so any process that could reach the port
+  // could trigger it. Loopback binding (config.js) now keeps it off the
+  // network; this keeps it consistent with the rest of the API regardless.
+  const userId = request.headers['x-user-id'] || '';
+  if (!userId) {
+    return response.status(401).json({ error: 'Authentication required' });
+  }
+
   const { goal, model = AGENT_DEFAULT_MODEL, maxSteps } = request.body || {};
 
   if (!goal || !String(goal).trim()) {

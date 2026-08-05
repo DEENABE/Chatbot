@@ -29,10 +29,23 @@ const BLOCKED_PATTERNS = [
   /\bfsutil\b.*\b(deletejournal|setflags)/i,
   /\bbcdedit\b/i,
   /\bbootrec\b/i,
-  // Recursive / forced deletion of drive roots or Windows system dirs
-  /remove-item[^\n]*-recurse[^\n]*(\s[a-z]:\\?(\s|"|'|$)|\$env:(systemroot|windir)|\\windows\\|\\system32\b|:\\windows)/i,
-  /\b(del|erase)\b[^\n]*\/[sq][^\n]*\b([a-z]:\\?\s|\\windows\\|\\system32\b)/i,
-  /\brd\b[^\n]*\/s[^\n]*\b([a-z]:\\|\\windows)/i,
+  // Recursive / forced deletion of drive roots or Windows system dirs.
+  // Lookaheads instead of a fixed left-to-right sequence: PowerShell/cmd don't
+  // care whether the path or the switch comes first
+  // ("Remove-Item C:\Windows -Recurse" is identical to
+  // "Remove-Item -Recurse C:\Windows"), and the previous version only matched
+  // the switch-then-path order, so the more natural path-then-switch phrasing
+  // slipped through as 'fix' instead of 'blocked'.
+  /remove-item\b(?=[^\n]*-recurse)(?=[^\n]*(\s[a-z]:\\?(\s|"|'|$)|\$env:(systemroot|windir)|\\windows\\|\\system32\b|:\\windows))/i,
+  // ":\windows\b" (word boundary, not a required trailing backslash/space) so
+  // "\Windows" is caught whatever follows it — end of string, a space before
+  // the next switch, anything. The remove-item pattern above already had this
+  // form (":\\windows" with no trailing requirement); del/rd only had the
+  // stricter "\\windows\\" / trailing-space forms, so "del C:\Windows /s /q"
+  // (subfolder followed by more text, not end-of-string and not immediately
+  // followed by another backslash) fell through uncaught.
+  /\b(del|erase)\b(?=[^\n]*\/[sq])(?=[^\n]*([a-z]:\\?(\s|$)|:\\windows\b|\\system32\b))/i,
+  /\brd\b(?=[^\n]*\/s)(?=[^\n]*([a-z]:\\|:\\windows\b))/i,
   // Mass registry hive deletion
   /reg(istry)?\s+delete\s+HK(LM|EY_LOCAL_MACHINE)\\?(software|system)?\s*(\/f)?\s*$/i,
   /remove-item[^\n]*hk(lm|cu|ey_local_machine):/i,
@@ -82,8 +95,17 @@ export function classifyCommand(command) {
     }
   }
 
-  // A command reads only if EVERY pipeline segment is a read-only verb.
-  const segments = cmd.split('|').map((s) => s.trim()).filter(Boolean);
+  // A command reads only if EVERY statement/pipeline segment is a read-only
+  // verb. Splitting on "|" alone let a statement separator smuggle a mutating
+  // command past the check — "Get-Process; Remove-Item C:\Windows -Recurse"
+  // starts with a read verb and was classified 'read', auto-running the
+  // Remove-Item unattended. PowerShell also accepts "\n" and "&&"/"||" as
+  // statement separators, so all of them have to split the command before
+  // any segment is trusted.
+  const segments = cmd
+    .split(/[|;\n]|&&|\|\|/)
+    .map((s) => s.trim())
+    .filter(Boolean);
   const everySegmentReads = segments.length > 0 && segments.every((seg) =>
     READ_ALLOWLIST.some((pattern) => pattern.test(seg))
   );

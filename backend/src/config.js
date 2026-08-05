@@ -13,6 +13,11 @@ const appDataPath = process.env.APP_DATA_PATH || root;
 
 export const config = {
   port: Number(process.env.PORT || 3001),
+  // Loopback only — the README already claimed this, but app.listen() never
+  // actually passed a host, so Node defaulted to 0.0.0.0 (every interface).
+  // Anyone else on the same network could reach the agent/repair PowerShell
+  // routes; this closes that off.
+  host: process.env.HOST || '127.0.0.1',
   ollamaUrl,
   defaultModel: process.env.DEFAULT_MODEL || 'llama3',
   embeddingModel: process.env.EMBEDDING_MODEL || 'nomic-embed-text',

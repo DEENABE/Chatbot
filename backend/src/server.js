@@ -7,7 +7,7 @@ getDb();
 
 const port = config.port;
 
-app.listen(port, () => {
-  console.log(`Local AI assistant server running on http://localhost:${port}`);
+app.listen(port, config.host, () => {
+  console.log(`Local AI assistant server running on http://${config.host}:${port}`);
   console.log(`Default model: ${config.defaultModel} | Embed model: ${config.embeddingModel}`);
 });

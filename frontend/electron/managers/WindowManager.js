@@ -40,8 +40,7 @@ export function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      preload: getPreloadPath(),
-      webSecurity: false
+      preload: getPreloadPath()
     }
   });
 

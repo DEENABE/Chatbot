@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { registerUser, loginUser, getUserById, updateUserProfile, changePassword, resetPassword } from '../services/authService.js';
+import { authLimiter } from '../middleware/rateLimiter.js';
 
 export const authRouter = Router();
 
@@ -14,8 +15,9 @@ authRouter.post('/register', async (request, response) => {
   }
 });
 
-// Login user
-authRouter.post('/login', async (request, response) => {
+// Login user — rate-limited: scryptSync's cost alone was the only thing
+// slowing down a password-guessing script before this.
+authRouter.post('/login', authLimiter, async (request, response) => {
   try {
     const { username, password } = request.body || {};
     const user = await loginUser(username, password);
@@ -57,8 +59,10 @@ authRouter.post('/change-password', async (request, response) => {
   }
 });
 
-// Reset password (offline recovery by username — no auth required)
-authRouter.post('/reset-password', async (request, response) => {
+// Reset password (offline recovery by username — no auth required). Rate
+// limited since this is the more sensitive of the two: it needs no proof of
+// identity beyond a username, so throttling attempts matters even more here.
+authRouter.post('/reset-password', authLimiter, async (request, response) => {
   try {
     const { username, newPassword } = request.body || {};
     await resetPassword(username, newPassword);
