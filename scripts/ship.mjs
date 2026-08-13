@@ -79,7 +79,12 @@ console.log('\n── Security checks (all must pass) ────────�
 
 // 2. Tests
 {
-  const r = spawnSync('npm', ['test'], { cwd: root, encoding: 'utf8', shell: true });
+  // Single command string (not an argv array) with shell:true — passing an
+  // array alongside shell:true triggers Node's DEP0190 warning, since the
+  // array gets naively joined into a shell string without escaping. Safe
+  // here either way (no interpolated input), but this is the pattern Node
+  // itself recommends.
+  const r = spawnSync('npm test', { cwd: root, encoding: 'utf8', shell: true });
   const ok = r.status === 0;
   report('Tests (npm test)', ok, ok ? 'passed' : 'failing — see output above');
   if (!ok) console.log(r.stdout + r.stderr);
@@ -87,7 +92,7 @@ console.log('\n── Security checks (all must pass) ────────�
 
 // 3. Build
 {
-  const r = spawnSync('npm', ['run', 'build'], { cwd: root, encoding: 'utf8', shell: true });
+  const r = spawnSync('npm run build', { cwd: root, encoding: 'utf8', shell: true });
   const ok = r.status === 0;
   report('Build (npm run build)', ok, ok ? 'succeeded' : 'failed — see output above');
   if (!ok) console.log(r.stdout + r.stderr);

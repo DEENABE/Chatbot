@@ -72,5 +72,10 @@ test.json
 backend/test_doc.txt
 *.local
 
+# ─── Dataset tooling backups ─────────────────────────────────────
+# Timestamped snapshots written by the dataset scripts before each run —
+# grows without bound and has no value once the run it protected succeeds.
+dataset-backups/
+
 #--------claude ignore--------
 .claude/
