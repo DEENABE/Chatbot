@@ -72,10 +72,13 @@ test.json
 backend/test_doc.txt
 *.local
 
-# ─── Dataset tooling backups ─────────────────────────────────────
+# ─── Dataset tooling ──────────────────────────────────────────────
 # Timestamped snapshots written by the dataset scripts before each run —
 # grows without bound and has no value once the run it protected succeeds.
 dataset-backups/
+# One-off generator/verification scripts (gen1.py...gen26.py, etc.) used to
+# build the training data — local tooling, not part of the shipped app.
+dataset-tools/
 
 #--------claude ignore--------
 .claude/
