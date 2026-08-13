@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "ingest": "node src/ingest/runIngest.js"
+    "ingest": "node src/ingest/runIngest.js",
+    "test": "node --test"
   },
   "dependencies": {
     "@lancedb/lancedb": "^0.18.2",

@@ -131,32 +131,135 @@ export function getSessions() {
   return all.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
 }
 
-/** A session counts as a good training example if confirmed working, or resolved with no feedback yet. */
+/** Minimum characters of summary before a session is worth training on. */
+const MIN_SUMMARY_LENGTH = 40;
+
+/**
+ * Decides whether a session is worth training on.
+ *
+ * The previous rule was `worked || (no feedback && resolved)`, which silently
+ * dropped every session that ended without a fix. That threw away the two
+ * behaviours the model most needs to learn:
+ *
+ *   - the honest dead-end  — "the disk is failing, stop writing to it and
+ *     replace it" is a correct answer even though nothing was repaired. A
+ *     model trained only on successes learns that every problem has a fix it
+ *     can apply, and will invent one.
+ *   - the refused action   — "I did not delete the profile, here is what I
+ *     would do and why I stopped" is the confirmation gate working. Filtering
+ *     these out trains the model to act without asking.
+ *
+ * So an unresolved session is kept when it explains itself: it must carry a
+ * real summary and either a recommendation (repair) or a planned action that
+ * was gated (automation). Sessions that simply failed and said nothing useful
+ * are still excluded, as is anything below the quality floor.
+ *
+ * @param {Object} s - A session record.
+ * @returns {boolean} true if the session should become a training example.
+ */
 function isGoodSession(s) {
-  return (s.feedback && s.feedback.worked) || (!s.feedback && s.resolved);
+  if (!s || !s.goal || typeof s.summary !== 'string') return false;
+
+  // Quality floor: a session with no evidence and no explanation teaches
+  // nothing regardless of how it ended.
+  if (s.summary.trim().length < MIN_SUMMARY_LENGTH) return false;
+  const hasEvidence = Array.isArray(s.steps) && s.steps.some((step) => step && step.command);
+  if (!hasEvidence) return false;
+
+  // Explicit negative feedback means the answer was wrong, not merely
+  // unresolved — never train on it.
+  if (s.feedback && s.feedback.worked === false && s.resolved) return false;
+
+  // Confirmed working, or resolved and not yet rated.
+  if (s.feedback && s.feedback.worked) return true;
+  if (!s.feedback && s.resolved) return true;
+  if (s.resolved && s.feedback && s.feedback.worked !== false) return true;
+
+  // Unresolved, but explains itself — keep.
+  const gated = Boolean(s.requiresConfirmation && s.plannedAction);
+  const advised = Boolean(s.recommendation && s.recommendation.trim().length >= MIN_SUMMARY_LENGTH);
+  return gated || advised;
 }
 
-/** Build one chat-format training example from a session. */
-function buildExample(s) {
-  const commands = s.steps
-    .filter((step) => !step.blocked && step.command)
-    .map((step) => step.command);
-  const assistant = [
-    s.summary || 'Here is how I resolved it.',
-    commands.length ? `\nCommands used:\n${commands.map((c) => `- ${c}`).join('\n')}` : '',
-    s.recommendation ? `\nRecommendation: ${s.recommendation}` : ''
-  ].join('');
+/**
+ * Renders one step as a training line, preserving *why* it looks the way it
+ * does. `buildExample` used to drop blocked steps with
+ * `.filter((step) => !step.blocked)`, which erased the confirmation gate from
+ * the data entirely — the model saw a command list with the dangerous command
+ * quietly missing, rather than an example of refusing to run it.
+ *
+ * @param {Object} step
+ * @returns {string}
+ */
+function formatStep(step) {
+  if (step.blocked) {
+    return `- ${step.command}  [NOT RUN — ${step.reason || 'requires your confirmation'}]`;
+  }
+  if (step.exitCode) {
+    const detail = String(step.stderr || '').trim().slice(0, 70);
+    return `- ${step.command}${detail ? `  [FAILED: ${detail}]` : '  [FAILED]'}`;
+  }
+  return `- ${step.command}`;
+}
 
+/**
+ * Build one chat-format training example from a session.
+ *
+ * Repair and automation sessions have genuinely different shapes, so they are
+ * rendered differently: an automation example without its risk level, planned
+ * action, verification and rollback is missing the parts that make it an
+ * automation example at all.
+ *
+ * @param {Object} s - A session record.
+ * @returns {{messages: Array<{role: string, content: string}>}}
+ */
+function buildExample(s) {
+  const steps = Array.isArray(s.steps) ? s.steps.filter((step) => step && step.command) : [];
+  const commandList = steps.map(formatStep).join('\n');
   const label = domainLabel(s.domain, s.subdomain);
-  const persona = s.domain === 'automation'
+  const isAutomation = s.domain === 'automation' || s.type === 'automation';
+
+  const parts = [s.summary || 'Here is how I resolved it.'];
+
+  if (isAutomation) {
+    if (s.clarification) parts.push(`\nClarification asked: ${s.clarification}`);
+    if (s.riskLevel) {
+      parts.push(`\nRisk: ${s.riskLevel} | Confirmation required: ${Boolean(s.requiresConfirmation)}`);
+    }
+    if (s.plannedAction) parts.push(`\nPlanned action:\n${s.plannedAction}`);
+  }
+
+  if (commandList) parts.push(`\nCommands used:\n${commandList}`);
+
+  if (isAutomation && Array.isArray(s.verification) && s.verification.length) {
+    const checks = s.verification
+      .map((v) => `- ${v.command}  -> expect: ${v.expected}`)
+      .join('\n');
+    parts.push(`\nVerification:\n${checks}`);
+  }
+  if (isAutomation && s.rollback) parts.push(`\nRollback: ${s.rollback}`);
+
+  if (s.recommendation) parts.push(`\nRecommendation: ${s.recommendation}`);
+
+  // State the outcome explicitly. Without this the model reads an unresolved
+  // session as a successful one and learns to claim a fix it did not make.
+  if (!s.resolved) {
+    parts.push(
+      isAutomation
+        ? '\nNOTE: not executed - see the planned action and recommendation.'
+        : '\nNOTE: not resolved - see recommendation.'
+    );
+  }
+
+  const persona = isAutomation
     ? `You are Chanakya, a Windows automation agent specializing in ${label}. Extract intent and parameters, ask about anything missing, and confirm before anything that creates, modifies, or deletes system state.`
-    : `You are a Windows repair expert specializing in ${label} problems. Diagnose with read-only commands first, then apply safe fixes.`;
+    : `You are a Windows repair expert specializing in ${label} problems. Diagnose with read-only commands first, then apply safe fixes. When a command fails, interpret the error and adapt.`;
 
   return {
     messages: [
       { role: 'system', content: persona },
       { role: 'user', content: s.goal },
-      { role: 'assistant', content: assistant.trim() }
+      { role: 'assistant', content: parts.join('').trim() }
     ]
   };
 }

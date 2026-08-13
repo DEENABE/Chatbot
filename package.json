@@ -7,7 +7,8 @@
     "dev": "concurrently -n API,UI -c yellow,cyan \"npm run dev -w backend\" \"npm run dev -w frontend\"",
     "build": "npm run build -w frontend",
     "start": "npm run start -w backend",
-    "test": "npm run test -w backend"
+    "test": "npm run test -w backend",
+    "ship": "node scripts/ship.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

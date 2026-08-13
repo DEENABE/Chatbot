@@ -20,6 +20,10 @@
           "tool_call": {
             "type": "string",
             "description": "Dot-notation tool action the assistant invoked instead of replying in prose, e.g. 'ApplicationLauncher.open' — general-dataset.jsonl tool-calling examples only."
+          },
+          "tool_arguments": {
+            "type": "object",
+            "description": "Parameters passed to tool_call, e.g. {\"target\": \"notepad++\"} — only meaningful alongside tool_call."
           }
         },
         "anyOf": [

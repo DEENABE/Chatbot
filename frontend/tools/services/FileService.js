@@ -22,6 +22,105 @@ const MAX_LIST_ENTRIES = 1000;
 const DEFAULT_MAX_RESULTS = 100;
 
 /**
+ * PowerShell resolver used by `FileService.openTarget`.
+ *
+ * Reads its input from $env:CHANAKYA_OPEN_TARGET — never from interpolated
+ * script text — so the target string is data, not code.
+ *
+ * Prints "OK|<via>|<resolved>" on success; writes an error and exits 1 when
+ * nothing matches, so the caller can tell "not found" from "launch failed".
+ */
+const OPEN_TARGET_SCRIPT = `
+$ErrorActionPreference = 'Stop'
+$t = $env:CHANAKYA_OPEN_TARGET
+if ([string]::IsNullOrWhiteSpace($t)) { Write-Error 'No target supplied.'; exit 1 }
+$t = $t.Trim()
+
+function Invoke-Target([string]$Path, [string]$Arg) {
+  try {
+    if ($Arg) { Start-Process -FilePath $Path -ArgumentList $Arg | Out-Null }
+    else      { Start-Process -FilePath $Path | Out-Null }
+    return $true
+  } catch { return $false }
+}
+
+# 0. Explicit path, UNC share, URL or protocol handler (ms-settings:, mailto:).
+if ($t -match '^[a-zA-Z]:[\\\\/]' -or $t -match '^\\\\\\\\' -or $t -match '^[a-zA-Z][a-zA-Z0-9+.\\-]*:') {
+  if (Invoke-Target $t) { Write-Output "OK|path|$t"; exit 0 }
+}
+
+$key = $t.ToLowerInvariant()
+
+# 1. Friendly names people actually type -> the executable Windows knows.
+$alias = @{
+  'chrome'='chrome.exe'; 'google chrome'='chrome.exe'; 'browser'='msedge.exe'
+  'edge'='msedge.exe'; 'microsoft edge'='msedge.exe'; 'firefox'='firefox.exe'
+  'brave'='brave.exe'; 'opera'='opera.exe'
+  'word'='winword.exe'; 'microsoft word'='winword.exe'; 'ms word'='winword.exe'
+  'excel'='excel.exe'; 'microsoft excel'='excel.exe'; 'ms excel'='excel.exe'
+  'powerpoint'='powerpnt.exe'; 'ppt'='powerpnt.exe'
+  'outlook'='outlook.exe'; 'access'='msaccess.exe'; 'onenote'='onenote.exe'
+  'vscode'='code.cmd'; 'vs code'='code.cmd'; 'visual studio code'='code.cmd'; 'code'='code.cmd'
+  'notepad'='notepad.exe'; 'wordpad'='write.exe'; 'paint'='mspaint.exe'
+  'calculator'='calc.exe'; 'calc'='calc.exe'
+  'cmd'='cmd.exe'; 'command prompt'='cmd.exe'; 'terminal'='wt.exe'; 'windows terminal'='wt.exe'
+  'powershell'='powershell.exe'; 'pwsh'='pwsh.exe'
+  'explorer'='explorer.exe'; 'file explorer'='explorer.exe'; 'files'='explorer.exe'
+  'task manager'='taskmgr.exe'; 'taskmgr'='taskmgr.exe'
+  'device manager'='devmgmt.msc'; 'disk management'='diskmgmt.msc'
+  'services'='services.msc'; 'event viewer'='eventvwr.msc'
+  'computer management'='compmgmt.msc'; 'performance monitor'='perfmon.exe'
+  'resource monitor'='resmon.exe'; 'system information'='msinfo32.exe'
+  'registry editor'='regedit.exe'; 'regedit'='regedit.exe'
+  'control panel'='control.exe'; 'control'='control.exe'
+  'settings'='ms-settings:'; 'windows settings'='ms-settings:'
+  'snipping tool'='snippingtool.exe'; 'snip'='snippingtool.exe'
+  'notepad++'='notepad++.exe'; 'sublime'='sublime_text.exe'
+  'spotify'='spotify.exe'; 'discord'='discord.exe'; 'steam'='steam.exe'
+  'vlc'='vlc.exe'; 'zoom'='zoom.exe'; 'slack'='slack.exe'
+  'teams'='ms-teams.exe'; 'microsoft teams'='ms-teams.exe'
+  'photoshop'='photoshop.exe'; 'obs'='obs64.exe'; 'git bash'='git-bash.exe'
+}
+if ($alias.ContainsKey($key)) {
+  if (Invoke-Target $alias[$key]) { Write-Output "OK|alias|$($alias[$key])"; exit 0 }
+}
+
+# 2. Anything already on PATH.
+$cmd = Get-Command -Name $t -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($cmd -and $cmd.Source) {
+  if (Invoke-Target $cmd.Source) { Write-Output "OK|path-env|$($cmd.Source)"; exit 0 }
+}
+
+# 3. App Paths registry - this is how Win+R resolves "chrome" without PATH.
+foreach ($name in @($t, "$t.exe")) {
+  foreach ($hive in @('HKLM:', 'HKCU:')) {
+    $reg = Join-Path $hive "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\$name"
+    if (Test-Path -LiteralPath $reg) {
+      $exe = (Get-ItemProperty -LiteralPath $reg).'(default)'
+      if ($exe -and (Invoke-Target $exe)) { Write-Output "OK|app-paths|$exe"; exit 0 }
+    }
+  }
+}
+
+# 4. Start menu, which is the only place Store/UWP apps are listed.
+try {
+  $apps = @(Get-StartApps -ErrorAction Stop)
+  $ordered = @()
+  $ordered += @($apps | Where-Object { $_.Name -ieq $t })
+  $ordered += @($apps | Where-Object { $_.Name -ilike "$t*" })
+  $ordered += @($apps | Where-Object { $_.Name -ilike "*$t*" })
+  foreach ($app in $ordered) {
+    if (Invoke-Target 'explorer.exe' ("shell:AppsFolder\\" + $app.AppID)) {
+      Write-Output "OK|start-menu|$($app.Name)"; exit 0
+    }
+  }
+} catch { }
+
+Write-Error "No application, file or folder matching '$t' was found."
+exit 1
+`;
+
+/**
  * Converts a simple glob pattern to a RegExp.
  * Supports `*` (any chars) and `?` (single char).
  *
@@ -140,32 +239,57 @@ export class FileService extends BaseToolService {
   // ---------------------------------------------------------------------------
 
   /**
-   * Opens a file, folder, drive, or application using the Windows default
-   * handler (Start-Process). Non-destructive — runs immediately so "open X"
+   * Opens a file, folder, drive, URL, or *any installed application* using the
+   * Windows default handler. Non-destructive — runs immediately so "open X"
    * requests just work without a confirmation prompt.
    *
+   * A bare `Start-Process -FilePath 'chrome'` only succeeds when the name
+   * happens to be on PATH, which is why it worked for notepad but failed for
+   * Chrome, Word, VS Code and every Store app. This resolves the target
+   * through the same chain the Windows Run dialog and Start menu use:
+   *
+   *   0. explicit path / UNC / URL / protocol  → open directly
+   *   1. friendly-name alias table             ("word" → winword.exe)
+   *   2. PATH lookup                           (Get-Command)
+   *   3. App Paths registry                    (how Win+R resolves "chrome")
+   *   4. Start menu apps incl. UWP/Store       (Get-StartApps → shell:AppsFolder)
+   *
+   * The target is passed through an environment variable rather than being
+   * interpolated into the script text, so a name containing quotes or
+   * semicolons cannot break out into a command position.
+   *
    * @param {Object} params
-   * @param {string} params.target - A path (e.g. "C:\\", a file) or app name (e.g. "notepad").
-   * @returns {Promise<{opened: string}>}
+   * @param {string} params.target - A path ("C:\\", a document), a URL, or an
+   *   application name ("notepad", "chrome", "word", "spotify", "settings").
+   * @returns {Promise<{opened: string, resolved: string, via: string}>}
    */
   openTarget(params) {
     const target = String(params.target || '').trim();
     if (!target) {
       throw new Error('A target path or application name is required.');
     }
-    const escaped = target.replace(/'/g, "''");
     return new Promise((resolve, reject) => {
+      let stdout = '';
       let stderr = '';
       const proc = spawn(
         'powershell.exe',
-        ['-NoProfile', '-NonInteractive', '-Command', `Start-Process -FilePath '${escaped}'`],
-        { windowsHide: true }
+        ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', OPEN_TARGET_SCRIPT],
+        { windowsHide: true, env: { ...process.env, CHANAKYA_OPEN_TARGET: target } }
       );
+      proc.stdout.on('data', (d) => { stdout += d.toString(); });
       proc.stderr.on('data', (d) => { stderr += d.toString(); });
       proc.on('error', (err) => reject(new Error(`Failed to open '${target}': ${err.message}`)));
       proc.on('close', (code) => {
-        if (code === 0) resolve({ opened: target });
-        else reject(new Error(stderr.trim() || `Could not open '${target}'. Check the path or name.`));
+        if (code === 0) {
+          // "OK|<via>|<resolved>"
+          const [, via = 'direct', resolved = target] = stdout.trim().split('|');
+          resolve({ opened: target, resolved, via });
+        } else {
+          reject(new Error(
+            stderr.trim() ||
+            `Could not find an application, file or folder matching '${target}'.`
+          ));
+        }
       });
     });
   }

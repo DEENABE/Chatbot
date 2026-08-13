@@ -16,7 +16,7 @@
  * most 4x duplication for the smallest set, and every category ends up
  * within a 1:1 ratio of each other since they all land at the same size).
  *
- * Usage: node scripts/build-balanced-training.mjs [--ratio 4] [--out storage/training-balanced.jsonl]
+ * Usage: node scripts/build-balanced-training.mjs [--ratio 4] [--out storage/training.jsonl]
  */
 
 import fs from 'node:fs';
@@ -30,7 +30,7 @@ const args = process.argv.slice(2);
 const ratioIdx = args.indexOf('--ratio');
 const RATIO = ratioIdx !== -1 ? Number(args[ratioIdx + 1]) : 4;
 const outIdx = args.indexOf('--out');
-const outPath = outIdx !== -1 ? args[outIdx + 1] : path.join(storageDir, 'training-balanced.jsonl');
+const outPath = outIdx !== -1 ? args[outIdx + 1] : path.join(storageDir, 'training.jsonl');
 
 function readJsonl(file) {
   const p = path.join(storageDir, file);
