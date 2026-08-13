@@ -132,9 +132,22 @@ sh(`git commit -m ${JSON.stringify(message)}`);
 sh(`git branch -f ${BRANCH} HEAD`);
 sh(`git push -u origin ${BRANCH} --force-with-lease`);
 
-const existingPr = shCapture(`gh pr view ${BRANCH} --json url -q .url`);
-if (typeof existingPr === 'string' && existingPr && !existingPr.startsWith('{')) {
-  console.log(`\nPR already open, updated by the push: ${existingPr}`);
+// `gh pr view` returns a PR for the branch regardless of state — including
+// one that's already MERGED or CLOSED. Checking only "does a PR exist" (the
+// previous bug here) meant that once a PR merged, every subsequent push kept
+// claiming to have "updated" that already-merged PR, when nothing was
+// actually tracking the new commits at all. Must check .state === 'OPEN'.
+const prInfo = shCapture(`gh pr view ${BRANCH} --json url,state`);
+let existingOpenPrUrl = null;
+if (typeof prInfo === 'string' && prInfo) {
+  try {
+    const parsed = JSON.parse(prInfo);
+    if (parsed.state === 'OPEN') existingOpenPrUrl = parsed.url;
+  } catch { /* no PR for this branch at all — fall through to create */ }
+}
+
+if (existingOpenPrUrl) {
+  console.log(`\nPR already open, updated by the push: ${existingOpenPrUrl}`);
 } else {
   const prBody = `Automated change from Claude Code.\n\nAll checks passed:\n${results.map((r) => `- ✔ ${r.name}`).join('\n')}\n\n> This PR was opened automatically. Review before merging to ${BASE}.`;
   const url = sh(
