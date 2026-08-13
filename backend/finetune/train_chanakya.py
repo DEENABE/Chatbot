@@ -2,8 +2,13 @@
 Chanakya-Repair fine-tune — Unsloth LoRA on Qwen2.5.
 
 Run this in Google Colab (free T4 GPU) or on any local NVIDIA-GPU machine.
-It reads `repair-dataset.jsonl` (exported by `node src/ai/exportDataset.cli.js`)
-and produces a GGUF model you can load into Ollama.
+It reads `training-balanced.jsonl`, produced by this pipeline (run from
+backend/):
+  1. node scripts/export-training-data.mjs     -> repair/automation/general .jsonl
+  2. node scripts/build-balanced-training.mjs  -> training-balanced.jsonl
+Balancing matters here because repair sessions vastly outnumber automation
+sessions — training on the raw combined data would barely teach the model
+the automation persona at all.
 
 The file is split into `# %%` cells so you can paste them into Colab one at a
 time, or run the whole thing with `python train_chanakya.py` on a GPU box.
@@ -11,7 +16,7 @@ time, or run the whole thing with `python train_chanakya.py` on a GPU box.
 
 # ── Config ──────────────────────────────────────────────────────────────
 BASE_MODEL   = "unsloth/Qwen2.5-7B-Instruct-bnb-4bit"  # use 3B for small GPUs
-DATASET_PATH = "repair-dataset.jsonl"                  # upload this into Colab
+DATASET_PATH = "training-balanced.jsonl"               # upload this into Colab
 OUTPUT_GGUF  = "chanakya-repair-gguf"
 MAX_SEQ_LEN  = 2048
 EPOCHS       = 3            # 3 for a few-hundred examples; 1-2 for thousands

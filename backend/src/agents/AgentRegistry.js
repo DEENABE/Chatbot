@@ -10,6 +10,7 @@ import { PerformanceAgent } from './PerformanceAgent.js';
 import { FileRepairAgent } from './FileRepairAgent.js';
 import { SecurityAgent } from './SecurityAgent.js';
 import { WindowsRepairAgent } from './WindowsRepairAgent.js';
+import { AutomationAgent } from './AutomationAgent.js';
 
 const registry = {
   bluetooth: new BluetoothAgent(),
@@ -17,7 +18,8 @@ const registry = {
   performance: new PerformanceAgent(),
   file: new FileRepairAgent(),
   security: new SecurityAgent(),
-  windows: new WindowsRepairAgent()
+  windows: new WindowsRepairAgent(),
+  automation: new AutomationAgent()
 };
 
 /**

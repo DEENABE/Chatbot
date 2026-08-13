@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "repairDatasetLine.schema.json",
+  "title": "backend/storage/repair-dataset.jsonl (one line)",
+  "description": "Written by exportTrainingData()/exportDataset.cli.js — one JSON object per line (JSON Lines, not a JSON array). Consumed offline by finetune/train_chanakya.py, not by the running server.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["messages"],
+  "properties": {
+    "messages": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["role"],
+        "properties": {
+          "role": { "type": "string", "enum": ["system", "user", "assistant", "tool"], "description": "'tool' carries a tool's raw result back to the model — general-dataset.jsonl tool-result-interpretation examples only." },
+          "content": { "type": "string" },
+          "tool_call": {
+            "type": "string",
+            "description": "Dot-notation tool action the assistant invoked instead of replying in prose, e.g. 'ApplicationLauncher.open' — general-dataset.jsonl tool-calling examples only."
+          }
+        },
+        "anyOf": [
+          { "required": ["content"] },
+          { "required": ["tool_call"] }
+        ]
+      }
+    }
+  }
+}

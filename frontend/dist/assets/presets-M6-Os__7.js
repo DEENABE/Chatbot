@@ -1,1 +1,0 @@
-const s={springSmooth:{type:"spring",stiffness:220,damping:26,mass:1},appleBounce:{type:"spring",stiffness:450,damping:15,mass:.5},glide:{type:"spring",stiffness:180,damping:22},fade:{type:"tween",ease:[.25,.1,.25,1],duration:.25}};export{s as p};

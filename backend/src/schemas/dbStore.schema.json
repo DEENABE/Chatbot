@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dbStore.schema.json",
+  "title": "backend/storage/db_store.json",
+  "description": "The JSON-file-backed 'database' from src/db/connection.js (JSONDatabase). Every route that touches auth, chat history, folders, memories, or document metadata reads/writes this file through services/db.js. A malformed 'users' row is what crashed /api/agent and /api/repair before authService.js was made defensive — this schema exists to catch that class of corruption before it reaches a request.",
+  "type": "object",
+  "required": ["users", "chats", "messages", "folders", "memories", "documents", "chunks", "chunks_vec", "usage_log"],
+  "properties": {
+    "users": { "type": "array", "items": { "$ref": "#/$defs/user" } },
+    "chats": { "type": "array", "items": { "$ref": "#/$defs/chat" } },
+    "messages": { "type": "array", "items": { "$ref": "#/$defs/message" } },
+    "folders": { "type": "array", "items": { "$ref": "#/$defs/folder" } },
+    "memories": { "type": "array", "items": { "$ref": "#/$defs/memory" } },
+    "documents": { "type": "array", "items": { "$ref": "#/$defs/document" } },
+    "chunks": { "type": "array" },
+    "chunks_vec": { "type": "object" },
+    "usage_log": { "type": "array" }
+  },
+  "$defs": {
+    "user": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "username", "displayName", "email", "department", "role", "permissions", "passwordHash", "salt", "createdAt"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "username": { "type": "string", "minLength": 2 },
+        "displayName": { "type": "string" },
+        "email": { "type": ["string", "null"] },
+        "department": { "type": ["string", "null"] },
+        "role": { "type": "string" },
+        "permissions": {
+          "type": "string",
+          "description": "JSON-encoded array, e.g. '[\"read\",\"write\"]'. Stored double-encoded (a JSON string inside JSON) — validate its parseability separately in the validation script, since JSON Schema cannot check the contents of a string as JSON on its own."
+        },
+        "passwordHash": { "type": "string", "minLength": 1 },
+        "salt": { "type": "string", "minLength": 1 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "chat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "userId", "title", "folderId", "isPinned", "isBookmarked", "createdAt", "updatedAt"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "userId": { "type": "string", "minLength": 1 },
+        "title": { "type": "string" },
+        "folderId": { "type": ["string", "null"] },
+        "isPinned": { "type": "integer", "enum": [0, 1] },
+        "isBookmarked": { "type": "integer", "enum": [0, 1] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "chatId", "role", "content", "sources", "createdAt"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "chatId": { "type": "string", "minLength": 1 },
+        "role": { "type": "string", "enum": ["user", "assistant", "system"] },
+        "content": { "type": "string" },
+        "sources": {
+          "type": ["string", "null"],
+          "description": "JSON-encoded array when present, e.g. '[{\"title\":...}]'."
+        },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "folder": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "userId", "name", "createdAt"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "userId": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "memory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "userId", "content", "type", "createdAt"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "userId": { "type": "string", "minLength": 1 },
+        "content": { "type": "string", "minLength": 1 },
+        "type": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "userId", "name", "size", "createdAt"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "userId": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "size": { "type": ["number", "null"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

@@ -11,6 +11,13 @@
  *
  * Adding a new subdomain is intentionally cheap — add it here, and ideally add
  * a matching `### <name>` playbook to the domain's guide.
+ *
+ * 'automation' is a 7th key here for scheduled-task/startup/monitoring session
+ * data (Register-ScheduledTask, startup entries, disk/folder watchers). It is
+ * deliberately NOT one of IntentClassifier's DOMAINS — no live route/agent
+ * classifies a chat message into it yet, so it only affects label formatting
+ * for offline-logged sessions (RepairLogger, the dataset scripts), never live
+ * request routing.
  */
 
 /** Known subdomains per canonical domain. */
@@ -38,6 +45,11 @@ export const SUBDOMAINS = {
     'dev', 'internals', 'docker', 'hyperv', 'exchange', 'virtualization',
     'wsl', 'accessibility', 'sql', 'sccm', 'azuread', 'cluster', 'bsod',
     'wsus', 'gpo-advanced', 'terminal', 'vmware', 'shell', 'time', 'store',
+  ],
+  automation: [
+    'backup', 'sync', 'script', 'cleanup', 'service', 'scheduler',
+    'reminder', 'diagnostic', 'eventlog', 'diskmonitor', 'foldermonitor', 'power', 'maintenance', 'startup',
+    'filesearch', 'fileorganize', 'filecompress', 'filerecovery', 'appmanage',
   ],
 };
 

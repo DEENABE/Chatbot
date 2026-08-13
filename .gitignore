@@ -1,0 +1,76 @@
+# ─── Dependencies ───────────────────────────────────────────────
+node_modules/
+.pnp
+.pnp.js
+.npm
+
+# ─── Environment / secrets ──────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ─── Build output ───────────────────────────────────────────────
+dist/
+build/
+frontend/dist/
+frontend/release-build/
+frontend/release-latest/
+# Self-contained backend runtime produced by scripts/prepare-backend.cjs
+frontend/backend-runtime/
+
+# # ─── Backend runtime / generated data ───────────────────────────
+# backend/storage/
+backend/data/
+# # keep the folder structure but not its contents
+# !backend/storage/.gitkeep
+# # legacy runtime files (older layout)
+backend/storage/uploads/*
+# backend/storage/lancedb/*
+# backend/storage/history.json
+# backend/storage/db_store.json
+backend/storage/repair-sessions.json
+backend/storage/repair-dataset.jsonl
+!backend/storage/uploads/.gitkeep
+# !backend/storage/lancedb/.gitkeep
+# Runtime user DB — password hashes/salts, must never be committed.
+backend/storage/users.json
+backend/storage/db.sqlite
+backend/storage/db.sqlite-shm
+backend/storage/db.sqlite-wal
+
+# ─── Logs ───────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+backend.log
+logs/
+
+# ─── Caches / test / coverage ───────────────────────────────────
+.cache/
+.vite/
+coverage/
+*.tsbuildinfo
+
+# ─── Editor / OS ────────────────────────────────────────────────
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+Desktop.ini
+# Word/Office lock files created while a document is open
+~$*
+
+# ─── Local tooling ──────────────────────────────────────────────
+.claude/
+
+# ─── Misc scratch ───────────────────────────────────────────────
+test.json
+backend/test_doc.txt
+*.local
+
+#--------claude ignore--------
+.claude/

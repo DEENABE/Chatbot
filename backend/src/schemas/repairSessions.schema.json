@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "repairSessions.schema.json",
+  "title": "backend/storage/repair-sessions.json",
+  "description": "Written by RepairLogger.logSession()/addFeedback() — src/ai/RepairLogger.js. Read by GET /api/repair/sessions and POST /api/repair/feedback.",
+  "type": "array",
+  "items": { "$ref": "#/$defs/session" },
+  "$defs": {
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "createdAt", "goal", "domain", "plan", "steps", "resolved", "summary", "recommendation", "feedback"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "goal": { "type": "string" },
+        "domain": {
+          "description": "'automation' covers scheduled-task/startup/monitoring requests (Register-ScheduledTask, startup entries, disk/folder watchers) — a distinct capability from the 6 repair domains below, not yet wired into IntentClassifier.js/AgentRegistry.js for live routing.",
+          "type": "string",
+          "enum": ["network", "bluetooth", "performance", "file", "security", "windows", "automation"]
+        },
+        "subdomain": {
+          "description": "Canonical slug from knowledge/subdomains.js, or null. Free-text labels ('Wi-Fi', 'RAM') are silently dropped by normalizeSubdomain() at export time, so storing them claims a specialization the training prompt never receives — the enum makes that fail loudly instead.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "string",
+              "enum": [
+                "dns-advanced", "vpn", "proxy", "iis", "cloud", "loadbalancer",
+                "wifi", "ethernet", "firewall-rules", "sharing",
+                "pairing", "audio-profile", "radio", "transfer", "peripherals",
+                "cpu", "gpu", "memory", "boot", "power", "gaming", "thermal", "startup",
+                "storage", "raid", "dfs", "permissions", "corruption", "search", "sync",
+                "certificates", "security-incident", "defender", "firewall", "accounts",
+                "encryption", "updates-security",
+                "eventlog", "errorcode", "driver", "audio", "printer", "display",
+                "registry", "services", "update", "activedirectory", "office", "hardware",
+                "dev", "internals", "docker", "hyperv", "exchange", "virtualization",
+                "wsl", "accessibility", "sql", "sccm", "azuread", "cluster", "bsod",
+                "wsus", "gpo-advanced", "terminal", "vmware", "shell", "time", "store",
+                "backup", "sync", "script", "cleanup", "service", "scheduler",
+                "reminder", "diagnostic", "diskmonitor", "foldermonitor", "power", "maintenance",
+                "filesearch", "fileorganize", "filecompress", "filerecovery", "appmanage"
+              ]
+            }
+          ]
+        },
+        "plan": { "type": "array", "items": { "type": "string" } },
+        "steps": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/step" }
+        },
+        "resolved": { "type": "boolean" },
+        "summary": { "type": "string" },
+        "recommendation": { "type": "string" },
+        "feedback": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["worked", "note", "at"],
+              "properties": {
+                "worked": { "type": "boolean" },
+                "note": { "type": "string" },
+                "at": { "type": "string", "format": "date-time" }
+              }
+            }
+          ]
+        },
+        "type": {
+          "description": "Present only on domain:'automation' records — 'automation', distinguishing them from plain repair sessions.",
+          "type": "string"
+        },
+        "intent": { "type": "string", "description": "Machine intent tag, e.g. 'schedule.backup.folder' — automation records only." },
+        "parameters": { "type": "object", "description": "Extracted request parameters — automation records only." },
+        "missingParameters": { "type": "array", "items": { "type": "string" } },
+        "clarification": { "type": ["string", "null"] },
+        "riskLevel": { "type": "string", "enum": ["low", "medium", "high"] },
+        "requiresConfirmation": { "type": "boolean" },
+        "plannedAction": { "type": "string" },
+        "verification": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["command", "expected"],
+            "properties": {
+              "command": { "type": "string" },
+              "expected": { "type": "string" }
+            }
+          }
+        },
+        "rollback": { "type": ["string", "null"] }
+      }
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command", "blocked", "exitCode", "stdout", "stderr", "reason"],
+      "properties": {
+        "command": { "type": ["string", "null"] },
+        "blocked": { "type": "boolean" },
+        "exitCode": { "type": ["integer", "null"] },
+        "stdout": { "type": "string" },
+        "stderr": { "type": "string" },
+        "reason": { "type": ["string", "null"] }
+      }
+    }
+  }
+}
