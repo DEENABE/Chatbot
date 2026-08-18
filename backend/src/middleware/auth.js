@@ -1,4 +1,5 @@
 import { verifySession } from '../services/sessionService.js';
+import { isValidUuid } from '../lib/validateUuid.js';
 
 /**
  * Requires a valid, non-expired, non-revoked session token in
@@ -17,6 +18,18 @@ export function requireAuth(request, response, next) {
   const session = verifySession(token);
   if (!session) {
     return response.status(401).json({ error: 'Session expired or invalid. Please log in again.' });
+  }
+
+  // session.userId always comes from a DB row keyed by crypto.randomUUID()
+  // (see sessionService.js), never from request input — this should be
+  // unreachable. It's checked anyway as the one shared choke point every
+  // authenticated request passes through (RAG-04): every route and service
+  // downstream trusts request.userId outright, several eventually building
+  // filesystem paths or query filters from it, so a corrupted/malformed
+  // value must be caught here rather than silently trusted deeper in.
+  if (!isValidUuid(session.userId)) {
+    console.error('[auth] session resolved to a non-UUID userId:', session.userId);
+    return response.status(500).json({ error: 'Unexpected local server error.' });
   }
 
   request.userId = session.userId;

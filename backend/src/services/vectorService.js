@@ -4,23 +4,28 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { config } from '../config.js';
 import { embed } from './ollamaService.js';
+import { isValidUuid } from '../lib/validateUuid.js';
 
 const TABLE_NAME = 'document_chunks';
 const connections = new Map();
 
 async function db(userId) {
-  const key = userId || 'default';
-  let database = connections.get(key);
+  // userId reaches a filesystem path below — every real caller is already
+  // behind requireAuth, which only ever sets a UUID here, but this is the
+  // actual point where a bad value (e.g. `..\..\AppData\evil`) would reach
+  // path.join/fs.mkdir, so it's checked again right here rather than trusted
+  // on the strength of callers upstream (RAG-04 in the security audit).
+  if (!isValidUuid(userId)) {
+    throw new Error('A valid userId is required to open the per-user vector store.');
+  }
+
+  let database = connections.get(userId);
   if (!database) {
-    if (!userId) {
-      database = await lancedb.connect(config.vectorDir);
-    } else {
-      const storageDir = path.dirname(config.dbFile);
-      const userVectorDir = path.join(storageDir, 'users', userId, 'lancedb');
-      await fs.mkdir(userVectorDir, { recursive: true });
-      database = await lancedb.connect(userVectorDir);
-    }
-    connections.set(key, database);
+    const storageDir = path.dirname(config.dbFile);
+    const userVectorDir = path.join(storageDir, 'users', userId, 'lancedb');
+    await fs.mkdir(userVectorDir, { recursive: true });
+    database = await lancedb.connect(userVectorDir);
+    connections.set(userId, database);
   }
   return database;
 }
@@ -77,6 +82,14 @@ export async function listIndexedDocuments(userId) {
 }
 
 export async function deleteChunks(documentId, userId) {
+  // documentId is string-interpolated into a LanceDB filter expression below
+  // (LanceDB's delete() takes a filter string, not a parameterized query) —
+  // same shape check as userId above, so a malformed id can't break out of
+  // the intended `documentId = '...'` filter instead of just matching nothing.
+  if (!isValidUuid(documentId)) {
+    console.error(`[vector] Refusing to delete chunks for non-UUID documentId: ${documentId}`);
+    return;
+  }
   try {
     const connection = await db(userId);
     if (!(await connection.tableNames()).includes(TABLE_NAME)) return;
