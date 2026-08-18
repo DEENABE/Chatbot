@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { runAgent } from '../agent/agentLoop.js';
 import { AGENT_DEFAULT_MODEL } from '../agent/agentBrain.js';
+import { requireAuth } from '../middleware/auth.js';
 
 export const agentRouter = Router();
 
@@ -12,17 +13,12 @@ export const agentRouter = Router();
  * per line (same transport style as /api/chat). Event types:
  *   thought | command | output | blocked | final | error | aborted
  */
-agentRouter.post('/', async (request, response) => {
-  // This endpoint runs unattended PowerShell on the host — every other route
-  // that touches user data requires x-user-id, but this one (and /api/repair)
-  // didn't require anything at all, so any process that could reach the port
-  // could trigger it. Loopback binding (config.js) now keeps it off the
-  // network; this keeps it consistent with the rest of the API regardless.
-  const userId = request.headers['x-user-id'] || '';
-  if (!userId) {
-    return response.status(401).json({ error: 'Authentication required' });
-  }
-
+// This endpoint runs unattended PowerShell on the host — every other route
+// that touches user data requires a verified session, but this one (and
+// /api/repair) didn't require anything at all, so any process that could
+// reach the port could trigger it. Loopback binding (config.js) now keeps it
+// off the network; this keeps it consistent with the rest of the API anyway.
+agentRouter.post('/', requireAuth, async (request, response) => {
   const { goal, model = AGENT_DEFAULT_MODEL, maxSteps } = request.body || {};
 
   if (!goal || !String(goal).trim()) {

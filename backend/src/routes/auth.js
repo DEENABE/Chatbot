@@ -1,15 +1,19 @@
 import { Router } from 'express';
 import { registerUser, loginUser, getUserById, updateUserProfile, changePassword, resetPassword } from '../services/authService.js';
+import { createSession, revokeSession } from '../services/sessionService.js';
 import { authLimiter } from '../middleware/rateLimiter.js';
+import { requireAuth } from '../middleware/auth.js';
 
 export const authRouter = Router();
 
-// Register user
+// Register user — auto-issues a session, same as login, so the client can go
+// straight into the app without a separate round trip.
 authRouter.post('/register', async (request, response) => {
   try {
     const { username, displayName, password } = request.body || {};
     const user = await registerUser(username, displayName, password);
-    response.status(201).json({ user });
+    const { token, expiresAt } = createSession(user.id);
+    response.status(201).json({ user, token, expiresAt });
   } catch (error) {
     response.status(400).json({ error: error.message });
   }
@@ -21,20 +25,23 @@ authRouter.post('/login', authLimiter, async (request, response) => {
   try {
     const { username, password } = request.body || {};
     const user = await loginUser(username, password);
-    response.json({ user });
+    const { token, expiresAt } = createSession(user.id);
+    response.json({ user, token, expiresAt });
   } catch (error) {
     response.status(401).json({ error: error.message });
   }
 });
 
+// Log out — revokes only the session making this call, not every device.
+authRouter.post('/logout', requireAuth, (request, response) => {
+  revokeSession(request.sessionToken);
+  response.json({ ok: true });
+});
+
 // Get current user profile
-authRouter.get('/me', async (request, response, next) => {
+authRouter.get('/me', requireAuth, async (request, response, next) => {
   try {
-    const userId = request.headers['x-user-id'];
-    if (!userId) {
-      return response.status(401).json({ error: 'Not authenticated.' });
-    }
-    const user = await getUserById(userId);
+    const user = await getUserById(request.userId);
     if (!user) {
       return response.status(401).json({ error: 'User not found.' });
     }
@@ -44,16 +51,16 @@ authRouter.get('/me', async (request, response, next) => {
   }
 });
 
-// Change password (authenticated — requires current password)
-authRouter.post('/change-password', async (request, response) => {
+// Change password (authenticated — requires current password). Changing it
+// revokes every session for the account (see authService), so this route
+// re-issues a fresh token for the device that just made the change —
+// otherwise the caller would immediately lock itself out too.
+authRouter.post('/change-password', requireAuth, async (request, response) => {
   try {
-    const userId = request.headers['x-user-id'];
     const { currentPassword, newPassword } = request.body || {};
-    if (!userId) {
-      return response.status(401).json({ error: 'Not authenticated.' });
-    }
-    await changePassword(userId, currentPassword, newPassword);
-    response.json({ ok: true });
+    await changePassword(request.userId, currentPassword, newPassword);
+    const { token, expiresAt } = createSession(request.userId);
+    response.json({ ok: true, token, expiresAt });
   } catch (error) {
     response.status(400).json({ error: error.message });
   }
@@ -73,14 +80,10 @@ authRouter.post('/reset-password', authLimiter, async (request, response) => {
 });
 
 // Update profile settings
-authRouter.patch('/profile', async (request, response, next) => {
+authRouter.patch('/profile', requireAuth, async (request, response, next) => {
   try {
-    const userId = request.headers['x-user-id'];
     const { displayName, email, department, role } = request.body;
-    if (!userId) {
-      return response.status(401).json({ error: 'Not authenticated.' });
-    }
-    const user = await updateUserProfile(userId, { displayName, email, department, role });
+    const user = await updateUserProfile(request.userId, { displayName, email, department, role });
     response.json({ user });
   } catch (error) {
     next(error);

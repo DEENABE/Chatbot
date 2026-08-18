@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { db } from './db.js';
+import { revokeAllSessionsForUser } from './sessionService.js';
 
 function hashPassword(password, salt) {
   if (!salt) salt = crypto.randomBytes(16).toString('hex');
@@ -108,6 +109,10 @@ export async function changePassword(userId, currentPassword, newPassword) {
   }
   const { hash: newHash, salt: newSalt } = hashPassword(newPassword);
   db.prepare('UPDATE users SET passwordHash = ?, salt = ? WHERE id = ?').run(newHash, newSalt, userId);
+  // A leaked/stale session token must stop working the moment the password
+  // it was issued under changes (AUTH-01/AUTH-02) — the caller re-issues a
+  // fresh session for the device that just made this request.
+  revokeAllSessionsForUser(userId);
   return { ok: true };
 }
 
@@ -124,6 +129,10 @@ export async function resetPassword(username, newPassword) {
   }
   const { hash, salt } = hashPassword(newPassword);
   db.prepare('UPDATE users SET passwordHash = ?, salt = ? WHERE id = ?').run(hash, salt, user.id);
+  // Same reasoning as changePassword: kill every existing session for the
+  // account, including one an attacker may already hold, the moment the
+  // password changes.
+  revokeAllSessionsForUser(user.id);
   return { ok: true };
 }
 

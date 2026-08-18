@@ -59,7 +59,8 @@ export const useAppStore = create((set, get) => ({
     set({ isAuthLoading: true });
     try {
       const response = await apiService.auth.login({ username, password });
-      const user = response.data.user;
+      const { user, token } = response.data;
+      apiService.setSession(token);
       localStorage.setItem('chanakya-user', JSON.stringify(user));
       set({ user, isAuthLoading: false });
       get().fetchHistory();
@@ -76,7 +77,8 @@ export const useAppStore = create((set, get) => ({
     set({ isAuthLoading: true });
     try {
       const response = await apiService.auth.register({ username, displayName, password });
-      const user = response.data.user;
+      const { user, token } = response.data;
+      apiService.setSession(token);
       localStorage.setItem('chanakya-user', JSON.stringify(user));
       set({ user, isAuthLoading: false });
       get().fetchHistory();
@@ -90,7 +92,13 @@ export const useAppStore = create((set, get) => ({
   },
 
   logout: () => {
-    localStorage.removeItem('chanakya-user');
+    // Best-effort server-side revocation — fire and forget, the local
+    // session is cleared either way. Skipped if there's no token left to
+    // send (e.g. this was already triggered by a 401 elsewhere).
+    if (apiService.getToken()) {
+      apiService.auth.logout().catch(() => {});
+    }
+    apiService.clearSession();
     set({
       user: null,
       conversations: [],
@@ -174,7 +182,11 @@ export const useAppStore = create((set, get) => ({
   },
 
   changePassword: async (currentPassword, newPassword) => {
-    await apiService.auth.changePassword(currentPassword, newPassword);
+    // Changing the password revokes every existing session for the account
+    // server-side; the response carries a freshly-issued token for this
+    // device so the caller isn't logged out by its own password change.
+    const response = await apiService.auth.changePassword(currentPassword, newPassword);
+    apiService.setSession(response.data.token);
   },
 
   resetPassword: async (username, newPassword) => {
@@ -195,6 +207,12 @@ export const useAppStore = create((set, get) => ({
 
   checkAuth: async () => {
     if (!get().user) return;
+    // No token at all (e.g. leftover profile cache from before real sessions
+    // existed) can't possibly authenticate — no point round-tripping to /me.
+    if (!apiService.getToken()) {
+      get().logout();
+      return;
+    }
     try {
       const response = await apiService.auth.me();
       const user = response.data.user;
@@ -202,8 +220,15 @@ export const useAppStore = create((set, get) => ({
       set({ user });
     } catch (err) {
       set({ isAuthLoading: false });
-      console.warn('Backend unreachable or auth failed. Staying logged in since we are offline.');
-      // get().logout(); // Disabled to prevent random logouts
+      // A real 401 means the session is actually gone (expired/revoked) —
+      // that's not something staying "logged in" can paper over. Anything
+      // else (network error, backend not up yet) keeps the previous,
+      // deliberate behavior of staying logged in while offline.
+      if (err?.response?.status === 401) {
+        get().logout();
+      } else {
+        console.warn('Backend unreachable. Staying logged in since we are offline.');
+      }
     }
   },
 
@@ -864,3 +889,13 @@ export const useAppStore = create((set, get) => ({
     }));
   }
 }));
+
+// api.js clears the stored token itself on any 401 (it has no access to this
+// store without a circular import) and dispatches this event so the in-memory
+// state — `user`, chat history, etc. — gets reset too, rather than leaving
+// the UI showing a "logged in" app shell whose every request now 401s.
+if (typeof window !== 'undefined') {
+  window.addEventListener('chanakya:session-expired', () => {
+    useAppStore.getState().logout();
+  });
+}

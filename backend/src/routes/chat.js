@@ -4,6 +4,7 @@ import { config, supportedModels } from '../config.js';
 import { searchChunks } from '../services/vectorService.js';
 import { streamChat } from '../services/ollamaService.js';
 import { appendHistory } from '../services/historyService.js';
+import { requireAuth } from '../middleware/auth.js';
 
 export const chatRouter = Router();
 
@@ -71,7 +72,7 @@ function buildMessages(systemContent, history, message, images) {
   return messages;
 }
 
-chatRouter.post('/', async (request, response) => {
+chatRouter.post('/', requireAuth, async (request, response) => {
   const {
     message = '',
     model = config.defaultModel,
@@ -81,11 +82,8 @@ chatRouter.post('/', async (request, response) => {
     agentProfile,
     tools = []
   } = request.body || {};
-  const userId = request.headers['x-user-id'] || '';
+  const userId = request.userId;
 
-  if (!userId) {
-    return response.status(401).json({ error: 'Authentication required' });
-  }
   if (!supportedModels.some((item) => item.id === model)) {
     return response.status(400).json({ error: 'Unsupported model.' });
   }

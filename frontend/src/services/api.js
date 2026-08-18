@@ -1,33 +1,58 @@
 import axios from 'axios';
 
 const API_BASE = 'http://127.0.0.1:3001/api';
+const TOKEN_KEY = 'chanakya-token';
 
-function getUserId() {
-  try {
-    const raw = localStorage.getItem('chanakya-user');
-    if (!raw) return null;
-    return JSON.parse(raw).id;
-  } catch {
-    return null;
-  }
+// The client used to send a bare, permanent, unsigned userId as its entire
+// proof of identity (AUTH-01). It now sends a real server-issued session
+// token instead — this is the one place that reads/writes it, so nothing
+// else needs to know the storage key.
+export function getToken() {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function setSession(token) {
+  if (token) localStorage.setItem(TOKEN_KEY, token);
+}
+
+export function clearSession() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem('chanakya-user');
 }
 
 export const api = axios.create({ baseURL: API_BASE, timeout: 120000 });
 
-// Attach userId header to every request
+// Attach the session token to every request
 api.interceptors.request.use((config) => {
-  const userId = getUserId();
-  if (userId) {
-    config.headers['x-user-id'] = userId;
+  const token = getToken();
+  if (token) {
+    config.headers['Authorization'] = `Bearer ${token}`;
   }
   return config;
 });
 
+// A 401 here means the session is gone (expired, revoked by a password
+// change elsewhere, or never existed) — no retry will fix that, so drop the
+// stale session locally and let the app fall back to the login screen
+// rather than leaving the UI stuck in a "logged in" state that 401s forever.
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error?.response?.status === 401) {
+      clearSession();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('chanakya:session-expired'));
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 export async function streamChat(payload, { onToken, onSources, onDone, onToolCall, signal }) {
-  const userId = getUserId();
+  const token = getToken();
   const headers = { 'Content-Type': 'application/json' };
-  if (userId) {
-    headers['x-user-id'] = userId;
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
   }
 
   const response = await fetch(`${API_BASE}/chat`, {
@@ -88,9 +113,15 @@ export async function streamAgent(payload, handlers) {
 }
 
 async function streamNdjson(url, payload, { onEvent, signal }) {
+  const token = getToken();
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(payload),
     signal
   });
@@ -131,6 +162,7 @@ async function streamNdjson(url, payload, { onEvent, signal }) {
 export const auth = {
   login: (credentials) => api.post('/auth/login', credentials),
   register: (userData) => api.post('/auth/register', userData),
+  logout: () => api.post('/auth/logout'),
   me: () => api.get('/auth/me'),
   updateProfile: (profileData) => api.patch('/auth/profile', profileData),
   changePassword: (currentPassword, newPassword) =>

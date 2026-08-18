@@ -1,16 +1,16 @@
 import { Router } from 'express';
 import { getMemories, addMemory, deleteMemory, clearMemories } from '../services/memoryService.js';
+import { requireAuth } from '../middleware/auth.js';
 
 export const memoryRouter = Router();
+
+memoryRouter.use(requireAuth);
 
 // Get memories
 memoryRouter.get('/', async (request, response, next) => {
   try {
-    const userId = request.headers['x-user-id'] || '';
+    const userId = request.userId;
     const type = request.query.type;
-    if (!userId) {
-      return response.status(401).json({ error: 'Authentication required' });
-    }
     const memories = await getMemories(userId, type);
     response.json({ memories });
   } catch (error) {
@@ -21,11 +21,8 @@ memoryRouter.get('/', async (request, response, next) => {
 // Add memory
 memoryRouter.post('/', async (request, response, next) => {
   try {
-    const userId = request.headers['x-user-id'] || '';
+    const userId = request.userId;
     const { content, type } = request.body;
-    if (!userId) {
-      return response.status(401).json({ error: 'Authentication required' });
-    }
     if (!content?.trim()) {
       return response.status(400).json({ error: 'Memory content is required' });
     }
@@ -42,11 +39,8 @@ memoryRouter.post('/', async (request, response, next) => {
 // Delete memory
 memoryRouter.delete('/:memoryId', async (request, response, next) => {
   try {
-    const userId = request.headers['x-user-id'] || '';
+    const userId = request.userId;
     const memoryId = request.params.memoryId;
-    if (!userId) {
-      return response.status(401).json({ error: 'Authentication required' });
-    }
     await deleteMemory(userId, memoryId);
     response.json({ ok: true });
   } catch (error) {
@@ -57,11 +51,8 @@ memoryRouter.delete('/:memoryId', async (request, response, next) => {
 // Clear memories
 memoryRouter.delete('/', async (request, response, next) => {
   try {
-    const userId = request.headers['x-user-id'] || '';
+    const userId = request.userId;
     const type = request.query.type;
-    if (!userId) {
-      return response.status(401).json({ error: 'Authentication required' });
-    }
     await clearMemories(userId, type);
     response.json({ ok: true });
   } catch (error) {

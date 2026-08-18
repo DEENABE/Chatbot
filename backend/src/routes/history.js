@@ -9,16 +9,16 @@ import {
   deleteFolder,
   searchChats
 } from '../services/historyService.js';
+import { requireAuth } from '../middleware/auth.js';
 
 export const historyRouter = Router();
+
+historyRouter.use(requireAuth);
 
 // Get history (conversations & folders)
 historyRouter.get('/', async (request, response, next) => {
   try {
-    const userId = request.headers['x-user-id'] || '';
-    if (!userId) {
-      return response.status(401).json({ error: 'Authentication required' });
-    }
+    const userId = request.userId;
     const [conversations, folders] = await Promise.all([
       getConversations(userId),
       getFolders(userId)
@@ -32,11 +32,8 @@ historyRouter.get('/', async (request, response, next) => {
 // Search history
 historyRouter.get('/search', async (request, response, next) => {
   try {
-    const userId = request.headers['x-user-id'] || '';
+    const userId = request.userId;
     const query = request.query.q || '';
-    if (!userId) {
-      return response.status(401).json({ error: 'Authentication required' });
-    }
     const results = await searchChats(query, userId);
     response.json({ results });
   } catch (error) {
@@ -47,11 +44,8 @@ historyRouter.get('/search', async (request, response, next) => {
 // Delete a conversation
 historyRouter.delete('/:conversationId', async (request, response, next) => {
   try {
-    const userId = request.headers['x-user-id'] || '';
+    const userId = request.userId;
     const conversationId = request.params.conversationId;
-    if (!userId) {
-      return response.status(401).json({ error: 'Authentication required' });
-    }
     await deleteConversation(conversationId, userId);
     response.json({ ok: true });
   } catch (error) {
@@ -62,12 +56,9 @@ historyRouter.delete('/:conversationId', async (request, response, next) => {
 // Update a conversation (rename, pin, bookmark, folder assignment)
 historyRouter.patch('/:conversationId', async (request, response, next) => {
   try {
-    const userId = request.headers['x-user-id'] || '';
+    const userId = request.userId;
     const conversationId = request.params.conversationId;
     const { title, folderId, isPinned, isBookmarked } = request.body;
-    if (!userId) {
-      return response.status(401).json({ error: 'Authentication required' });
-    }
     await updateConversation(conversationId, userId, { title, folderId, isPinned, isBookmarked });
     response.json({ ok: true });
   } catch (error) {
@@ -78,11 +69,8 @@ historyRouter.patch('/:conversationId', async (request, response, next) => {
 // Create folder
 historyRouter.post('/folders', async (request, response, next) => {
   try {
-    const userId = request.headers['x-user-id'] || '';
+    const userId = request.userId;
     const { name } = request.body;
-    if (!userId) {
-      return response.status(401).json({ error: 'Authentication required' });
-    }
     if (!name?.trim()) {
       return response.status(400).json({ error: 'Folder name is required' });
     }
@@ -96,12 +84,9 @@ historyRouter.post('/folders', async (request, response, next) => {
 // Update folder name
 historyRouter.patch('/folders/:folderId', async (request, response, next) => {
   try {
-    const userId = request.headers['x-user-id'] || '';
+    const userId = request.userId;
     const folderId = request.params.folderId;
     const { name } = request.body;
-    if (!userId) {
-      return response.status(401).json({ error: 'Authentication required' });
-    }
     if (!name?.trim()) {
       return response.status(400).json({ error: 'Folder name is required' });
     }
@@ -115,11 +100,8 @@ historyRouter.patch('/folders/:folderId', async (request, response, next) => {
 // Delete folder
 historyRouter.delete('/folders/:folderId', async (request, response, next) => {
   try {
-    const userId = request.headers['x-user-id'] || '';
+    const userId = request.userId;
     const folderId = request.params.folderId;
-    if (!userId) {
-      return response.status(401).json({ error: 'Authentication required' });
-    }
     await deleteFolder(folderId, userId);
     response.json({ ok: true });
   } catch (error) {

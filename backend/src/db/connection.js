@@ -31,6 +31,7 @@ class JSONDatabase {
       chunks_vec: {},
       usage_log: [],
       users: [],
+      sessions: [],
       folders: [],
       chats: [],
       messages: [],
@@ -48,7 +49,7 @@ class JSONDatabase {
       }
       
       // Ensure all tables exist
-      const keys = ['chunks', 'chunks_vec', 'usage_log', 'users', 'folders', 'chats', 'messages', 'memories', 'documents'];
+      const keys = ['chunks', 'chunks_vec', 'usage_log', 'users', 'sessions', 'folders', 'chats', 'messages', 'memories', 'documents'];
       for (const key of keys) {
         if (key === 'chunks_vec') {
           if (!this.state[key] || typeof this.state[key] !== 'object') this.state[key] = {};
@@ -215,7 +216,11 @@ class JSONDatabase {
           let colMatch = normalized.match(/WHERE\s+(\w+)\s*=/i);
           let col = colMatch ? colMatch[1].toLowerCase() : 'id';
           const val = params[0];
-          this.state[table] = this.state[table].filter(row => row[col] !== val);
+          // Stored rows keep camelCase keys (tokenHash, userId) but `col` is
+          // lowercased above — match case-insensitively via ciGet, same as
+          // get()/all() already do, or a DELETE on any non-lowercase column
+          // silently matches nothing and "deletes" 0 rows every time.
+          this.state[table] = this.state[table].filter(row => ciGet(row, col) !== val);
           this.save();
           return { changes: 1 };
         }

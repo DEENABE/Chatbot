@@ -1,15 +1,15 @@
 import { Router } from 'express';
 import { getDocuments, deleteDocument } from '../services/documentsStore.js';
 import { listIndexedDocuments } from '../services/vectorService.js';
+import { requireAuth } from '../middleware/auth.js';
 
 export const documentsRouter = Router();
 
+documentsRouter.use(requireAuth);
+
 documentsRouter.get('/', async (request, response, next) => {
   try {
-    const userId = request.headers['x-user-id'] || '';
-    if (!userId) {
-      return response.status(401).json({ error: 'Authentication required' });
-    }
+    const userId = request.userId;
 
     const [stored, indexed] = await Promise.all([
       getDocuments(userId),
@@ -30,11 +30,8 @@ documentsRouter.get('/', async (request, response, next) => {
 
 documentsRouter.delete('/:documentId', async (request, response, next) => {
   try {
-    const userId = request.headers['x-user-id'] || '';
+    const userId = request.userId;
     const documentId = request.params.documentId;
-    if (!userId) {
-      return response.status(401).json({ error: 'Authentication required' });
-    }
 
     await deleteDocument(documentId, userId);
     response.json({ ok: true });

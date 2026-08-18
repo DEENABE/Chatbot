@@ -7,6 +7,7 @@ import { chunkText } from '../lib/chunkText.js';
 import { extractDocument, isSupportedDocument } from '../services/documentService.js';
 import { indexChunks } from '../services/vectorService.js';
 import { appendDocuments } from '../services/documentsStore.js';
+import { requireAuth } from '../middleware/auth.js';
 
 const storage = multer.diskStorage({
   destination: config.uploadDir,
@@ -32,13 +33,13 @@ export const uploadRouter = Router();
 
 uploadRouter.post(
   '/',
+  // Auth runs before multer so an unauthenticated request is rejected
+  // before any file is written to disk, not after.
+  requireAuth,
   uploader.array('documents', 500),
   async (request, response, next) => {
     try {
-      const userId = request.headers['x-user-id'] || '';
-      if (!userId) {
-        return response.status(401).json({ error: 'Authentication required' });
-      }
+      const userId = request.userId;
 
       const files = request.files;
       if (!files?.length) {
