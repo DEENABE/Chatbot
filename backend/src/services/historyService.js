@@ -105,10 +105,18 @@ export async function updateConversation(conversationId, userId, updates) {
 
   if (fields.length === 0) return;
 
+  // Bind updatedAt explicitly rather than using the SQL CURRENT_TIMESTAMP
+  // keyword: every other timestamp in this app is `new Date().toISOString()`
+  // (e.g. line 40 above), and SQLite's own CURRENT_TIMESTAMP produces a
+  // different, non-'Z'-suffixed format — mixing the two would make
+  // updatedAt parse as a different timezone than createdAt for the same row.
+  fields.push('updatedAt = ?');
+  values.push(new Date().toISOString());
+
   values.push(conversationId, userId);
   db.prepare(`
-    UPDATE chats 
-    SET ${fields.join(', ')}, updatedAt = CURRENT_TIMESTAMP 
+    UPDATE chats
+    SET ${fields.join(', ')}
     WHERE id = ? AND userId = ?
   `).run(...values);
 }
