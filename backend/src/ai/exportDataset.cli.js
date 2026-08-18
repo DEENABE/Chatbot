@@ -4,16 +4,17 @@
  * are included — these are the good trajectories worth learning from.
  *
  * Usage:
- *   node src/ai/exportDataset.cli.js                 # writes storage/repair-dataset.jsonl
+ *   node src/ai/exportDataset.cli.js                 # writes storage/training-data/repair-dataset.jsonl
  *   node src/ai/exportDataset.cli.js path\to\out.jsonl
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { exportTrainingData, getSessions } from './RepairLogger.js';
-import { config } from '../config.js';
+import { exportTrainingData, getSessions, DATASET_DIR } from './RepairLogger.js';
 
-const outPath = process.argv[2] || path.join(path.dirname(config.dbFile), 'repair-dataset.jsonl');
+// Resolved from RepairLogger rather than rebuilt from config here, so the
+// exporter and the logger can never disagree about where the corpus lives.
+const outPath = process.argv[2] || path.join(DATASET_DIR, 'repair-dataset.jsonl');
 const examples = exportTrainingData();
 const total = getSessions().length;
 

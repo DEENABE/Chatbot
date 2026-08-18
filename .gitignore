@@ -27,7 +27,6 @@ backend/data/
 backend/storage/uploads/*
 # backend/storage/lancedb/*
 # backend/storage/history.json
-# backend/storage/db_store.json
 backend/storage/repair-sessions.json
 backend/storage/repair-dataset.jsonl
 !backend/storage/uploads/.gitkeep
@@ -37,6 +36,13 @@ backend/storage/users.json
 backend/storage/db.sqlite
 backend/storage/db.sqlite-shm
 backend/storage/db.sqlite-wal
+# JSONDatabase writes to this filename at runtime, not db.sqlite — same
+# password-hash/salt sensitivity as the rule above, must match the real name.
+backend/storage/db_store.json
+# Training-corpus files (repair/automation sessions, PowerShell transcripts —
+# hostnames, usernames, paths, network config) now live under a dedicated
+# directory rather than loose in storage/.
+backend/storage/training-data/
 
 # ─── Logs ───────────────────────────────────────────────────────
 *.log
@@ -84,3 +90,9 @@ dataset-tools/
 .claude/
 #-------ship.mjs igore--------
 scripts/ship.mjs
+
+#----flie transer-----
+sync.ffs_db
+
+#----security audit (unpatched critical findings — do not publish)-----
+Chanakya_Security_Audit.pdf

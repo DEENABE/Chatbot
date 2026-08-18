@@ -6,15 +6,21 @@
  * "did it work?" feedback.
  *
  * Repair (the 6 canonical domains) and automation sessions are stored in
- * SEPARATE files — storage/repair-sessions.json and
- * storage/automation-sessions.json — so the two datasets can be inspected,
- * cleaned, and balanced independently before fine-tuning:
+ * SEPARATE files — training-data/repair-sessions.json and
+ * training-data/automation-sessions.json — so the two datasets can be
+ * inspected, cleaned, and balanced independently before fine-tuning:
  *
  *   logSession()  -> routes to the right file by domain
  *   getSessions() -> "Unified Session DB": a merged, sorted read of both
  *   exportTrainingData() -> flat combined array (kept for API back-compat —
  *     GET /api/repair/dataset). For the real 3-way "Data Cleaner" split used
  *     by fine-tuning, see scripts/export-training-data.mjs.
+ *
+ * All dataset files live in storage/training-data/ rather than loose in
+ * storage/, which also holds the sqlite db, the vector index, uploads and
+ * user files. Keeping the training corpus in its own directory means it can
+ * be copied, versioned or handed to a training run as a single unit without
+ * dragging runtime state along with it.
  */
 
 import fs from 'node:fs';
@@ -24,14 +30,43 @@ import { config } from '../config.js';
 import { domainLabel, normalizeSubdomain } from '../knowledge/subdomains.js';
 
 const storageDir = path.dirname(config.dbFile);
-const REPAIR_LOG_FILE = path.join(storageDir, 'repair-sessions.json');
-const AUTOMATION_LOG_FILE = path.join(storageDir, 'automation-sessions.json');
+
+/**
+ * Directory holding every training dataset file. Exported so the CLI exporters
+ * and any future tooling resolve the same location instead of each rebuilding
+ * the path — a second definition that drifts is how half the files end up in
+ * one folder and half in another.
+ */
+const DATASET_DIR = path.join(storageDir, 'training-data');
+
+/** Ensure the dataset directory exists before any read or write touches it. */
+function ensureDatasetDir() {
+  fs.mkdirSync(DATASET_DIR, { recursive: true });
+}
+
+const REPAIR_LOG_FILE = path.join(DATASET_DIR, 'repair-sessions.json');
+const AUTOMATION_LOG_FILE = path.join(DATASET_DIR, 'automation-sessions.json');
 // Curated, hand-written examples (tool calling, tool-result interpretation,
 // clarification, safety refusals, verification, plain conversation) — not
 // "sessions" in the repair/automation sense (no domain/steps/PowerShell), so
 // they're kept as a plain chat-format JSONL seed rather than forced into the
 // session log shape. Nothing currently appends to this file at runtime.
-const GENERAL_EXAMPLES_FILE = path.join(storageDir, 'general-examples.jsonl');
+const GENERAL_EXAMPLES_FILE = path.join(DATASET_DIR, 'general-examples.jsonl');
+
+/**
+ * Legacy locations: these files used to sit directly in storage/. If a dataset
+ * file is missing from training-data/ but present in the old spot, read that
+ * instead so an existing install does not silently start from an empty corpus
+ * after this change. Writes always go to the new location.
+ *
+ * @param {string} file - Path under DATASET_DIR.
+ * @returns {string} The path that actually exists, preferring the new one.
+ */
+function resolveReadPath(file) {
+  if (fs.existsSync(file)) return file;
+  const legacy = path.join(storageDir, path.basename(file));
+  return fs.existsSync(legacy) ? legacy : file;
+}
 
 function fileForDomain(domain) {
   return domain === 'automation' ? AUTOMATION_LOG_FILE : REPAIR_LOG_FILE;
@@ -39,7 +74,7 @@ function fileForDomain(domain) {
 
 function readAll(file) {
   try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
+    return JSON.parse(fs.readFileSync(resolveReadPath(file), 'utf8'));
   } catch {
     return [];
   }
@@ -47,7 +82,7 @@ function readAll(file) {
 
 function writeAll(file, sessions) {
   try {
-    fs.mkdirSync(storageDir, { recursive: true });
+    ensureDatasetDir();
     fs.writeFileSync(file, JSON.stringify(sessions, null, 2) + '\n', 'utf8');
   } catch (err) {
     console.error('[RepairLogger] Failed to write log:', err.message);
@@ -282,7 +317,7 @@ export function exportTrainingData() {
 /** Read the curated general-examples seed (already in {messages:[...]} chat format — no session-log cleaning needed). */
 function readGeneralExamples() {
   try {
-    return fs.readFileSync(GENERAL_EXAMPLES_FILE, 'utf8')
+    return fs.readFileSync(resolveReadPath(GENERAL_EXAMPLES_FILE), 'utf8')
       .split('\n')
       .filter((l) => l.trim())
       .map((l) => JSON.parse(l));
@@ -308,4 +343,4 @@ export function exportTrainingDataSplit() {
   };
 }
 
-export { REPAIR_LOG_FILE, AUTOMATION_LOG_FILE };
+export { REPAIR_LOG_FILE, AUTOMATION_LOG_FILE, GENERAL_EXAMPLES_FILE, DATASET_DIR };
