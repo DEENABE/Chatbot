@@ -18,6 +18,27 @@ function isNonEmptyString(value) {
   return typeof value === 'string' && value.length > 0;
 }
 
+const MIN_PASSWORD_LENGTH = 8;
+// No functional need for scrypt itself (unlike bcrypt, it doesn't silently
+// truncate long input) — this exists so a client can't send a
+// multi-megabyte string and make the server spend real CPU/memory hashing
+// it. 128 comfortably covers any real passphrase a person would type.
+const MAX_PASSWORD_LENGTH = 128;
+
+// Centralized so register/change-password/reset-password can't drift from
+// each other on what "a valid new password" means.
+function assertValidPassword(password, label = 'Password') {
+  if (!isNonEmptyString(password)) {
+    throw new Error(`${label} must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+  }
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    throw new Error(`${label} must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+  }
+  if (password.length > MAX_PASSWORD_LENGTH) {
+    throw new Error(`${label} must be ${MAX_PASSWORD_LENGTH} characters or fewer.`);
+  }
+}
+
 // Constant-time comparison — `hash !== user.passwordHash` short-circuits on
 // the first differing character, which leaks (in principle) how many
 // leading hex characters of a guess were correct via response timing.
@@ -39,9 +60,7 @@ export async function registerUser(username, displayName, password) {
   if (!lowerName || lowerName.length < 2) {
     throw new Error('Username must be at least 2 characters.');
   }
-  if (!isNonEmptyString(password) || password.length < 8) {
-    throw new Error('Password must be at least 8 characters.');
-  }
+  assertValidPassword(password);
 
   // Check if user already exists
   const existingUser = db.prepare('SELECT id FROM users WHERE username = ?').get(lowerName);
@@ -140,9 +159,7 @@ export async function changePassword(userId, currentPassword, newPassword) {
   if (!hashesMatch(hash, user.passwordHash)) {
     throw new Error('Current password is incorrect.');
   }
-  if (!isNonEmptyString(newPassword) || newPassword.length < 8) {
-    throw new Error('New password must be at least 8 characters.');
-  }
+  assertValidPassword(newPassword, 'New password');
   const { hash: newHash, salt: newSalt } = hashPassword(newPassword);
   db.prepare('UPDATE users SET passwordHash = ?, salt = ? WHERE id = ?').run(newHash, newSalt, userId);
   // A leaked/stale session token must stop working the moment the password
@@ -163,9 +180,7 @@ export async function resetPassword(username, newPassword) {
   if (!user) {
     throw new Error('No account found with that username.');
   }
-  if (!isNonEmptyString(newPassword) || newPassword.length < 8) {
-    throw new Error('New password must be at least 8 characters.');
-  }
+  assertValidPassword(newPassword, 'New password');
   const { hash, salt } = hashPassword(newPassword);
   db.prepare('UPDATE users SET passwordHash = ?, salt = ? WHERE id = ?').run(hash, salt, user.id);
   // Same reasoning as changePassword: kill every existing session for the
