@@ -8,13 +8,38 @@ function hashPassword(password, salt) {
   return { hash, salt };
 }
 
+// scryptSync throws a raw TypeError for anything that isn't a string/Buffer —
+// e.g. a numeric or object password — which without this guard bubbled up as
+// an uncaught exception, caught by the route's generic catch block and
+// returned as a confusing internal error message instead of a clean 400/401.
+// `password.length < 8` alone doesn't catch this: a number has no `.length`,
+// so `undefined < 8` is `false` and validation silently passed.
+function isNonEmptyString(value) {
+  return typeof value === 'string' && value.length > 0;
+}
+
+// Constant-time comparison — `hash !== user.passwordHash` short-circuits on
+// the first differing character, which leaks (in principle) how many
+// leading hex characters of a guess were correct via response timing.
+// scryptSync's own cost dominates in practice, but there's no reason to
+// leave a cheap, well-known mitigation off the table.
+function hashesMatch(a, b) {
+  const bufA = Buffer.from(a, 'hex');
+  const bufB = Buffer.from(b, 'hex');
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
 export async function registerUser(username, displayName, password) {
+  if (!isNonEmptyString(username)) {
+    throw new Error('Username is required.');
+  }
   const lowerName = username.toLowerCase().trim();
 
   if (!lowerName || lowerName.length < 2) {
     throw new Error('Username must be at least 2 characters.');
   }
-  if (!password || password.length < 8) {
+  if (!isNonEmptyString(password) || password.length < 8) {
     throw new Error('Password must be at least 8 characters.');
   }
 
@@ -56,6 +81,14 @@ export async function registerUser(username, displayName, password) {
 }
 
 export async function loginUser(username, password) {
+  // Same "Invalid username or password." for a malformed request as for a
+  // real mismatch — this is the login route, so it stays deliberately
+  // generic rather than distinguishing "you sent garbage" from "wrong
+  // credentials" (that distinction is exactly what username enumeration
+  // attacks go looking for).
+  if (!isNonEmptyString(username) || !isNonEmptyString(password)) {
+    throw new Error('Invalid username or password.');
+  }
   const lowerName = username.toLowerCase().trim();
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(lowerName);
 
@@ -64,7 +97,7 @@ export async function loginUser(username, password) {
   }
 
   const { hash } = hashPassword(password, user.salt);
-  if (hash !== user.passwordHash) {
+  if (!hashesMatch(hash, user.passwordHash)) {
     throw new Error('Invalid username or password.');
   }
 
@@ -100,11 +133,14 @@ export async function changePassword(userId, currentPassword, newPassword) {
   if (!user) {
     throw new Error('User not found.');
   }
-  const { hash } = hashPassword(currentPassword, user.salt);
-  if (hash !== user.passwordHash) {
+  if (!isNonEmptyString(currentPassword)) {
     throw new Error('Current password is incorrect.');
   }
-  if (!newPassword || newPassword.length < 8) {
+  const { hash } = hashPassword(currentPassword, user.salt);
+  if (!hashesMatch(hash, user.passwordHash)) {
+    throw new Error('Current password is incorrect.');
+  }
+  if (!isNonEmptyString(newPassword) || newPassword.length < 8) {
     throw new Error('New password must be at least 8 characters.');
   }
   const { hash: newHash, salt: newSalt } = hashPassword(newPassword);
@@ -119,12 +155,15 @@ export async function changePassword(userId, currentPassword, newPassword) {
 // Local, offline password recovery: identity is proven by machine access.
 // Resets the password for an existing username (no email round-trip exists).
 export async function resetPassword(username, newPassword) {
+  if (!isNonEmptyString(username)) {
+    throw new Error('No account found with that username.');
+  }
   const lowerName = username.toLowerCase().trim();
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(lowerName);
   if (!user) {
     throw new Error('No account found with that username.');
   }
-  if (!newPassword || newPassword.length < 8) {
+  if (!isNonEmptyString(newPassword) || newPassword.length < 8) {
     throw new Error('New password must be at least 8 characters.');
   }
   const { hash, salt } = hashPassword(newPassword);

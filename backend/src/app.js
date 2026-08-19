@@ -22,8 +22,17 @@ app.use(
   cors({
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
+      // A file://-loaded page (the packaged Electron renderer, always —
+      // `loadFile()` is the only load path this app has) is an opaque
+      // origin per RFC 6454 §6.2, and browsers serialize that as the
+      // literal string "null" in the Origin header — NOT "file://...".
+      // `origin.startsWith('file://')` never matches anything a real
+      // browser sends; confirmed empirically (a preflight from the real
+      // packaged app got no Access-Control-Allow-Origin header at all,
+      // silently blocking every request before it reached the server).
       const allowed =
         /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
+        origin === 'null' ||
         origin.startsWith('file://');
       callback(null, allowed);
     },

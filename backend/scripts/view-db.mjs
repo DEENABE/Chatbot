@@ -1,6 +1,10 @@
 import Database from 'better-sqlite3';
 
-const db = new Database('backend/storage/db.sqlite', { readonly: true });
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const dbPath = path.join(__dirname, '..', 'storage', 'db.sqlite');
+const db = new Database(dbPath, { readonly: true });
 
 console.log('═══════════════════════════════════════════');
 console.log('  CHANAKYA AI — db.sqlite VIEWER');
