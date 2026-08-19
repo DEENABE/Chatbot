@@ -101,7 +101,7 @@ Chanakya_Security_Audit.pdf
 .github/workflows/ship.yml
 
 #---claude.md--
-claude.md
+CLAUDE.md
 
 #----gitigonore---
 .gitignore
