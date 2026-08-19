@@ -96,3 +96,6 @@ sync.ffs_db
 
 #----security audit (unpatched critical findings — do not publish)-----
 Chanakya_Security_Audit.pdf
+
+#---git workflow---
+.github/workflows/ship.yml
