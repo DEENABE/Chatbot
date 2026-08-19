@@ -40,6 +40,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveFile: (name, base64) => ipcRenderer.invoke('save-file', { name, base64 })
 });
 
+// Session token — held in main-process memory only (see SessionStore.js),
+// never persisted to disk, so it doesn't survive an app restart.
+contextBridge.exposeInMainWorld('sessionAPI', {
+  getToken: () => ipcRenderer.invoke('auth:get-token'),
+  setToken: (token) => ipcRenderer.invoke('auth:set-token', { token }),
+  clearToken: () => ipcRenderer.invoke('auth:clear-token')
+});
+
 // Tool Engine IPC Bridge
 contextBridge.exposeInMainWorld('toolEngine', {
   execute: (tool, action, params) => ipcRenderer.invoke('tool:execute', { tool, action, params }),

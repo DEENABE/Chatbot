@@ -13,6 +13,7 @@ import { registerWindowIPCHandlers } from './ipc/window.ipc.js';
 import { registerSystemIPCHandlers } from './ipc/system.ipc.js';
 import { registerCaptureIPCHandlers } from './ipc/capture.ipc.js';
 import { registerToolIPCHandlers } from './ipc/tool.ipc.js';
+import { registerAuthIPCHandlers } from './ipc/auth.ipc.js';
 
 app.whenReady().then(async () => {
   // Permission handling
@@ -27,6 +28,7 @@ app.whenReady().then(async () => {
   registerSystemIPCHandlers();
   registerCaptureIPCHandlers();
   registerToolIPCHandlers();
+  registerAuthIPCHandlers();
 
   // Try to see if backend is already running
   let backendAlreadyRunning = false;

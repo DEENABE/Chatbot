@@ -1,30 +1,47 @@
 import axios from 'axios';
 
 const API_BASE = 'http://127.0.0.1:3001/api';
-const TOKEN_KEY = 'chanakya-token';
 
-// The client used to send a bare, permanent, unsigned userId as its entire
-// proof of identity (AUTH-01). It now sends a real server-issued session
-// token instead — this is the one place that reads/writes it, so nothing
-// else needs to know the storage key.
-export function getToken() {
-  return localStorage.getItem(TOKEN_KEY);
+// In-memory fallback for the non-Electron dev path (`npm run dev`, a plain
+// Vite/browser tab with no preload script). Same "gone on reload" property
+// as the real store, just scoped to this module instead of a separate
+// process.
+let devFallbackToken = null;
+
+// The session token is held in the Electron main process (see
+// electron/services/SessionStore.js), not in the renderer's localStorage:
+// localStorage is readable by any script running in this page (a future
+// XSS's first move), and it persists on disk across app restarts. Neither
+// is true of a plain in-memory variable in a different OS process — closing
+// the app clears it, and reaching it at all requires going through the
+// narrow, explicit IPC bridge below rather than a blanket storage API.
+export async function getToken() {
+  if (window.sessionAPI) return window.sessionAPI.getToken();
+  return devFallbackToken;
 }
 
-export function setSession(token) {
-  if (token) localStorage.setItem(TOKEN_KEY, token);
+export async function setSession(token) {
+  if (!token) return;
+  if (window.sessionAPI) {
+    await window.sessionAPI.setToken(token);
+  } else {
+    devFallbackToken = token;
+  }
 }
 
-export function clearSession() {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem('chanakya-user');
+export async function clearSession() {
+  if (window.sessionAPI) {
+    await window.sessionAPI.clearToken();
+  } else {
+    devFallbackToken = null;
+  }
 }
 
 export const api = axios.create({ baseURL: API_BASE, timeout: 120000 });
 
 // Attach the session token to every request
-api.interceptors.request.use((config) => {
-  const token = getToken();
+api.interceptors.request.use(async (config) => {
+  const token = await getToken();
   if (token) {
     config.headers['Authorization'] = `Bearer ${token}`;
   }
@@ -37,9 +54,9 @@ api.interceptors.request.use((config) => {
 // rather than leaving the UI stuck in a "logged in" state that 401s forever.
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
     if (error?.response?.status === 401) {
-      clearSession();
+      await clearSession();
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new Event('chanakya:session-expired'));
       }
@@ -49,7 +66,7 @@ api.interceptors.response.use(
 );
 
 export async function streamChat(payload, { onToken, onSources, onDone, onToolCall, signal }) {
-  const token = getToken();
+  const token = await getToken();
   const headers = { 'Content-Type': 'application/json' };
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
@@ -113,7 +130,7 @@ export async function streamAgent(payload, handlers) {
 }
 
 async function streamNdjson(url, payload, { onEvent, signal }) {
-  const token = getToken();
+  const token = await getToken();
   const headers = { 'Content-Type': 'application/json' };
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;

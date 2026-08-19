@@ -9,11 +9,24 @@ const InputArea = React.lazy(() => import('../chat/InputArea.jsx'));
 
 export default function MainLayout() {
   const user = useAppStore((state) => state.user);
+  const isAuthLoading = useAppStore((state) => state.isAuthLoading);
   const settings = useAppStore((state) => state.settings);
   const [activeTab, setActiveTab] = useState('chat'); // 'chat', 'documents', 'memories', 'diagnostics'
   const resizeRef = useRef(null);
 
   if (!user) {
+    // The session token lives in the Electron main process, not localStorage,
+    // so on every launch there's a brief async round trip (checkAuth, in
+    // App.jsx) before we know whether a still-valid session exists. Showing
+    // the login form during that window would flash it even for a normal
+    // "app just restarted, session's fine" case — wait for that check first.
+    if (isAuthLoading) {
+      return (
+        <div className="text-white text-center p-10 text-xs font-mono uppercase tracking-widest animate-pulse">
+          Checking session...
+        </div>
+      );
+    }
     return (
       <Suspense fallback={<div className="text-white text-center p-10 text-xs font-mono uppercase tracking-widest animate-pulse">Checking credentials...</div>}>
         <LoginScreen />

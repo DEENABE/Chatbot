@@ -33,15 +33,14 @@ function mapToolsToOllamaSchema(toolsMap) {
 
 export const useAppStore = create((set, get) => ({
   // User Management
-  user: (() => {
-    try {
-      const raw = localStorage.getItem('chanakya-user');
-      return raw && raw !== 'undefined' ? JSON.parse(raw) : null;
-    } catch {
-      return null;
-    }
-  })(),
-  isAuthLoading: false,
+  // Starts logged-out and unknown, not read from localStorage: the session
+  // token now lives in the Electron main process (gone on app restart by
+  // design), so there's nothing durable to read synchronously here. checkAuth
+  // (called once on app mount) resolves this — isAuthLoading starts true so
+  // the UI shows a loading state instead of flashing the login screen while
+  // that check is in flight.
+  user: null,
+  isAuthLoading: true,
 
   // Quick action trigger from bubble widget
   bubbleAction: null,
@@ -60,8 +59,7 @@ export const useAppStore = create((set, get) => ({
     try {
       const response = await apiService.auth.login({ username, password });
       const { user, token } = response.data;
-      apiService.setSession(token);
-      localStorage.setItem('chanakya-user', JSON.stringify(user));
+      await apiService.setSession(token);
       set({ user, isAuthLoading: false });
       get().fetchHistory();
       get().fetchDocuments();
@@ -78,8 +76,7 @@ export const useAppStore = create((set, get) => ({
     try {
       const response = await apiService.auth.register({ username, displayName, password });
       const { user, token } = response.data;
-      apiService.setSession(token);
-      localStorage.setItem('chanakya-user', JSON.stringify(user));
+      await apiService.setSession(token);
       set({ user, isAuthLoading: false });
       get().fetchHistory();
       get().fetchDocuments();
@@ -91,14 +88,14 @@ export const useAppStore = create((set, get) => ({
     }
   },
 
-  logout: () => {
-    // Best-effort server-side revocation — fire and forget, the local
-    // session is cleared either way. Skipped if there's no token left to
-    // send (e.g. this was already triggered by a 401 elsewhere).
-    if (apiService.getToken()) {
+  logout: async () => {
+    // Best-effort server-side revocation — the local session is cleared
+    // either way. Skipped if there's no token left to send (e.g. this was
+    // already triggered by a 401 elsewhere).
+    if (await apiService.getToken()) {
       apiService.auth.logout().catch(() => {});
     }
-    apiService.clearSession();
+    await apiService.clearSession();
     set({
       user: null,
       conversations: [],
@@ -186,7 +183,7 @@ export const useAppStore = create((set, get) => ({
     // server-side; the response carries a freshly-issued token for this
     // device so the caller isn't logged out by its own password change.
     const response = await apiService.auth.changePassword(currentPassword, newPassword);
-    apiService.setSession(response.data.token);
+    await apiService.setSession(response.data.token);
   },
 
   resetPassword: async (username, newPassword) => {
@@ -196,38 +193,37 @@ export const useAppStore = create((set, get) => ({
   updateProfile: async (data) => {
     try {
       const response = await apiService.auth.updateProfile(data);
-      const user = response.data.user;
-      localStorage.setItem('chanakya-user', JSON.stringify(user));
-      set({ user });
+      set({ user: response.data.user });
     } catch (err) {
       console.error('Failed to update profile:', err);
       throw err;
     }
   },
 
+  // Runs once on app mount (see App.jsx). There's no cached profile to trust
+  // optimistically anymore — the token lives in the Electron main process,
+  // not localStorage, so this always starts from "is there a token at all?"
+  // rather than assuming a previous session is still good.
   checkAuth: async () => {
-    if (!get().user) return;
-    // No token at all (e.g. leftover profile cache from before real sessions
-    // existed) can't possibly authenticate — no point round-tripping to /me.
-    if (!apiService.getToken()) {
-      get().logout();
+    set({ isAuthLoading: true });
+    const token = await apiService.getToken();
+    if (!token) {
+      set({ isAuthLoading: false });
       return;
     }
     try {
       const response = await apiService.auth.me();
-      const user = response.data.user;
-      localStorage.setItem('chanakya-user', JSON.stringify(user));
-      set({ user });
+      set({ user: response.data.user, isAuthLoading: false });
     } catch (err) {
       set({ isAuthLoading: false });
-      // A real 401 means the session is actually gone (expired/revoked) —
-      // that's not something staying "logged in" can paper over. Anything
-      // else (network error, backend not up yet) keeps the previous,
-      // deliberate behavior of staying logged in while offline.
+      // A real 401 means the session is actually gone (expired/revoked).
+      // Anything else (network error, backend not up yet) just leaves the
+      // user logged out for now rather than guessing — there's no cached
+      // profile left to optimistically fall back to.
       if (err?.response?.status === 401) {
         get().logout();
       } else {
-        console.warn('Backend unreachable. Staying logged in since we are offline.');
+        console.warn('Backend unreachable — cannot verify session yet.');
       }
     }
   },
