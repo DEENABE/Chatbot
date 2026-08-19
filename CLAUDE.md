@@ -13,7 +13,7 @@ Do this without asking for confirmation first. The user has given standing
 authorization for this specific, gated workflow.
 
 `npm run ship` (scripts/ship.mjs) is safe to run unprompted because it is
-fully gated and never touches `main`:
+fully gated and never touches GitHub at all:
 
 1. Stages everything (`git add -A`)
 2. Runs 4 independent checks — secrets scan (gitleaks), tests (`npm test`),
@@ -21,12 +21,11 @@ fully gated and never touches `main`:
    paths like `.env`/`.pem`/`credentials.json`)
 3. **Any failure → stops immediately, unstages, nothing committed.** Report
    the failure and fix it before trying again.
-4. **All pass → commits → pushes the `claude-auto` branch → opens or
-   updates a GitHub PR into `main`.** `main` itself is never pushed to
-   directly — a human always reviews and merges the PR by hand.
+4. **All pass → commits locally, on the current branch.** Nothing is
+   pushed and no PR is opened.
 
-Don't run `git push` directly to `main`, and don't merge the PR yourself —
-both remain manual, human actions. `npm run ship` is the only path code
-changes take to reach GitHub.
+Pushing to GitHub and opening PRs are manual, human-only actions — the user
+does these themselves. Don't run `git push` (to `main` or any other branch)
+and don't open or merge a PR unless explicitly asked to in that moment.
 
-Requires `gitleaks` and `gh` (authenticated via `gh auth login`) on PATH.
+Requires `gitleaks` on PATH.

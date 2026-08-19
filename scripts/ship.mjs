@@ -1,18 +1,16 @@
 #!/usr/bin/env node
 /**
- * "Ship" pipeline — the local half of the Claude Code -> auto-commit -> PR
- * flow:
+ * "Ship" pipeline — the local half of the Claude Code -> auto-commit flow:
  *
  *   modify project -> [secrets scan | tests | build | diff review] -> PASS?
- *     PASS -> commit -> push to `claude-auto` -> open/update a GitHub PR
- *     FAIL -> stop, nothing committed or pushed
+ *     PASS -> commit locally, on the current branch. Nothing is pushed.
+ *     FAIL -> stop, nothing committed
  *
- * The three checks run independently and ALL must pass. Nothing is
- * committed, pushed, or opened as a PR unless every one of them is green.
- * `main` is never touched directly — this only ever pushes `claude-auto` and
- * opens a PR against `main` for a human to review and merge.
+ * The four checks run independently and ALL must pass. Nothing is committed
+ * unless every one of them is green. Pushing to GitHub and opening PRs are
+ * manual, human actions — this script never does either.
  *
- * Requires on PATH: git, gitleaks, gh (authenticated: `gh auth login`).
+ * Requires on PATH: git, gitleaks.
  *
  * Usage: node scripts/ship.mjs ["commit message"]
  */
@@ -22,8 +20,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const root = process.cwd();
-const BRANCH = 'claude-auto';
-const BASE = 'main';
 
 function sh(cmd, opts = {}) {
   return execSync(cmd, { cwd: root, encoding: 'utf8', stdio: opts.silent ? 'pipe' : 'inherit', ...opts });
@@ -47,11 +43,10 @@ function report(name, ok, detail) {
 }
 
 console.log('── Preflight ──────────────────────────────────────────────');
-for (const tool of ['git', 'gitleaks', 'gh']) {
+for (const tool of ['git', 'gitleaks']) {
   if (!has(tool)) {
     console.error(`\n✖ '${tool}' is not on PATH. Install it before running ship.`);
     if (tool === 'gitleaks') console.error('  https://github.com/gitleaks/gitleaks#installing');
-    if (tool === 'gh') console.error('  https://cli.github.com/  (then: gh auth login)');
     process.exit(1);
   }
 }
@@ -125,36 +120,10 @@ if (failed.length) {
 
 console.log('✔ All checks passed.\n');
 
-console.log('── Commit + push + PR ─────────────────────────────────────');
+console.log('── Commit ─────────────────────────────────────────────────');
 const message = process.argv[2] || `chore: automated update ${new Date().toISOString()}`;
 sh(`git commit -m ${JSON.stringify(message)}`);
 
-sh(`git branch -f ${BRANCH} HEAD`);
-sh(`git push -u origin ${BRANCH} --force-with-lease`);
-
-// `gh pr view` returns a PR for the branch regardless of state — including
-// one that's already MERGED or CLOSED. Checking only "does a PR exist" (the
-// previous bug here) meant that once a PR merged, every subsequent push kept
-// claiming to have "updated" that already-merged PR, when nothing was
-// actually tracking the new commits at all. Must check .state === 'OPEN'.
-const prInfo = shCapture(`gh pr view ${BRANCH} --json url,state`);
-let existingOpenPrUrl = null;
-if (typeof prInfo === 'string' && prInfo) {
-  try {
-    const parsed = JSON.parse(prInfo);
-    if (parsed.state === 'OPEN') existingOpenPrUrl = parsed.url;
-  } catch { /* no PR for this branch at all — fall through to create */ }
-}
-
-if (existingOpenPrUrl) {
-  console.log(`\nPR already open, updated by the push: ${existingOpenPrUrl}`);
-} else {
-  const prBody = `Automated change from Claude Code.\n\nAll checks passed:\n${results.map((r) => `- ✔ ${r.name}`).join('\n')}\n\n> This PR was opened automatically. Review before merging to ${BASE}.`;
-  const url = sh(
-    `gh pr create --base ${BASE} --head ${BRANCH} --title ${JSON.stringify(message)} --body ${JSON.stringify(prBody)}`,
-    { silent: true }
-  );
-  console.log(`\nPR opened: ${String(url).trim()}`);
-}
-
-console.log(`\nWaiting for manual review on GitHub — nothing was pushed to ${BASE}.`);
+const branch = shCapture('git rev-parse --abbrev-ref HEAD');
+console.log(`\nCommitted locally on '${branch}'. Nothing was pushed — push and open a PR by hand when ready:`);
+console.log(`  git push origin ${branch}`);
