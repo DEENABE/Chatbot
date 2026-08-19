@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { registerUser, loginUser, getUserById, updateUserProfile, changePassword, resetPassword } from '../services/authService.js';
+import { registerUser, loginUser, getUserById, updateUserProfile, changePassword, requestPasswordReset, resetPasswordWithToken } from '../services/authService.js';
 import { createSession, revokeSession } from '../services/sessionService.js';
 import { authLimiter } from '../middleware/rateLimiter.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -66,13 +66,29 @@ authRouter.post('/change-password', requireAuth, async (request, response) => {
   }
 });
 
-// Reset password (offline recovery by username — no auth required). Rate
-// limited since this is the more sensitive of the two: it needs no proof of
-// identity beyond a username, so throttling attempts matters even more here.
+// Forgot password — request a reset code. Always the exact same response
+// regardless of whether the account exists, so this endpoint can't be used
+// to enumerate accounts by content or (see authService.js) by making the
+// dominant CPU-bound cost differ between the two cases.
+authRouter.post('/forgot-password', authLimiter, async (request, response) => {
+  try {
+    const { username } = request.body || {};
+    await requestPasswordReset(username);
+  } catch (error) {
+    // Never let an internal failure here distinguish itself in the
+    // response — log server-side (no sensitive values), respond the same.
+    console.error('[auth] forgot-password request failed:', error.message);
+  }
+  response.json({ ok: true, message: 'If that account exists, a reset code has been generated on this device.' });
+});
+
+// Reset password using a reset code from /forgot-password. No auth
+// required (the caller is, by definition, logged out) — identity comes
+// entirely from the token itself, never from a client-supplied username.
 authRouter.post('/reset-password', authLimiter, async (request, response) => {
   try {
-    const { username, newPassword } = request.body || {};
-    await resetPassword(username, newPassword);
+    const { token, newPassword } = request.body || {};
+    await resetPasswordWithToken(token, newPassword);
     response.json({ ok: true });
   } catch (error) {
     response.status(400).json({ error: error.message });

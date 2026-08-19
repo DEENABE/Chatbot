@@ -13,6 +13,18 @@ process.env.APP_DATA_PATH = tmpDir;
 const authService = await import('./authService.js');
 const sessionService = await import('./sessionService.js');
 const { db } = await import('./db.js');
+const { config } = await import('../config.js');
+
+// The raw reset token is never returned by requestPasswordReset() or stored
+// anywhere queryable (only its hash is persisted) — reading it back from the
+// same local file the real recovery flow writes it to is the actual
+// interface, not a test-only shortcut.
+function readResetToken() {
+  const filePath = path.join(path.dirname(config.dbFile), 'password-reset-token.txt');
+  const content = fs.readFileSync(filePath, 'utf8');
+  const match = content.match(/Reset code: (\S+)/);
+  return match ? match[1] : null;
+}
 
 function freshUsername(label) {
   return `${label}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -166,11 +178,17 @@ test('change-password: revokes every existing session for the account', async ()
 });
 
 // ── PASSWORD RESET ──────────────────────────────────────────────────────
+// The full reset-token matrix (expiry, replay, tampering, enumeration,
+// concurrent-use) lives in src/services/passwordReset.test.js. These two
+// just keep the "does a reset actually change the password" regression
+// covered through the real token flow.
 
 test('reset: changes the password — old fails, new works', async () => {
   const username = freshUsername('reset');
   await authService.registerUser(username, 'R', 'correcthorsebatterystaple');
-  await authService.resetPassword(username, 'brandnewpassword1');
+  await authService.requestPasswordReset(username);
+  const token = readResetToken();
+  await authService.resetPasswordWithToken(token, 'brandnewpassword1');
   await assert.rejects(() => authService.loginUser(username, 'correcthorsebatterystaple'));
   const user = await authService.loginUser(username, 'brandnewpassword1');
   assert.equal(user.username, username);
@@ -181,17 +199,11 @@ test('reset: revokes existing sessions for the account', async () => {
   const user = await authService.registerUser(username, 'R', 'correcthorsebatterystaple');
   const before = sessionService.createSession(user.id);
   assert.ok(sessionService.verifySession(before.token));
-  await authService.resetPassword(username, 'brandnewpassword1');
+  await authService.requestPasswordReset(username);
+  const token = readResetToken();
+  await authService.resetPasswordWithToken(token, 'brandnewpassword1');
   assert.equal(sessionService.verifySession(before.token), null);
 });
-
-// NOT TESTED, BY DESIGN: reset-token issuance/validation/expiry/one-time-use.
-// This app's reset flow has no token step at all — POST /auth/reset-password
-// takes {username, newPassword} directly ("identity is proven by machine
-// access", see authService.js). There is no token to test. Documented as a
-// known gap in the security audit (AUTH-02), not something this phase adds —
-// building a token-based flow needs an out-of-band delivery channel (e.g.
-// email) this app doesn't have.
 
 // ── REGRESSION ──────────────────────────────────────────────────────────
 // HTTP-route-level regression (register/login/logout/protected-API/

@@ -8,8 +8,12 @@ import ChanakyaAvatar from "./ChanakyaAvatar.jsx";
 export default function LoginScreen() {
   const [isRegister, setIsRegister] = useState(false);
   const [isReset, setIsReset] = useState(false);
+  // 'request' — enter the username, get a reset code generated.
+  // 'confirm' — enter that code plus the new password.
+  const [resetStep, setResetStep] = useState('request');
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [resetToken, setResetToken] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -20,12 +24,14 @@ export default function LoginScreen() {
 
   const login = useAppStore((state) => state.login);
   const register = useAppStore((state) => state.register);
-  const resetPassword = useAppStore((state) => state.resetPassword);
+  const requestPasswordReset = useAppStore((state) => state.requestPasswordReset);
+  const resetPasswordWithToken = useAppStore((state) => state.resetPasswordWithToken);
   const settings = useAppStore((state) => state.settings);
 
   const switchMode = (register) => {
     setIsRegister(register);
     setIsReset(false);
+    setResetStep('request');
     setError("");
     setInfo("");
   };
@@ -38,14 +44,22 @@ export default function LoginScreen() {
 
     try {
       if (isReset) {
-        if (password !== confirmPassword) {
-          throw new Error("New passwords do not match.");
+        if (resetStep === 'request') {
+          const message = await requestPasswordReset(username);
+          setInfo(message || 'If that account exists, a reset code has been generated on this device.');
+          setResetStep('confirm');
+        } else {
+          if (password !== confirmPassword) {
+            throw new Error("New passwords do not match.");
+          }
+          await resetPasswordWithToken(resetToken, password);
+          setInfo("Password updated. Sign in with your new password.");
+          setIsReset(false);
+          setResetStep('request');
+          setResetToken("");
+          setPassword("");
+          setConfirmPassword("");
         }
-        await resetPassword(username, password);
-        setInfo("Password updated. Sign in with your new password.");
-        setIsReset(false);
-        setPassword("");
-        setConfirmPassword("");
       } else if (isRegister) {
         await register(username, displayName, password);
         // Login/register succeeded — `user` is now set, so this same
@@ -136,30 +150,67 @@ export default function LoginScreen() {
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-3.5">
-            {/* Username */}
-            <div>
-              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-stone-500">
-                Username
-              </label>
-              <div className="relative">
-                <UserIcon className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-600" />
-                <input
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  onFocus={() => setFocusedField('username')}
-                  onBlur={() => setFocusedField(null)}
-                  placeholder="Username"
-                  required
-                  autoFocus
-                  className="w-full rounded-xl border bg-[#09090a]/70 py-2 pl-9 pr-3 text-xs text-stone-200 placeholder-stone-600 outline-none transition-all focus:ring-1 focus:ring-opacity-20"
-                  style={{ 
-                    borderColor: focusedField === 'username' ? accent : 'rgba(255, 255, 255, 0.08)',
-                    boxShadow: focusedField === 'username' ? `0 0 8px ${accent}30` : 'none'
-                  }}
-                />
+            {/* Username — not needed once a reset code is being entered; the
+                code itself identifies the account from here on. */}
+            {!(isReset && resetStep === 'confirm') && (
+              <div>
+                <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-stone-500">
+                  Username
+                </label>
+                <div className="relative">
+                  <UserIcon className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-600" />
+                  <input
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    onFocus={() => setFocusedField('username')}
+                    onBlur={() => setFocusedField(null)}
+                    placeholder="Username"
+                    required
+                    autoFocus
+                    className="w-full rounded-xl border bg-[#09090a]/70 py-2 pl-9 pr-3 text-xs text-stone-200 placeholder-stone-600 outline-none transition-all focus:ring-1 focus:ring-opacity-20"
+                    style={{
+                      borderColor: focusedField === 'username' ? accent : 'rgba(255, 255, 255, 0.08)',
+                      boxShadow: focusedField === 'username' ? `0 0 8px ${accent}30` : 'none'
+                    }}
+                  />
+                </div>
               </div>
-            </div>
+            )}
+
+            {/* Reset code (reset, step 2 only) */}
+            <AnimatePresence initial={false}>
+              {isReset && resetStep === 'confirm' && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-stone-500">
+                    Reset Code
+                  </label>
+                  <div className="relative">
+                    <Sparkles className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-600" />
+                    <input
+                      type="text"
+                      value={resetToken}
+                      onChange={(e) => setResetToken(e.target.value)}
+                      onFocus={() => setFocusedField('resetToken')}
+                      onBlur={() => setFocusedField(null)}
+                      placeholder="Reset code from this device"
+                      required
+                      autoFocus
+                      className="w-full rounded-xl border bg-[#09090a]/70 py-2 pl-9 pr-3 text-xs text-stone-200 placeholder-stone-600 outline-none transition-all focus:ring-1 focus:ring-opacity-20"
+                      style={{
+                        borderColor: focusedField === 'resetToken' ? accent : 'rgba(255, 255, 255, 0.08)',
+                        boxShadow: focusedField === 'resetToken' ? `0 0 8px ${accent}30` : 'none'
+                      }}
+                    />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* Display Name (register only) */}
             <AnimatePresence initial={false}>
@@ -193,40 +244,43 @@ export default function LoginScreen() {
               )}
             </AnimatePresence>
 
-            {/* Password */}
-            <div>
-              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-stone-500">
-                {isReset ? 'New Password' : 'Password'}
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-600" />
-                <input
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  onFocus={() => setFocusedField('password')}
-                  onBlur={() => setFocusedField(null)}
-                  placeholder={isReset ? 'New Password' : 'Password'}
-                  required
-                  className="w-full rounded-xl border bg-[#09090a]/70 py-2 pl-9 pr-9 text-xs text-stone-200 placeholder-stone-600 outline-none transition-all focus:ring-1 focus:ring-opacity-20"
-                  style={{ 
-                    borderColor: focusedField === 'password' ? accent : 'rgba(255, 255, 255, 0.08)',
-                    boxShadow: focusedField === 'password' ? `0 0 8px ${accent}30` : 'none'
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-600 hover:text-stone-400 transition-colors cursor-pointer"
-                >
-                  {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
+            {/* Password — not shown for step 1 of reset (just requesting a
+                code, nothing to enter yet). */}
+            {!(isReset && resetStep === 'request') && (
+              <div>
+                <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-stone-500">
+                  {isReset ? 'New Password' : 'Password'}
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-600" />
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onFocus={() => setFocusedField('password')}
+                    onBlur={() => setFocusedField(null)}
+                    placeholder={isReset ? 'New Password' : 'Password'}
+                    required
+                    className="w-full rounded-xl border bg-[#09090a]/70 py-2 pl-9 pr-9 text-xs text-stone-200 placeholder-stone-600 outline-none transition-all focus:ring-1 focus:ring-opacity-20"
+                    style={{
+                      borderColor: focusedField === 'password' ? accent : 'rgba(255, 255, 255, 0.08)',
+                      boxShadow: focusedField === 'password' ? `0 0 8px ${accent}30` : 'none'
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-600 hover:text-stone-400 transition-colors cursor-pointer"
+                  >
+                    {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* Confirm New Password (reset only) */}
+            {/* Confirm New Password (reset, step 2 only) */}
             <AnimatePresence initial={false}>
-              {isReset && (
+              {isReset && resetStep === 'confirm' && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
@@ -257,7 +311,7 @@ export default function LoginScreen() {
               <div className="flex justify-end -mt-1.5">
                 <button
                   type="button"
-                  onClick={() => { setIsReset(true); setError(''); setInfo(''); }}
+                  onClick={() => { setIsReset(true); setResetStep('request'); setError(''); setInfo(''); }}
                   className="text-[10px] text-stone-500 hover:text-stone-300 transition-colors cursor-pointer"
                 >
                   Forgot password?
@@ -305,7 +359,9 @@ export default function LoginScreen() {
                 <div className="h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" />
               ) : (
                 <>
-                  {isReset ? "Reset Password" : isRegister ? "Create Account" : "Sign In"}
+                  {isReset
+                    ? (resetStep === 'request' ? "Send Reset Code" : "Reset Password")
+                    : isRegister ? "Create Account" : "Sign In"}
                   <ArrowRight size={14} className="transition-transform group-hover:translate-x-0.5" />
                 </>
               )}

@@ -186,8 +186,13 @@ export const useAppStore = create((set, get) => ({
     await apiService.setSession(response.data.token);
   },
 
-  resetPassword: async (username, newPassword) => {
-    await apiService.auth.resetPassword(username, newPassword);
+  requestPasswordReset: async (username) => {
+    const response = await apiService.auth.forgotPassword(username);
+    return response.data.message;
+  },
+
+  resetPasswordWithToken: async (token, newPassword) => {
+    await apiService.auth.resetPassword(token, newPassword);
   },
 
   updateProfile: async (data) => {

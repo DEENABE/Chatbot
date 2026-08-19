@@ -184,8 +184,9 @@ export const auth = {
   updateProfile: (profileData) => api.patch('/auth/profile', profileData),
   changePassword: (currentPassword, newPassword) =>
     api.post('/auth/change-password', { currentPassword, newPassword }),
-  resetPassword: (username, newPassword) =>
-    api.post('/auth/reset-password', { username, newPassword })
+  forgotPassword: (username) => api.post('/auth/forgot-password', { username }),
+  resetPassword: (token, newPassword) =>
+    api.post('/auth/reset-password', { token, newPassword })
 };
 
 // History API calls

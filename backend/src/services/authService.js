@@ -1,6 +1,9 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { db } from './db.js';
-import { revokeAllSessionsForUser } from './sessionService.js';
+import { revokeAllSessionsForUser, hashToken } from './sessionService.js';
+import { config } from '../config.js';
 
 function hashPassword(password, salt) {
   if (!salt) salt = crypto.randomBytes(16).toString('hex');
@@ -169,24 +172,139 @@ export async function changePassword(userId, currentPassword, newPassword) {
   return { ok: true };
 }
 
-// Local, offline password recovery: identity is proven by machine access.
-// Resets the password for an existing username (no email round-trip exists).
-export async function resetPassword(username, newPassword) {
-  if (!isNonEmptyString(username)) {
-    throw new Error('No account found with that username.');
+// ── Password reset (forgot-password) ───────────────────────────────────
+//
+// Previously this app's "reset" was `{username, newPassword}` with no
+// token at all — identity proven only by knowing a username. This is a
+// real token-based flow now. It's still not email-delivered: this is a
+// fully offline desktop app with no email address ever collected and no
+// SMTP/email-provider infrastructure — building one would be a much larger,
+// unrequested architecture change (new external dependency, new secrets to
+// manage) than this phase asks for. The raw token is instead written to a
+// local file in the same storage directory as the database itself — the
+// same trust tier "identity is proven by machine access" already relies on
+// elsewhere in this app. This is a strict improvement over the old
+// behavior: resetting now requires machine access AND being the one who
+// triggered the request (reading the just-written file), not just knowing
+// a username.
+
+const RESET_TOKEN_TTL_MS = 15 * 60 * 1000; // short-lived — a much higher-stakes credential than a login session
+const RESET_TOKEN_FILE = path.join(path.dirname(config.dbFile), 'password-reset-token.txt');
+const MAX_USERNAME_LOOKUP_LENGTH = 128;
+
+function writeLocalResetToken(username, token, expiresAt) {
+  const body = [
+    `Password reset requested for user: ${username}`,
+    `Reset code: ${token}`,
+    `Expires: ${new Date(expiresAt).toISOString()}`,
+    '',
+    'Enter this code in the app to finish resetting your password.',
+    'This file is overwritten by the next reset request and deleted once the code is used.',
+    ''
+  ].join('\n');
+  // 0o600: owner read/write only. Best-effort on platforms where chmod
+  // semantics don't map cleanly (e.g. Windows) — the OS/filesystem ACLs on
+  // the containing storage directory are the real boundary there either way.
+  fs.writeFileSync(RESET_TOKEN_FILE, body, { encoding: 'utf8', mode: 0o600 });
+}
+
+function clearLocalResetToken() {
+  try {
+    fs.unlinkSync(RESET_TOKEN_FILE);
+  } catch {
+    // Already gone (or never existed) — fine, this is just cleanup.
   }
-  const lowerName = username.toLowerCase().trim();
-  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(lowerName);
-  if (!user) {
-    throw new Error('No account found with that username.');
+}
+
+// Always returns the same shape (nothing) whether or not the account
+// exists — the route layer sends one identical response regardless, so
+// this endpoint can't be used to enumerate accounts. Logs only the safe,
+// value-free markers from PASSWORD_RESET_REQUESTED — never the token,
+// never which branch (found/not-found) was actually taken.
+export async function requestPasswordReset(username) {
+  const usable = isNonEmptyString(username) && username.length <= MAX_USERNAME_LOOKUP_LENGTH;
+  const lowerName = usable ? username.toLowerCase().trim() : '';
+  const user = usable ? db.prepare('SELECT id, username FROM users WHERE username = ?').get(lowerName) : null;
+
+  // Do the same shape of CPU work (generate + hash a token) regardless of
+  // whether an account was found, so the dominant observable cost doesn't
+  // itself signal existence. The disk I/O below (DB write + file write,
+  // skipped entirely when there's no account) is a smaller, noisier
+  // residual timing signal — an intentional, documented tradeoff, not an
+  // oversight: this is a loopback-only, single-user desktop app, not a
+  // hosted multi-tenant service, so the realistic attacker able to reach
+  // this endpoint at all already has local execution on the machine.
+  const token = crypto.randomBytes(32).toString('hex');
+  const tokenHash = hashToken(token);
+
+  console.log('[auth] PASSWORD_RESET_REQUESTED');
+
+  if (!user) return;
+
+  // Only one active reset credential per account — issuing a new one
+  // retires any previous unused one outright, so an old, possibly-forgotten
+  // request can't sit around as a second standing way into the account.
+  db.prepare('DELETE FROM password_resets WHERE userId = ?').run(user.id);
+
+  const now = Date.now();
+  db.prepare(
+    'INSERT INTO password_resets (id, userId, tokenHash, expiresAt, usedAt, createdAt) VALUES (@id, @userId, @tokenHash, @expiresAt, NULL, @createdAt)'
+  ).run({ id: crypto.randomUUID(), userId: user.id, tokenHash, expiresAt: now + RESET_TOKEN_TTL_MS, createdAt: now });
+
+  writeLocalResetToken(user.username, token, now + RESET_TOKEN_TTL_MS);
+}
+
+// Identity comes entirely from the token — there is no username/userId
+// parameter here at all, so a client cannot pair a valid token with a
+// different account.
+export async function resetPasswordWithToken(token, newPassword) {
+  if (!isNonEmptyString(token) || token.length > 256) {
+    console.log('[auth] PASSWORD_RESET_FAILED');
+    throw new Error('Invalid or expired reset code.');
   }
   assertValidPassword(newPassword, 'New password');
+
+  const tokenHash = hashToken(token);
+  const now = Date.now();
+
+  // Atomic claim: the WHERE clause (unused AND not expired) IS the check —
+  // there is no separate "read usedAt, then later write usedAt" gap for a
+  // second concurrent request to land in. better-sqlite3 executes this
+  // synchronously, so nothing else touching this row can interleave with it.
+  const claim = db
+    .prepare('UPDATE password_resets SET usedAt = ? WHERE tokenHash = ? AND usedAt IS NULL AND expiresAt > ?')
+    .run(now, tokenHash, now);
+
+  if (claim.changes === 0) {
+    console.log('[auth] PASSWORD_RESET_FAILED');
+    throw new Error('Invalid or expired reset code.');
+  }
+
+  const record = db.prepare('SELECT userId FROM password_resets WHERE tokenHash = ?').get(tokenHash);
+  const user = db.prepare('SELECT id FROM users WHERE id = ?').get(record.userId);
+  if (!user) {
+    // Structurally shouldn't happen — ON DELETE CASCADE removes this row
+    // the moment the user is deleted — but never trust that silently.
+    console.log('[auth] PASSWORD_RESET_FAILED');
+    throw new Error('Invalid or expired reset code.');
+  }
+
+  // The token is already claimed at this point (fail-closed): if hashing or
+  // the update below somehow throws, the token stays permanently unusable
+  // rather than staying valid for a retry — a stuck reset request is a far
+  // smaller problem than reopening the single-use guarantee.
   const { hash, salt } = hashPassword(newPassword);
-  db.prepare('UPDATE users SET passwordHash = ?, salt = ? WHERE id = ?').run(hash, salt, user.id);
-  // Same reasoning as changePassword: kill every existing session for the
-  // account, including one an attacker may already hold, the moment the
-  // password changes.
-  revokeAllSessionsForUser(user.id);
+  const applyReset = db.transaction(() => {
+    db.prepare('UPDATE users SET passwordHash = ?, salt = ? WHERE id = ?').run(hash, salt, user.id);
+    // Same reasoning as changePassword: kill every existing session for the
+    // account, including one an attacker may already hold, the moment the
+    // password changes.
+    revokeAllSessionsForUser(user.id);
+  });
+  applyReset();
+
+  clearLocalResetToken();
+  console.log('[auth] PASSWORD_RESET_SUCCESS');
   return { ok: true };
 }
 

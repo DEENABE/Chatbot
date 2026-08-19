@@ -15,6 +15,13 @@ process.env.APP_DATA_PATH = tmpDir;
 
 const { app } = await import('../app.js');
 const { db } = await import('../services/db.js');
+const { config } = await import('../config.js');
+
+function readResetToken() {
+  const filePath = path.join(path.dirname(config.dbFile), 'password-reset-token.txt');
+  const content = fs.readFileSync(filePath, 'utf8');
+  return content.match(/Reset code: (\S+)/)?.[1] ?? null;
+}
 
 const server = http.createServer(app);
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -164,10 +171,18 @@ test('password reset: an existing token stops authenticating after reset', async
   let res = await fetch(`${base}${PROTECTED_PATH}`, { headers: { Authorization: `Bearer ${token}` } });
   assert.equal(res.status, 200);
 
+  res = await fetch(`${base}/auth/forgot-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username })
+  });
+  assert.equal(res.status, 200);
+  const resetToken = readResetToken();
+
   res = await fetch(`${base}/auth/reset-password`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, newPassword: 'brandnewpassword1' })
+    body: JSON.stringify({ token: resetToken, newPassword: 'brandnewpassword1' })
   });
   assert.equal(res.status, 200);
 
@@ -203,4 +218,48 @@ test('error responses never leak the token, a stack trace, or internal details',
   }
   const everLoggedToken = captured.some((line) => line.includes(token));
   assert.equal(everLoggedToken, false, 'the real token must never be logged, including on a failed auth attempt');
+});
+
+// ── FORGOT-PASSWORD ENUMERATION (HTTP contract) ─────────────────────────
+
+test('forgot-password: identical response for a registered vs. an unknown username', async () => {
+  const { username } = await registerAndGetToken('enumreal');
+  const unknown = 'nobody_' + Date.now();
+
+  const resReal = await fetch(`${base}/auth/forgot-password`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username })
+  });
+  const resUnknown = await fetch(`${base}/auth/forgot-password`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: unknown })
+  });
+
+  assert.equal(resReal.status, resUnknown.status);
+  assert.deepEqual(await resReal.json(), await resUnknown.json());
+});
+
+test('forgot-password: malformed/empty/oversized username never crashes, always the same generic response', async () => {
+  const payloads = [{ username: '' }, {}, { username: 12345 }, { username: 'x'.repeat(5000) }];
+  const responses = [];
+  for (const body of payloads) {
+    const res = await fetch(`${base}/auth/forgot-password`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    });
+    assert.equal(res.status, 200);
+    responses.push(await res.json());
+  }
+  for (const r of responses) assert.deepEqual(r, responses[0]);
+});
+
+test('reset-password: malformed JSON body is rejected cleanly, not a crash', async () => {
+  const res = await fetch(`${base}/auth/reset-password`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{not valid json'
+  });
+  // Falls through to app.js's app-wide JSON body-parser error handler
+  // (a generic 500, not a route-specific 400) — unrelated to this phase to
+  // change. What matters here: no crash, and no stack trace/internal detail
+  // leaked into the response.
+  assert.ok(res.status >= 400);
+  const text = await res.text();
+  assert.ok(!/at [\w.]+ \(.*:\d+:\d+\)/.test(text), 'must not leak a stack trace');
+  assert.ok(!text.toLowerCase().includes('syntaxerror'), 'must not leak the parser exception type');
 });

@@ -16,7 +16,9 @@ import { db } from './db.js';
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const REFRESH_THRESHOLD_MS = SESSION_TTL_MS / 2; // sliding refresh past the halfway point
 
-function hashToken(token) {
+// Exported: password-reset tokens (authService.js) use this exact same
+// hash-the-opaque-token pattern rather than a second, duplicate one.
+export function hashToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 

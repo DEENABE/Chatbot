@@ -32,6 +32,21 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_userId ON sessions(userId);
 
+-- Password-reset credentials (authService.js). Same shape and reasoning as
+-- sessions above — only tokenHash is stored, never the raw code. usedAt
+-- NULL means unconsumed; a non-NULL value is permanent (rows are never
+-- "un-used"), enforcing single-use. expiresAt is short (15 min) — a much
+-- higher-stakes, shorter-lived credential than a login session.
+CREATE TABLE IF NOT EXISTS password_resets (
+  id TEXT PRIMARY KEY,
+  userId TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  tokenHash TEXT NOT NULL UNIQUE,
+  expiresAt INTEGER NOT NULL,
+  usedAt INTEGER,
+  createdAt INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_password_resets_userId ON password_resets(userId);
+
 CREATE TABLE IF NOT EXISTS folders (
   id TEXT PRIMARY KEY,
   userId TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
