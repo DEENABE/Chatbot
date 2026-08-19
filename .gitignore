@@ -99,3 +99,6 @@ Chanakya_Security_Audit.pdf
 
 #---git workflow---
 .github/workflows/ship.yml
+
+#---claude.md--
+claude.md

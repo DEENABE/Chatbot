@@ -22,7 +22,6 @@ export default function LoginScreen() {
   const register = useAppStore((state) => state.register);
   const resetPassword = useAppStore((state) => state.resetPassword);
   const settings = useAppStore((state) => state.settings);
-  const toggleExpand = useAppStore((state) => state.toggleExpand);
 
   const switchMode = (register) => {
     setIsRegister(register);
@@ -49,11 +48,15 @@ export default function LoginScreen() {
         setConfirmPassword("");
       } else if (isRegister) {
         await register(username, displayName, password);
-        toggleExpand();
+        // Login/register succeeded — `user` is now set, so this same
+        // (already-expanded) window naturally re-renders into the chat
+        // workspace instead of the login form. Collapsing to the bubble here
+        // (the previous behavior) made a successful login look like it had
+        // failed: the window would immediately shrink away right after
+        // signing in, instead of showing the workspace the user just logged
+        // into.
       } else {
         await login(username, password);
-        // Login succeeded — collapse back to floating bubble
-        toggleExpand();
       }
     } catch (err) {
       setError(err.response?.data?.error || err.message || "Something went wrong");
