@@ -12,6 +12,16 @@ import crypto from 'node:crypto';
 // authService.test.js does, so this never touches real dev/production data.
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chanakya-auth-http-test-'));
 process.env.APP_DATA_PATH = tmpDir;
+// This file makes many rapid register/login calls from one IP to test
+// unrelated behavior (sessions, tokens, middleware) — not rate limiting
+// itself, which has its own dedicated, deliberately-tight-limit test file
+// (rateLimiter.test.js). Set generous ceilings here so that suite doesn't
+// trip the very thing this file isn't testing.
+process.env.AUTH_IP_MAX_ATTEMPTS = '100000';
+process.env.AUTH_LOGIN_MAX_ATTEMPTS = '100000';
+process.env.AUTH_RESET_REQUEST_MAX_ATTEMPTS = '100000';
+process.env.AUTH_RESET_CONFIRM_MAX_ATTEMPTS = '100000';
+process.env.AUTH_REGISTER_MAX_ATTEMPTS = '100000';
 
 const { app } = await import('../app.js');
 const { db } = await import('../services/db.js');

@@ -33,7 +33,50 @@ export const config = {
   dbFile: path.join(appDataPath, 'storage', 'db.sqlite'),
   pluginsDir: path.join(appDataPath, 'storage', 'plugins'),
   ocrDir: path.join(appDataPath, 'storage', 'ocr'),
-  frontendDist: path.resolve(root, '..', 'frontend', 'dist')
+  frontendDist: path.resolve(root, '..', 'frontend', 'dist'),
+
+  // Auth abuse protection (middleware/rateLimiter.js). Configurable rather
+  // than hardcoded so limits can be tuned without touching application
+  // logic — server-side only, never read by the frontend/Electron side.
+  rateLimits: {
+    // Broad per-IP ceiling shared across register/login/forgot/reset — the
+    // "this IP is hammering the auth surface overall" signal, independent
+    // of which specific endpoint or account it's currently hitting.
+    ipWindowMs: Number(process.env.AUTH_IP_WINDOW_MS || 15 * 60 * 1000),
+    ipMaxAttempts: Number(process.env.AUTH_IP_MAX_ATTEMPTS || 30),
+
+    // Login: keyed by ip+username, so hammering one account doesn't lock
+    // out every other user on the box. Only failed attempts count — see
+    // loginLimiter's skipSuccessfulRequests.
+    loginWindowMs: Number(process.env.AUTH_LOGIN_WINDOW_MS || 15 * 60 * 1000),
+    loginMaxAttempts: Number(process.env.AUTH_LOGIN_MAX_ATTEMPTS || 10),
+
+    // Forgot-password: also ip+username-keyed (the request body still has
+    // a username, unlike reset-password below).
+    resetRequestWindowMs: Number(process.env.AUTH_RESET_REQUEST_WINDOW_MS || 15 * 60 * 1000),
+    resetRequestMaxAttempts: Number(process.env.AUTH_RESET_REQUEST_MAX_ATTEMPTS || 5),
+
+    // Reset-password (confirm step): ip-only — the request body is
+    // {token, newPassword}, no username, by design (Phase 4).
+    resetConfirmWindowMs: Number(process.env.AUTH_RESET_CONFIRM_WINDOW_MS || 15 * 60 * 1000),
+    resetConfirmMaxAttempts: Number(process.env.AUTH_RESET_CONFIRM_MAX_ATTEMPTS || 10),
+
+    // Registration: ip-only — there's no account to key on yet. A longer
+    // window than login since legitimately registering is rarer than
+    // logging in.
+    registerWindowMs: Number(process.env.AUTH_REGISTER_WINDOW_MS || 60 * 60 * 1000),
+    registerMaxAttempts: Number(process.env.AUTH_REGISTER_MAX_ATTEMPTS || 10),
+
+    // Progressive delay on login: once an ip+username pair's failure count
+    // (the same counter loginLimiter already tracks — not a second one)
+    // exceeds this threshold, each further attempt within the window is
+    // delayed before the server even processes it, growing linearly up to
+    // a cap. Attempts under the threshold are instant, so a normal person
+    // mistyping their password twice never notices this.
+    progressiveDelayThreshold: Number(process.env.AUTH_LOGIN_PROGRESSIVE_DELAY_THRESHOLD || 3),
+    progressiveDelayStepMs: Number(process.env.AUTH_LOGIN_PROGRESSIVE_DELAY_STEP_MS || 300),
+    progressiveDelayMaxMs: Number(process.env.AUTH_LOGIN_PROGRESSIVE_DELAY_MAX_MS || 3000)
+  }
 };
 
 export const supportedModels = [
