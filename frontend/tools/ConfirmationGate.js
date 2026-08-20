@@ -64,6 +64,15 @@ export class ConfirmationGate {
       resolve = res;
       reject = rej;
     });
+    // The current callers (BaseToolService/ToolEngineRouter) drive
+    // confirm/cancel through this gate's own confirm()/cancel() return
+    // values, not by awaiting this promise — so nothing was ever attached
+    // to it. An unawaited promise that later rejects (every cancel, every
+    // 60s timeout) is an unhandled rejection, which under Node's default
+    // --unhandled-rejections=throw crashes the process. The promise is
+    // still returned for any future caller that does want to await it;
+    // this only stops the *unused* case from being fatal.
+    promise.catch(() => {});
 
     const timeout = setTimeout(() => {
       this.pending.delete(confirmationId);

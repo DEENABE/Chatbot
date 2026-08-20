@@ -22,6 +22,33 @@ const VALID_HIVES = [
 const INJECTION_PATTERN = /[;&|`$\n\r]/;
 
 /**
+ * Registry subtrees where a write/delete is a CRITICAL-risk operation
+ * regardless of confirmation: autostart persistence (Run/RunOnce, Winlogon
+ * Shell/Userinit — the classic backdoor/persistence mechanisms), security
+ * software policy (Windows Defender), the LSA, and Image File Execution
+ * Options (a well-known debugger-hijack technique). validateKeyPath() only
+ * checks that a path starts with a real hive — nothing previously stopped a
+ * write anywhere inside HKLM/HKCU once past that one check.
+ */
+const PROTECTED_KEY_PATTERNS = [
+  /\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run/i,
+  /\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce/i,
+  /\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon/i,
+  /\\SOFTWARE\\Policies\\Microsoft\\Windows Defender/i,
+  /\\SYSTEM\\CurrentControlSet\\Control\\Lsa/i,
+  /\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options/i,
+  /\\SYSTEM\\CurrentControlSet\\Control\\SafeBoot/i,
+];
+
+function assertNotProtectedKey(keyPath) {
+  if (PROTECTED_KEY_PATTERNS.some((pattern) => pattern.test(keyPath))) {
+    const error = new Error(`Refusing to modify '${keyPath}' — this key controls startup persistence, security software, or authentication and is protected regardless of confirmation.`);
+    error.code = 'PROTECTED_REGISTRY_KEY';
+    throw error;
+  }
+}
+
+/**
  * Validate that a registry key path starts with a recognised hive.
  *
  * @param {string} keyPath - The registry key path to validate.
@@ -136,6 +163,24 @@ export class RegistryService extends BaseToolService {
     };
   }
 
+  /**
+   * Returns the confirmation message for destructive actions.
+   *
+   * @param {string} action - The action name.
+   * @param {Object} params - The action parameters.
+   * @returns {string|null} Confirmation message or null if not destructive.
+   */
+  getConfirmationMessage(action, params) {
+    switch (action) {
+      case 'setValue':
+        return `Set registry value ${params.keyPath}\\${params.valueName} = "${params.data}" (${params.valueType})?`;
+      case 'deleteValue':
+        return `Delete registry value ${params.keyPath}\\${params.valueName}? This cannot be undone.`;
+      default:
+        return null;
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
@@ -187,6 +232,7 @@ export class RegistryService extends BaseToolService {
   async setValue(params) {
     const { keyPath, valueName, valueType, data } = params;
     validateKeyPath(keyPath);
+    assertNotProtectedKey(keyPath);
     sanitize(valueName, 'valueName');
     sanitize(data, 'data');
 
@@ -210,6 +256,7 @@ export class RegistryService extends BaseToolService {
   async deleteValue(params) {
     const { keyPath, valueName } = params;
     validateKeyPath(keyPath);
+    assertNotProtectedKey(keyPath);
     sanitize(valueName, 'valueName');
 
     await this._runReg(['delete', keyPath, '/v', valueName, '/f']);

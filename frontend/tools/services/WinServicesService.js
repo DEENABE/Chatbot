@@ -12,6 +12,19 @@ import { BaseToolService } from '../BaseToolService.js';
 /** Regex pattern for valid Windows service names. */
 const SERVICE_NAME_PATTERN = /^[a-zA-Z0-9_.\-]+$/;
 
+/**
+ * Service names that must never be stopped/restarted through this tool.
+ * "Disabling security software" is a CRITICAL-risk category on its own —
+ * WinDefend/MpsSvc/Sense/wscsvc stopping is exactly how malware (or an
+ * over-eager repair suggestion) blinds the machine, and wuauserv/EventLog
+ * stopping removes patching and forensic visibility. Matched case-
+ * insensitively against the short service name, not the display name.
+ */
+const PROTECTED_SERVICE_NAMES = new Set([
+  'windefend', 'mpssvc', 'sense', 'wscsvc', 'securityhealthservice',
+  'wuauserv', 'eventlog'
+]);
+
 /** Default timeout for PowerShell commands (ms). */
 const DEFAULT_PS_TIMEOUT = 30_000;
 
@@ -156,6 +169,7 @@ export class WinServicesService extends BaseToolService {
    */
   async stop(params) {
     const name = this._sanitizeServiceName(params.name);
+    this._assertNotProtected(name);
 
     await this._runPS(`Stop-Service -Name '${name}' -Force`);
 
@@ -171,6 +185,7 @@ export class WinServicesService extends BaseToolService {
    */
   async restart(params) {
     const name = this._sanitizeServiceName(params.name);
+    this._assertNotProtected(name);
 
     await this._runPS(`Restart-Service -Name '${name}'`);
 
@@ -204,6 +219,21 @@ export class WinServicesService extends BaseToolService {
     }
 
     return trimmed;
+  }
+
+  /**
+   * Refuses to proceed against a security-critical service.
+   *
+   * @param {string} name - Already-sanitized service short name.
+   * @throws {Error} If the service is protected.
+   * @private
+   */
+  _assertNotProtected(name) {
+    if (PROTECTED_SERVICE_NAMES.has(name.toLowerCase())) {
+      const error = new Error(`Refusing to stop/restart '${name}' — this is a security-critical service (antivirus, firewall, update, or logging).`);
+      error.code = 'PROTECTED_SERVICE';
+      throw error;
+    }
   }
 
   /**

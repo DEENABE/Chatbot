@@ -134,6 +134,26 @@ function globToRegex(pattern) {
 }
 
 /**
+ * Same boundary the existing dangerGuard/dangerClassifier blocklists draw
+ * for PowerShell text commands, applied here to FileService's structured
+ * path parameters — InputValidator.validatePath() only rejects traversal
+ * and malformed paths, it says nothing about *which* absolute path is safe
+ * to write/delete/move. Scoped to the Windows system directory specifically
+ * (not Program Files) so legitimate repair work — fixing an app's own
+ * files — isn't blocked alongside it.
+ */
+const PROTECTED_PATH_PATTERN = /^[a-zA-Z]:\\windows(\\|$)/i;
+
+function assertNotProtectedPath(p) {
+  const resolved = path.resolve(p);
+  if (PROTECTED_PATH_PATTERN.test(resolved)) {
+    const error = new Error(`Refusing to modify '${resolved}' — paths under the Windows system directory are protected regardless of confirmation.`);
+    error.code = 'PROTECTED_PATH';
+    throw error;
+  }
+}
+
+/**
  * FileService provides file-system operations as tool actions.
  *
  * @extends BaseToolService
@@ -209,8 +229,12 @@ export class FileService extends BaseToolService {
           source: { type: 'path', required: true },
           destination: { type: 'path', required: true }
         },
-        destructive: false,
-        description: 'Copy a file or directory to a new location'
+        // Was previously marked non-destructive, but fs.cp/copyFile
+        // silently overwrite an existing file at the destination — the
+        // same data-loss shape as writeFile/moveFile, which are both
+        // correctly gated. There's no dry-run signal here to fall back on.
+        destructive: true,
+        description: 'Copy a file or directory to a new location (overwrites an existing destination)'
       },
       moveFile: {
         handler: this.moveFile.bind(this),
@@ -340,6 +364,7 @@ export class FileService extends BaseToolService {
    */
   async writeFile(params) {
     const filePath = path.resolve(params.path);
+    assertNotProtectedPath(filePath);
     const encoding = params.encoding || 'utf-8';
 
     // Ensure parent directory exists
@@ -370,6 +395,8 @@ export class FileService extends BaseToolService {
         return `Delete ${params.path}? This cannot be undone.`;
       case 'moveFile':
         return `Move ${params.source} to ${params.destination}?`;
+      case 'copyFile':
+        return `Copy ${params.source} to ${params.destination}? This will overwrite an existing file there.`;
       default:
         return null;
     }
@@ -433,6 +460,7 @@ export class FileService extends BaseToolService {
    */
   async deleteFile(params) {
     const filePath = path.resolve(params.path);
+    assertNotProtectedPath(filePath);
 
     await fs.rm(filePath, {
       recursive: params.recursive || false,
@@ -453,6 +481,7 @@ export class FileService extends BaseToolService {
   async copyFile(params) {
     const source = path.resolve(params.source);
     const destination = path.resolve(params.destination);
+    assertNotProtectedPath(destination);
 
     const stat = await fs.stat(source);
 
@@ -478,6 +507,8 @@ export class FileService extends BaseToolService {
   async moveFile(params) {
     const source = path.resolve(params.source);
     const destination = path.resolve(params.destination);
+    assertNotProtectedPath(source);
+    assertNotProtectedPath(destination);
 
     // Ensure destination parent exists
     await fs.mkdir(path.dirname(destination), { recursive: true });

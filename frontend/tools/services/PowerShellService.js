@@ -9,6 +9,7 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import { BaseToolService } from '../BaseToolService.js';
+import { isBlockedCommand } from '../dangerGuard.js';
 
 /** Default execution timeout in milliseconds. */
 const DEFAULT_TIMEOUT = 30_000;
@@ -89,6 +90,18 @@ export class PowerShellService extends BaseToolService {
    * @returns {Promise<{stdout: string, stderr: string, exitCode: number|null, timedOut: boolean}>}
    */
   async runPS(params) {
+    // Checked here — the one place every execute() AND every confirmed
+    // executeConfirmed() call funnels through before a process is ever
+    // spawned — rather than at request time, so it can't be skipped by
+    // going through the post-confirmation path. dangerGuard's own docstring
+    // already claimed this ran "even after the user has confirmed the
+    // action"; it didn't actually get called anywhere until now.
+    if (isBlockedCommand(params.command)) {
+      const error = new Error('This command is irreversible or session-disrupting and is blocked regardless of confirmation.');
+      error.code = 'COMMAND_BLOCKED';
+      throw error;
+    }
+
     const timeout = params.timeout || DEFAULT_TIMEOUT;
 
     return this._runCommand('powershell.exe', [

@@ -9,6 +9,7 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import { BaseToolService } from '../BaseToolService.js';
+import { isBlockedCommand } from '../dangerGuard.js';
 
 /** Default execution timeout in milliseconds. */
 const DEFAULT_TIMEOUT = 30_000;
@@ -83,6 +84,15 @@ export class CmdService extends BaseToolService {
    * @returns {Promise<{stdout: string, stderr: string, exitCode: number|null, timedOut: boolean}>}
    */
   async runCmd(params) {
+    // See PowerShellService.runPS for why this check lives here rather than
+    // at request time: it must run on the confirmed path too, not just the
+    // initial one.
+    if (isBlockedCommand(params.command)) {
+      const error = new Error('This command is irreversible or session-disrupting and is blocked regardless of confirmation.');
+      error.code = 'COMMAND_BLOCKED';
+      throw error;
+    }
+
     const timeout = params.timeout || DEFAULT_TIMEOUT;
 
     return this._runCommand('cmd.exe', ['/c', params.command], { timeout });

@@ -10,6 +10,32 @@ import { execFile, spawn } from 'child_process';
 import { BaseToolService } from '../BaseToolService.js';
 
 /**
+ * Process names that must never be terminated through this tool — mirrors
+ * the equivalent stop-process guard in backend/src/agent/dangerClassifier.js
+ * (that one only matches a raw PowerShell Stop-Process string; kill() here
+ * goes straight to taskkill /PID with no such check, an independent path to
+ * the same catastrophic outcome — killing any of these reliably crashes or
+ * locks out the whole session, not just one app).
+ */
+const PROTECTED_PROCESS_NAMES = new Set([
+  'wininit', 'csrss', 'winlogon', 'services', 'lsass', 'smss', 'system', 'ntoskrnl'
+]);
+
+/**
+ * Pure predicate, exported separately from kill() so it can be regression-
+ * tested directly against known process names — proving the policy decision
+ * itself is correct without needing to resolve and nearly-terminate a real
+ * critical PID (wininit/csrss/lsass/etc. always exist on any Windows
+ * machine, including the one running the test suite) just to exercise it.
+ *
+ * @param {string} name - A process name (case-insensitive, no .exe suffix expected).
+ * @returns {boolean}
+ */
+export function isProtectedProcessName(name) {
+  return PROTECTED_PROCESS_NAMES.has(String(name || '').trim().toLowerCase());
+}
+
+/**
  * Service for OS-level process management.
  *
  * @extends BaseToolService
@@ -68,6 +94,24 @@ export class ProcessService extends BaseToolService {
         description: 'Start a new process',
       },
     };
+  }
+
+  /**
+   * Returns the confirmation message for destructive actions.
+   *
+   * @param {string} action - The action name.
+   * @param {Object} params - The action parameters.
+   * @returns {string|null} Confirmation message or null if not destructive.
+   */
+  getConfirmationMessage(action, params) {
+    switch (action) {
+      case 'kill':
+        return `Terminate process PID ${params.pid}${params.force ? ' (forced)' : ''}?`;
+      case 'startProcess':
+        return `Start process: ${params.command}${params.args?.length ? ' ' + params.args.join(' ') : ''}?`;
+      default:
+        return null;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -241,6 +285,23 @@ export class ProcessService extends BaseToolService {
 
     if (!Number.isInteger(pid) || pid <= 0) {
       throw new Error('pid must be a positive integer');
+    }
+
+    // Resolve the name before doing anything irreversible — the caller (LLM
+    // or human) supplied a PID, but the actual policy is name-based, same as
+    // the backend's PowerShell-text danger classifier.
+    let processName = null;
+    try {
+      const raw = await this._runPS(`(Get-Process -Id ${Number(pid)} -ErrorAction Stop).ProcessName`);
+      processName = typeof raw === 'string' ? raw.trim().toLowerCase() : null;
+    } catch {
+      // Already gone, or couldn't be resolved — fall through and let
+      // taskkill itself report "not found" rather than failing validation.
+    }
+    if (processName && isProtectedProcessName(processName)) {
+      const error = new Error(`Refusing to terminate '${processName}' (PID ${pid}) — this is a critical system process; killing it will crash or lock out the session.`);
+      error.code = 'PROTECTED_PROCESS';
+      throw error;
     }
 
     const args = ['/PID', String(pid)];

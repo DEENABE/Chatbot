@@ -52,6 +52,38 @@ const BLOCKED_PATTERNS = [
   // Account / security destruction
   /\bremove-localuser\b/i,
   /\bnet\s+user\b[^\n]*\/delete/i,
+  // Account / privilege creation — a new local account or a new
+  // administrator is exactly as irreversible-in-practice as deleting one;
+  // the previous list only ever looked at the delete direction.
+  /\bnew-localuser\b/i,
+  /\bnet\s+user\b[^\n]*\/add\b/i,
+  /\badd-localgroupmember\b(?=[^\n]*-group)(?=[^\n]*\badministrators\b)/i,
+  /\bnet\s+localgroup\s+administrators\b[^\n]*\/add/i,
+  // Disabling security software (Defender) — its own CRITICAL category:
+  // this is how a machine gets blinded, not a "recoverable" fix.
+  /\bset-mppreference\b[^\n]*-disable\w*\s+\$true/i,
+  /\b(uninstall|disable)-windows(feature|optionalfeature)\b[^\n]*defender/i,
+  // Disabling the firewall wholesale (not the same as adding one rule).
+  /\bnetsh\s+advfirewall\b[^\n]*\bset\b[^\n]*\bstate\s+off\b/i,
+  /\bset-netfirewallprofile\b[^\n]*-enabled\s+false/i,
+  // Persistent execution-policy weakening. The runner already scopes its
+  // own -ExecutionPolicy Bypass to just this one invocation (powershellRunner.js)
+  // — there is no legitimate reason for the agent itself to change the
+  // system/user-wide policy going forward.
+  /\bset-executionpolicy\b[^\n]*(unrestricted|bypass)/i,
+  // "Download and run" one-liners — the standard living-off-the-land
+  // pattern for pulling and executing a remote payload, in either order.
+  /(downloadstring|downloadfile|invoke-webrequest|invoke-restmethod|\biwr\b|\birm\b)[^\n]*\|\s*(iex|invoke-expression)\b/i,
+  /\b(iex|invoke-expression)\b[^\n]*(downloadstring|downloadfile|invoke-webrequest|invoke-restmethod|\biwr\b|\birm\b)/i,
+  // Service deletion — distinct from stop/start/restart (which stay 'fix':
+  // recoverable), removing a service outright is not.
+  /\bsc(\.exe)?\s+delete\b/i,
+  /\bremove-service\b/i,
+  // Registry autostart persistence via raw text — the classic backdoor
+  // mechanism, reachable here even though the structured RegistryService
+  // tool has its own equivalent guard, because this is free-text PowerShell/CMD.
+  /\breg(istry)?\s+add\b[^\n]*\\run\b/i,
+  /\b(set|new)-itemproperty\b[^\n]*\\(currentversion\\run|winlogon)\b/i,
   // Session-disrupting
   /\b(stop|restart)-computer\b/i,
   /\bshutdown\b[^\n]*\/(r|s|p)/i,

@@ -152,9 +152,19 @@ export class BaseToolService {
    * The metadata stored in the gate includes the tool name, action, and
    * params so the router can replay execution after the user confirms.
    *
+   * A human clicking "Allow Execution" on a generic message like "Execute a
+   * PowerShell command" isn't actually confirming anything — they can't see
+   * what they're approving. Services that define getConfirmationMessage()
+   * (PowerShellService, CmdService, FileService, WinServicesService) built a
+   * params-aware prompt specifically for this; it was previously never
+   * called, so the whole engine fell back to the static description no
+   * matter which service raised the request. Every destructive action now
+   * shows the real target (the actual command, path, or service name) to
+   * the person who has to approve it.
+   *
    * @param {string} action - The action name.
    * @param {Object} params - The action parameters.
-   * @param {string} description - Human-readable action description.
+   * @param {string} description - Human-readable action description (fallback).
    * @returns {{success: boolean, needsConfirmation: boolean, confirmationId: string, message: string}}
    * @private
    */
@@ -167,7 +177,10 @@ export class BaseToolService {
 
     const { confirmationId } = this.confirmationGate.request(metadata);
 
-    const message = `Action '${action}' on '${this.name}' requires confirmation: ${description}`;
+    const specific = typeof this.getConfirmationMessage === 'function'
+      ? this.getConfirmationMessage(action, params)
+      : null;
+    const message = specific || `Action '${action}' on '${this.name}' requires confirmation: ${description}`;
 
     return {
       success: true,
