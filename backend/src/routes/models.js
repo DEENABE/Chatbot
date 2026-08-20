@@ -1,17 +1,25 @@
 import { Router } from 'express';
 import { supportedModels } from '../config.js';
 import { listInstalledModels, listLoadedModels, unloadAllModels } from '../services/ollamaService.js';
+import { requireAuth } from '../middleware/auth.js';
 
 export const modelsRouter = Router();
 
-// Which models are currently held in memory (RAM/VRAM).
+// The GET routes below are deliberately left open (no requireAuth): they
+// return only static/global model info — no per-user data, no resource ID,
+// nothing ownership-scoped — and the frontend fetches them on mount before
+// login completes (App.jsx calls fetchModels() alongside checkAuth()), so
+// gating them would break the pre-login model list. /unload is different:
+// it's a mutating, disruptive action (drops every loaded model from RAM/VRAM
+// for whoever else is mid-request), so it gets the same requireAuth every
+// other mutating route in this app already has.
 modelsRouter.get('/loaded', async (_request, response) => {
   const loaded = await listLoadedModels();
   response.json({ loaded: loaded.map((m) => m.name) });
 });
 
 // Free all loaded models from memory — called when the assistant goes idle.
-modelsRouter.post('/unload', async (_request, response) => {
+modelsRouter.post('/unload', requireAuth, async (_request, response) => {
   try {
     const unloaded = await unloadAllModels();
     response.json({ ok: true, unloaded });

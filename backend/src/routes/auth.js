@@ -105,11 +105,15 @@ authRouter.post('/reset-password', ipAuthLimiter, resetConfirmLimiter, async (re
   }
 });
 
-// Update profile settings
+// Update profile settings. `role` (and any other privileged field) is
+// deliberately never read from the request body here — a self-service
+// profile edit must never be able to promote its own account (Step 9/13/18:
+// mass assignment / vertical privilege escalation). See authService for the
+// matching allowlist enforced again at the DB-write layer.
 authRouter.patch('/profile', requireAuth, async (request, response, next) => {
   try {
-    const { displayName, email, department, role } = request.body;
-    const user = await updateUserProfile(request.userId, { displayName, email, department, role });
+    const { displayName, email, department } = request.body;
+    const user = await updateUserProfile(request.userId, { displayName, email, department });
     response.json({ user });
   } catch (error) {
     next(error);

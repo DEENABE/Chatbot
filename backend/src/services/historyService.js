@@ -39,6 +39,17 @@ export async function appendHistory(entry, userId) {
   const { conversationId, role, content, sources } = entry;
   const now = new Date().toISOString();
 
+  // conversationId is client-supplied (chat.js defaults it to a fresh UUID,
+  // but a caller can send any string). Without this check, an id colliding
+  // with another user's existing chat would fall through to the INSERT
+  // below, which would throw a raw SQLite UNIQUE-constraint error (chats.id
+  // is the primary key) — an unhandled exception leaking internal DB detail
+  // to the client instead of a clean, generic denial (Step 5/12).
+  const foreignChat = db.prepare('SELECT 1 FROM chats WHERE id = ? AND userId != ?').get(conversationId, userId);
+  if (foreignChat) {
+    throw new Error('Conversation not found.');
+  }
+
   // 1. Ensure the conversation exists
   let chatExists = db.prepare('SELECT 1 FROM chats WHERE id = ? AND userId = ?').get(conversationId, userId);
   if (!chatExists) {
@@ -91,6 +102,16 @@ export async function updateConversation(conversationId, userId, updates) {
     values.push(updates.title);
   }
   if (updates.folderId !== undefined) {
+    // Reject attaching a conversation to a folder the caller doesn't own —
+    // without this, folderId (a client-supplied resource reference, same as
+    // any other id in this app) could be set to any other user's folder id
+    // with no verification at all (Step 3/11).
+    if (updates.folderId !== null) {
+      const ownsFolder = db.prepare('SELECT 1 FROM folders WHERE id = ? AND userId = ?').get(updates.folderId, userId);
+      if (!ownsFolder) {
+        throw new Error('Folder not found.');
+      }
+    }
     fields.push('folderId = ?');
     values.push(updates.folderId);
   }

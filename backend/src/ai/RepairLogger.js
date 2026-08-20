@@ -102,6 +102,8 @@ function writeAll(file, sessions) {
  * @param {boolean} session.resolved
  * @param {string} [session.summary]
  * @param {string} [session.recommendation]
+ * @param {string} [session.userId] - Authenticated owner (Orchestrator.js), null for
+ *   legacy/CLI-generated sessions that predate ownership tracking.
  * @returns {string} The new session id.
  */
 export function logSession(session) {
@@ -111,6 +113,7 @@ export function logSession(session) {
   sessions.push({
     id,
     createdAt: new Date().toISOString(),
+    userId: session.userId || null,
     goal: session.goal,
     domain: session.domain,
     // Granular label inside the domain (e.g. "audio" under "windows"). Kept
@@ -138,16 +141,29 @@ export function logSession(session) {
 /**
  * Attach the user's feedback to a session. Searches both logs since the
  * caller doesn't know which domain the session belongs to.
+ *
+ * Ownership check (Step 17 — sessionId IDOR): if the session was logged
+ * under a specific account (session.userId set), only that account's own
+ * feedback calls are honored — a different authenticated user supplying the
+ * same sessionId is treated exactly like "session not found" rather than
+ * being allowed to tamper with someone else's record. Legacy/CLI sessions
+ * with no recorded owner (userId null) keep the old, unrestricted behavior
+ * so pre-existing data isn't orphaned.
+ *
  * @param {string} id
  * @param {boolean} worked
  * @param {string} [note]
- * @returns {boolean} true if the session was found and updated.
+ * @param {string} [requesterUserId] - The authenticated caller (routes/repair.js).
+ * @returns {boolean} true if the session was found, owned by the requester (or unowned), and updated.
  */
-export function addFeedback(id, worked, note = '') {
+export function addFeedback(id, worked, note = '', requesterUserId = null) {
   for (const file of [REPAIR_LOG_FILE, AUTOMATION_LOG_FILE]) {
     const sessions = readAll(file);
     const session = sessions.find((s) => s.id === id);
     if (session) {
+      if (session.userId && requesterUserId && session.userId !== requesterUserId) {
+        return false;
+      }
       session.feedback = { worked: Boolean(worked), note, at: new Date().toISOString() };
       writeAll(file, sessions);
       return true;

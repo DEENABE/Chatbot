@@ -1,5 +1,13 @@
 import { verifySession } from '../services/sessionService.js';
 import { isValidUuid } from '../lib/validateUuid.js';
+import { db } from '../services/db.js';
+
+// The only role value that counts as elevated. Nothing in this app can set
+// a user's `role` column to this except a direct DB write (see
+// authService.updateUserProfile, which deliberately excludes `role` from the
+// fields a user can self-edit) — there is no self-service or API path that
+// promotes an account, by design.
+const ADMIN_ROLE = 'Admin';
 
 /**
  * Requires a valid, non-expired, non-revoked session token in
@@ -34,5 +42,21 @@ export function requireAuth(request, response, next) {
 
   request.userId = session.userId;
   request.sessionToken = token;
+  next();
+}
+
+/**
+ * Authorization (not authentication) gate: must run after requireAuth.
+ * A valid session proves who the caller is; this proves they're allowed to
+ * hit an admin-only route. Role is re-read from the DB on every call rather
+ * than trusted from anything the client sent, so there is exactly one place
+ * in the app that decides "is this user an admin" (Step 8/22: centralized,
+ * not duplicated per-controller).
+ */
+export function requireAdmin(request, response, next) {
+  const user = db.prepare('SELECT role FROM users WHERE id = ?').get(request.userId);
+  if (!user || user.role !== ADMIN_ROLE) {
+    return response.status(403).json({ error: 'Admin privileges required.' });
+  }
   next();
 }

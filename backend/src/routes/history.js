@@ -62,6 +62,9 @@ historyRouter.patch('/:conversationId', async (request, response, next) => {
     await updateConversation(conversationId, userId, { title, folderId, isPinned, isBookmarked });
     response.json({ ok: true });
   } catch (error) {
+    if (error.message === 'Folder not found.') {
+      return response.status(400).json({ error: error.message });
+    }
     next(error);
   }
 });

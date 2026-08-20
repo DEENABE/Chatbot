@@ -308,15 +308,19 @@ export async function resetPasswordWithToken(token, newPassword) {
   return { ok: true };
 }
 
+// Allowlisted fields only (Step 13: mass assignment protection) — `role`,
+// `permissions`, `id`, `passwordHash`, `salt` etc. are never accepted here
+// even if a caller passes them in `data`, because they are never read out of
+// it. There is intentionally no API path that lets an account change its own
+// role; promoting a user to Admin is a direct DB operation only.
 export async function updateUserProfile(userId, data) {
   db.prepare(`
     UPDATE users
     SET displayName = COALESCE(?, displayName),
         email = COALESCE(?, email),
-        department = COALESCE(?, department),
-        role = COALESCE(?, role)
+        department = COALESCE(?, department)
     WHERE id = ?
-  `).run(data.displayName || null, data.email || null, data.department || null, data.role || null, userId);
+  `).run(data.displayName || null, data.email || null, data.department || null, userId);
 
   return getUserById(userId);
 }

@@ -30,9 +30,12 @@ import { logSession } from './RepairLogger.js';
  * @param {number} [args.maxSteps]
  * @param {AbortSignal} [args.signal]
  * @param {(event: Object) => void} args.onEvent
+ * @param {string} [args.userId] - Authenticated caller (routes/repair.js). Recorded on the
+ *   logged session so later ownership checks (e.g. POST /api/repair/feedback) can tell who
+ *   the session belongs to. Optional so the standalone CLI (runRepair.cli.js) still works.
  * @returns {Promise<{ domain: string, resolved: boolean, summary: string, recommendation: string }>}
  */
-export async function runRepair({ goal, model = DEFAULT_MODEL, maxSteps = 8, signal, onEvent = () => {} }) {
+export async function runRepair({ goal, model = DEFAULT_MODEL, maxSteps = 8, signal, userId, onEvent = () => {} }) {
   // 1. Classify the problem into a domain.
   const intent = await classifyIntent(goal, { model, signal });
   onEvent({ type: 'intent', payload: { domain: intent.domain, confidence: intent.confidence, reason: intent.reason } });
@@ -69,7 +72,8 @@ export async function runRepair({ goal, model = DEFAULT_MODEL, maxSteps = 8, sig
     steps,
     resolved: verdict.resolved,
     summary: verdict.summary,
-    recommendation: verdict.recommendation
+    recommendation: verdict.recommendation,
+    userId: userId || null
   });
 
   onEvent({
