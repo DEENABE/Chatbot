@@ -10,14 +10,27 @@ import {
   registerLimiter
 } from '../middleware/rateLimiter.js';
 import { requireAuth } from '../middleware/auth.js';
+import { optionalString } from '../lib/validate.js';
 
 export const authRouter = Router();
+
+// Upper bounds only (Step 2: oversized strings) — presence/format/min-length
+// stays owned entirely by authService, which already tests it thoroughly.
+// A username/displayName with no cap at all would otherwise be stored and
+// echoed back at whatever size a client sends, bounded only by the 10mb
+// JSON body limit.
+const MAX_USERNAME = 64;
+const MAX_DISPLAY_NAME = 120;
+const MAX_EMAIL = 254; // RFC 5321 total-address limit
+const MAX_DEPARTMENT = 120;
 
 // Register user — auto-issues a session, same as login, so the client can go
 // straight into the app without a separate round trip.
 authRouter.post('/register', ipAuthLimiter, registerLimiter, async (request, response) => {
   try {
-    const { username, displayName, password } = request.body || {};
+    const { password } = request.body || {};
+    const username = optionalString(request.body?.username, 'Username', { min: 0, max: MAX_USERNAME });
+    const displayName = optionalString(request.body?.displayName, 'Display name', { min: 0, max: MAX_DISPLAY_NAME });
     const user = await registerUser(username, displayName, password);
     const { token, expiresAt } = createSession(user.id);
     response.status(201).json({ user, token, expiresAt });
@@ -33,7 +46,8 @@ authRouter.post('/register', ipAuthLimiter, registerLimiter, async (request, res
 // thing slowing a guessing script down.
 authRouter.post('/login', ipAuthLimiter, loginLimiter, progressiveLoginDelay, async (request, response) => {
   try {
-    const { username, password } = request.body || {};
+    const { password } = request.body || {};
+    const username = optionalString(request.body?.username, 'Username', { min: 0, max: MAX_USERNAME });
     const user = await loginUser(username, password);
     const { token, expiresAt } = createSession(user.id);
     response.json({ user, token, expiresAt });
@@ -112,7 +126,9 @@ authRouter.post('/reset-password', ipAuthLimiter, resetConfirmLimiter, async (re
 // matching allowlist enforced again at the DB-write layer.
 authRouter.patch('/profile', requireAuth, async (request, response, next) => {
   try {
-    const { displayName, email, department } = request.body;
+    const displayName = optionalString(request.body?.displayName, 'Display name', { min: 0, max: MAX_DISPLAY_NAME });
+    const email = optionalString(request.body?.email, 'Email', { min: 0, max: MAX_EMAIL });
+    const department = optionalString(request.body?.department, 'Department', { min: 0, max: MAX_DEPARTMENT });
     const user = await updateUserProfile(request.userId, { displayName, email, department });
     response.json({ user });
   } catch (error) {

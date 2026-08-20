@@ -8,6 +8,15 @@ import { requireAuth } from '../middleware/auth.js';
 
 export const chatRouter = Router();
 
+const MAX_MESSAGE_LENGTH = 50_000; // generous — pasted logs/code, not just chat prose
+const MAX_HISTORY_ITEMS = 500;
+// Server generates a real UUID by default, but the client is allowed to
+// supply its own (continuing an existing conversation) — including via a
+// legacy fallback (useAppStore.js) for environments without
+// crypto.randomUUID(), which produces a short base36 string, not a UUID.
+// So this only bounds shape/length rather than requiring strict UUID form.
+const CONVERSATION_ID_PATTERN = /^[a-zA-Z0-9-]{1,100}$/;
+
 function buildSystemMessage(sources, screenCapture, agentProfile, hasTools) {
   const context = sources.length
     ? sources
@@ -86,6 +95,15 @@ chatRouter.post('/', requireAuth, async (request, response) => {
 
   if (!supportedModels.some((item) => item.id === model)) {
     return response.status(400).json({ error: 'Unsupported model.' });
+  }
+  if (typeof message !== 'string' || message.length > MAX_MESSAGE_LENGTH) {
+    return response.status(400).json({ error: `message must be a string of ${MAX_MESSAGE_LENGTH} characters or fewer.` });
+  }
+  if (!Array.isArray(history) || history.length > MAX_HISTORY_ITEMS) {
+    return response.status(400).json({ error: `history must be an array of at most ${MAX_HISTORY_ITEMS} items.` });
+  }
+  if (typeof conversationId !== 'string' || !CONVERSATION_ID_PATTERN.test(conversationId)) {
+    return response.status(400).json({ error: 'Invalid conversationId.' });
   }
 
   const trimmedMessage = String(message || '').trim();

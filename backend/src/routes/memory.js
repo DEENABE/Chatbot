@@ -1,16 +1,24 @@
 import { Router } from 'express';
 import { getMemories, addMemory, deleteMemory, clearMemories } from '../services/memoryService.js';
 import { requireAuth } from '../middleware/auth.js';
+import { requireString, requireEnum, requireUuidParam, scalar } from '../lib/validate.js';
 
 export const memoryRouter = Router();
 
+const MEMORY_TYPES = ['session', 'pinned', 'project'];
+
 memoryRouter.use(requireAuth);
 
-// Get memories
+// Get memories. `type` is collapsed to a single value (Step 11: a repeated
+// ?type=a&type=b would otherwise reach the DB layer as an array, which
+// better-sqlite3 rejects as an unbindable bind-parameter type) and, when
+// present, must be one of the real memory types rather than an arbitrary
+// string reaching a `WHERE type = ?` filter.
 memoryRouter.get('/', async (request, response, next) => {
   try {
     const userId = request.userId;
-    const type = request.query.type;
+    const rawType = scalar(request.query.type);
+    const type = rawType === undefined ? undefined : requireEnum(rawType, 'type', MEMORY_TYPES);
     const memories = await getMemories(userId, type);
     response.json({ memories });
   } catch (error) {
@@ -22,13 +30,8 @@ memoryRouter.get('/', async (request, response, next) => {
 memoryRouter.post('/', async (request, response, next) => {
   try {
     const userId = request.userId;
-    const { content, type } = request.body;
-    if (!content?.trim()) {
-      return response.status(400).json({ error: 'Memory content is required' });
-    }
-    if (!type || !['session', 'pinned', 'project'].includes(type)) {
-      return response.status(400).json({ error: 'Invalid memory type' });
-    }
+    const content = requireString(request.body?.content, 'content', { max: 8000 });
+    const type = requireEnum(request.body?.type, 'type', MEMORY_TYPES);
     const memory = await addMemory(userId, content, type);
     response.status(201).json({ memory });
   } catch (error) {
@@ -37,7 +40,7 @@ memoryRouter.post('/', async (request, response, next) => {
 });
 
 // Delete memory
-memoryRouter.delete('/:memoryId', async (request, response, next) => {
+memoryRouter.delete('/:memoryId', requireUuidParam('memoryId'), async (request, response, next) => {
   try {
     const userId = request.userId;
     const memoryId = request.params.memoryId;
@@ -52,7 +55,8 @@ memoryRouter.delete('/:memoryId', async (request, response, next) => {
 memoryRouter.delete('/', async (request, response, next) => {
   try {
     const userId = request.userId;
-    const type = request.query.type;
+    const rawType = scalar(request.query.type);
+    const type = rawType === undefined ? undefined : requireEnum(rawType, 'type', MEMORY_TYPES);
     await clearMemories(userId, type);
     response.json({ ok: true });
   } catch (error) {

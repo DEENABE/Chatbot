@@ -8,6 +8,9 @@ import { extractDocument, isSupportedDocument } from '../services/documentServic
 import { indexChunks } from '../services/vectorService.js';
 import { appendDocuments } from '../services/documentsStore.js';
 import { requireAuth } from '../middleware/auth.js';
+import { ValidationError } from '../lib/validate.js';
+
+const MAX_ORIGINAL_NAME_LENGTH = 255; // common filesystem filename limit
 
 const storage = multer.diskStorage({
   destination: config.uploadDir,
@@ -46,12 +49,33 @@ uploadRouter.post(
         return response.status(400).json({ error: 'Select at least one document.' });
       }
 
+      // Per-file tolerance, not batch-abort: a folder upload always contains
+      // a mix of files, and one bad one (wrong content for its extension, no
+      // extractable text, a pathological filename) shouldn't sink every
+      // other legitimate file in the same request — same reasoning as the
+      // fileFilter above, extended to checks that only become possible once
+      // the file's actual bytes are on disk.
       const documents = [];
+      const skipped = [];
       for (const file of files) {
-        const text = await extractDocument(file);
+        if (file.originalname.length > MAX_ORIGINAL_NAME_LENGTH) {
+          skipped.push({ name: file.originalname.slice(0, 80) + '…', reason: 'Filename too long.' });
+          continue;
+        }
+        let text;
+        try {
+          text = await extractDocument(file);
+        } catch (error) {
+          if (error instanceof ValidationError) {
+            skipped.push({ name: file.originalname, reason: error.message });
+            continue;
+          }
+          throw error;
+        }
         const chunks = chunkText(text);
         if (!chunks.length) {
-          throw new Error(`${file.originalname} did not contain extractable text.`);
+          skipped.push({ name: file.originalname, reason: 'No extractable text.' });
+          continue;
         }
         const documentId = randomUUID();
         const chunkCount = await indexChunks(
@@ -69,7 +93,7 @@ uploadRouter.post(
       }
 
       await appendDocuments(documents, userId);
-      response.status(201).json({ documents });
+      response.status(201).json({ documents, skipped });
     } catch (error) {
       next(error);
     }

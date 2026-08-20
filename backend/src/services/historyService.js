@@ -170,11 +170,15 @@ export async function deleteFolder(folderId, userId) {
 // Search
 export async function searchChats(query, userId) {
   const searchTerm = `%${query}%`;
+  // Bounded (Step 19: resource exhaustion) — a broad term like "e" can
+  // otherwise match a large fraction of a long-running user's entire
+  // history; 200 is far more than anyone scans through in a search dropdown.
   const chats = db.prepare(`
     SELECT DISTINCT c.* FROM chats c
     LEFT JOIN messages m ON c.id = m.chatId
     WHERE c.userId = ? AND (c.title LIKE ? OR m.content LIKE ?)
     ORDER BY c.updatedAt DESC
+    LIMIT 200
   `).all(userId, searchTerm, searchTerm);
 
   return chats.map(chat => ({

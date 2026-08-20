@@ -2,8 +2,15 @@ import { Router } from 'express';
 import { runAgent } from '../agent/agentLoop.js';
 import { AGENT_DEFAULT_MODEL } from '../agent/agentBrain.js';
 import { requireAuth } from '../middleware/auth.js';
+import { boundedInt } from '../lib/validate.js';
 
 export const agentRouter = Router();
+
+const MAX_GOAL_LENGTH = 4000;
+// Well above the loop's own default (8) so a deliberately longer run still
+// works, but bounded — an unbounded maxSteps is an unbounded number of
+// unattended PowerShell commands (Step 19: resource exhaustion).
+const MAX_STEPS_CEILING = 50;
 
 /**
  * POST /api/agent
@@ -24,6 +31,15 @@ agentRouter.post('/', requireAuth, async (request, response) => {
   if (!goal || !String(goal).trim()) {
     return response.status(400).json({ error: 'A "goal" describing the problem is required.' });
   }
+  if (String(goal).length > MAX_GOAL_LENGTH) {
+    return response.status(400).json({ error: `goal must be ${MAX_GOAL_LENGTH} characters or fewer.` });
+  }
+  let boundedMaxSteps;
+  try {
+    boundedMaxSteps = boundedInt(maxSteps, 'maxSteps', { min: 1, max: MAX_STEPS_CEILING, fallback: undefined });
+  } catch (error) {
+    return response.status(400).json({ error: error.message });
+  }
 
   response.status(200);
   response.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
@@ -36,7 +52,7 @@ agentRouter.post('/', requireAuth, async (request, response) => {
     await runAgent({
       goal: String(goal).trim(),
       model,
-      maxSteps: Number(maxSteps) || undefined,
+      maxSteps: boundedMaxSteps,
       signal: request.signal,
       onEvent: send,
     });

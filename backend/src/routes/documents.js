@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { getDocuments, deleteDocument } from '../services/documentsStore.js';
 import { listIndexedDocuments } from '../services/vectorService.js';
 import { requireAuth } from '../middleware/auth.js';
+import { requireUuidParam } from '../lib/validate.js';
 
 export const documentsRouter = Router();
 
@@ -28,7 +29,7 @@ documentsRouter.get('/', async (request, response, next) => {
   }
 });
 
-documentsRouter.delete('/:documentId', async (request, response, next) => {
+documentsRouter.delete('/:documentId', requireUuidParam('documentId'), async (request, response, next) => {
   try {
     const userId = request.userId;
     const documentId = request.params.documentId;
