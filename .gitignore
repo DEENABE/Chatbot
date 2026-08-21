@@ -27,8 +27,8 @@ backend/data/
 backend/storage/uploads/*
 # backend/storage/lancedb/*
 # backend/storage/history.json
-backend/storage/repair-sessions.json
-backend/storage/repair-dataset.jsonl
+# backend/storage/repair-sessions.json
+# backend/storage/repair-dataset.jsonl
 !backend/storage/uploads/.gitkeep
 # !backend/storage/lancedb/.gitkeep
 # Runtime user DB — password hashes/salts, must never be committed.
@@ -45,8 +45,8 @@ backend/storage/db_store.json
 backend/storage/password-reset-token.txt
 # Training-corpus files (repair/automation sessions, PowerShell transcripts —
 # hostnames, usernames, paths, network config) now live under a dedicated
-# directory rather than loose in storage/.
-backend/storage/training-data/
+# directory rather than loose in storage/
+#backend/storage/training-data/
 
 # ─── Logs ───────────────────────────────────────────────────────
 *.log
