@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import multer from 'multer';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { config } from '../config.js';
-import { chunkText } from '../lib/chunkText.js';
+import { chunkText, MAX_CHUNKS } from '../lib/chunkText.js';
 import { extractDocument, isSupportedDocument } from '../services/documentService.js';
 import { indexChunks } from '../services/vectorService.js';
 import { appendDocuments } from '../services/documentsStore.js';
@@ -58,41 +59,80 @@ uploadRouter.post(
       const documents = [];
       const skipped = [];
       for (const file of files) {
-        if (file.originalname.length > MAX_ORIGINAL_NAME_LENGTH) {
-          skipped.push({ name: file.originalname.slice(0, 80) + '…', reason: 'Filename too long.' });
-          continue;
-        }
-        let text;
+        // The file on disk is only ever needed transiently, to extract its
+        // text once — nothing in this app re-reads or re-serves the raw
+        // upload afterward (see documentsStore.deleteDocument, which only
+        // ever removes the DB row and vector chunks). Left in place, every
+        // upload — including ones the user later "deletes" through the API
+        // — would sit in storage/uploads forever, an unbounded disk-space
+        // leak and a copy of supposedly-deleted content that outlives the
+        // delete. Removing it here, unconditionally, after this file is
+        // done (success or failure), means there's nothing left to leak.
         try {
-          text = await extractDocument(file);
-        } catch (error) {
-          if (error instanceof ValidationError) {
-            skipped.push({ name: file.originalname, reason: error.message });
+          if (file.originalname.length > MAX_ORIGINAL_NAME_LENGTH) {
+            skipped.push({ name: file.originalname.slice(0, 80) + '…', reason: 'Filename too long.' });
             continue;
           }
-          throw error;
+          let text;
+          try {
+            text = await extractDocument(file);
+          } catch (error) {
+            // A parser throwing on a corrupt-but-signature-valid file (a
+            // truncated PDF, a malformed workbook) is exactly as expected a
+            // failure as ValidationError — both mean "skip this one file",
+            // not "abort the whole batch and 500 the request", which is
+            // what happened before for anything the parser itself rejected.
+            if (!(error instanceof ValidationError)) {
+              console.error(`[upload] ${file.originalname} failed to parse:`, error.message);
+            }
+            skipped.push({ name: file.originalname, reason: error instanceof ValidationError ? error.message : 'Could not be parsed.' });
+            continue;
+          }
+          const chunks = chunkText(text);
+          if (!chunks.length) {
+            skipped.push({ name: file.originalname, reason: 'No extractable text.' });
+            continue;
+          }
+          if (chunks.length > MAX_CHUNKS) {
+            skipped.push({ name: file.originalname, reason: 'Document is too large to index safely.' });
+            continue;
+          }
+          const documentId = randomUUID();
+          let chunkCount;
+          try {
+            chunkCount = await indexChunks(
+              { documentId, filename: file.originalname, chunks },
+              userId
+            );
+          } catch (error) {
+            // Embedding can fail for reasons that have nothing to do with
+            // this specific file (e.g. Ollama unreachable) — but treating it
+            // as a batch-abort was worse: any file already indexed earlier
+            // in this same loop would have real vector chunks in LanceDB
+            // with no corresponding row in the documents table at all,
+            // because appendDocuments() used to run once, after the loop,
+            // for every file at once. Persisting each document's metadata
+            // immediately below (instead of batching) plus treating this
+            // like any other per-file failure closes both problems together.
+            console.error(`[upload] ${file.originalname} failed to index:`, error.message);
+            skipped.push({ name: file.originalname, reason: 'Could not be indexed.' });
+            continue;
+          }
+          const doc = {
+            id: documentId,
+            name: file.originalname,
+            size: file.size,
+            characters: text.length,
+            chunks: chunkCount,
+            uploadedAt: new Date().toISOString()
+          };
+          await appendDocuments([doc], userId);
+          documents.push(doc);
+        } finally {
+          await fs.rm(file.path, { force: true }).catch(() => {});
         }
-        const chunks = chunkText(text);
-        if (!chunks.length) {
-          skipped.push({ name: file.originalname, reason: 'No extractable text.' });
-          continue;
-        }
-        const documentId = randomUUID();
-        const chunkCount = await indexChunks(
-          { documentId, filename: file.originalname, chunks },
-          userId
-        );
-        documents.push({
-          id: documentId,
-          name: file.originalname,
-          size: file.size,
-          characters: text.length,
-          chunks: chunkCount,
-          uploadedAt: new Date().toISOString()
-        });
       }
 
-      await appendDocuments(documents, userId);
       response.status(201).json({ documents, skipped });
     } catch (error) {
       next(error);

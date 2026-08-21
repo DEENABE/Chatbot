@@ -1,0 +1,121 @@
+# ─── Dependencies ───────────────────────────────────────────────
+node_modules/
+.pnp
+.pnp.js
+.npm
+
+# ─── Environment / secrets ──────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ─── Build output ───────────────────────────────────────────────
+dist/
+build/
+frontend/dist/
+frontend/release-build/
+frontend/release-latest/
+# Self-contained backend runtime produced by scripts/prepare-backend.cjs
+frontend/backend-runtime/
+
+# # ─── Backend runtime / generated data ───────────────────────────
+# backend/storage/
+backend/data/
+# # keep the folder structure but not its contents
+# !backend/storage/.gitkeep
+# # legacy runtime files (older layout)
+backend/storage/uploads/*
+# backend/storage/lancedb/*
+# backend/storage/history.json
+backend/storage/repair-sessions.json
+backend/storage/repair-dataset.jsonl
+!backend/storage/uploads/.gitkeep
+# !backend/storage/lancedb/.gitkeep
+# Runtime user DB — password hashes/salts, must never be committed.
+backend/storage/users.json
+backend/storage/db.sqlite
+backend/storage/db.sqlite-shm
+backend/storage/db.sqlite-wal
+# JSONDatabase writes to this filename at runtime, not db.sqlite — same
+# password-hash/salt sensitivity as the rule above, must match the real name.
+backend/storage/db_store.json
+# Raw password-reset code, written locally by authService.js since this app
+# has no email/SMTP to deliver it through instead. Same sensitivity tier as
+# the credential files above — never committed.
+backend/storage/password-reset-token.txt
+# Training-corpus files (repair/automation sessions, PowerShell transcripts —
+# hostnames, usernames, paths, network config) now live under a dedicated
+# directory rather than loose in storage/.
+backend/storage/training-data/
+
+# ─── Logs ───────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+backend.log
+logs/
+
+# ─── Caches / test / coverage ───────────────────────────────────
+.cache/
+.vite/
+coverage/
+*.tsbuildinfo
+
+# ─── Editor / OS ────────────────────────────────────────────────
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+Desktop.ini
+# Word/Office lock files created while a document is open
+~$*
+
+# ─── Local tooling ──────────────────────────────────────────────
+.claude/
+
+# ─── Misc scratch ───────────────────────────────────────────────
+test.json
+backend/test_doc.txt
+*.local
+
+# ─── Dataset tooling ──────────────────────────────────────────────
+# Timestamped snapshots written by the dataset scripts before each run —
+# grows without bound and has no value once the run it protected succeeds.
+dataset-backups/
+# One-off generator/verification scripts (gen1.py...gen26.py, etc.) used to
+# build the training data — local tooling, not part of the shipped app.
+dataset-tools/
+
+#--------claude ignore--------
+.claude/
+#-------ship.mjs igore--------
+scripts/ship.mjs
+
+#----flie transer-----
+sync.ffs_db
+
+#----security audit (unpatched critical findings — do not publish)-----
+Chanakya_Security_Audit.pdf
+
+#---git workflow---
+.github/workflows/ship.yml
+
+#---claude.md--
+CLAUDE.md
+ 
+ #----gitignore----
+ .gitignore
+
+#---scripts---
+ scripts/ship.mjs
+
+
+ #---claude auto check---
+ .github/workflows/claude-auto-check.yml
+
+ #---.env example---
+    .env.example

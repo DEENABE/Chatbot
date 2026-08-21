@@ -1,3 +1,11 @@
+// Bounds worst-case embedding calls per document (Phase 5: chunking/
+// embedding resource exhaustion) — indexChunks() embeds every chunk it's
+// given with no cap of its own, so an unbounded chunk count from one
+// malicious/pathological upload becomes unbounded, serialized Ollama load.
+// ~1.8M characters of extractable text at the default chunk size — far
+// beyond any legitimate single document this app expects to index.
+export const MAX_CHUNKS = 2000;
+
 export function chunkText(text, { size = 900, overlap = 140 } = {}) {
   const clean = text
     .replace(/\r/g, '')
