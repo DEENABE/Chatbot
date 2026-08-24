@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Chanakya Enterprise AI Assistant
 
 A private, desktop-style knowledge assistant built around Ollama and a local LanceDB vector store. Documents, embeddings, chat history, speech recognition, and generation remain on the machine.
@@ -144,6 +143,3 @@ chanakya/
 ├── .env.example
 └── package.json
 ```
-=======
-# Chatbot
->>>>>>> 79f1c100784c7c51ba9129d31b8d737c537b1936

@@ -1,4 +1,4 @@
-import { BrowserWindow, screen } from 'electron';
+import { BrowserWindow, screen, shell } from 'electron';
 import path from 'path';
 import { getPreloadPath, isPacked, rootDir } from '../utils/pathHelper.js';
 import { BUBBLE_SIZE, CHAT_WIDTH, CHAT_HEIGHT, TOOLBAR_HEIGHT, HOVER_WIDTH } from '../utils/constants.js';
@@ -40,13 +40,48 @@ export function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
       preload: getPreloadPath()
     }
   });
 
   mainWindow.setMenuBarVisibility(false);
   mainWindow.loadFile(path.join(rootDir, "dist", "index.html"));
-  
+
+  // This is a single-page app that never legitimately navigates away from
+  // its own loaded index.html — every screen change happens through React
+  // state, not a real page load. So any 'will-navigate' at all is
+  // unsolicited: an <a href> in rendered markdown (chat replies pass
+  // through ReactMarkdown with no link interception — a link can originate
+  // from the LLM, and by extension from RAG-retrieved or otherwise
+  // injected document content per Phase 5) is the realistic trigger. Left
+  // unhandled, Electron's default is to navigate this same, privileged
+  // BrowserWindow to whatever URL it finds — and because contextIsolation
+  // doesn't stop the preload script from being re-injected on the new
+  // page, that would hand an attacker-controlled page the same
+  // window.toolEngine / window.sessionAPI surface the real app has,
+  // including the live session token and the (confirmation-gated, but
+  // still reachable) PowerShell/CMD/file/registry tools from Phase 4.
+  // http(s) targets are redirected to the user's actual default browser —
+  // an ordinary, unprivileged tab — instead of just being dropped, so
+  // clicking a link in chat still does something useful.
+  mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
+    event.preventDefault();
+    if (/^https?:\/\//i.test(navigationUrl)) {
+      shell.openExternal(navigationUrl).catch(() => {});
+    }
+  });
+
+  // Same reasoning for window.open()/target="_blank" — never open a second,
+  // equally-privileged Electron window; hand http(s) off to the system
+  // browser and deny everything else outright.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) {
+      shell.openExternal(url).catch(() => {});
+    }
+    return { action: 'deny' };
+  });
+
   // DevTools - Enable in dev mode only
   if (!isPacked) {
     mainWindow.webContents.openDevTools({ mode: 'detach' });

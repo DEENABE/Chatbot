@@ -35,10 +35,15 @@ if (!gotSingleInstanceLock) {
   });
 
   app.whenReady().then(async () => {
-    // Permission handling
+    // Permission handling. Scoped to the app's own loaded page, not just the
+    // permission type — this session is shared by any webContents that ever
+    // exists in this process, so without the origin check a page this app
+    // never intended to load (see the navigation guards in WindowManager.js)
+    // could still silently receive mic/camera access just by asking.
     session.defaultSession.setPermissionRequestHandler(
       (webContents, permission, callback) => {
-        callback(permission === 'media');
+        const isOwnPage = webContents.getURL().startsWith('file://');
+        callback(isOwnPage && permission === 'media');
       }
     );
 

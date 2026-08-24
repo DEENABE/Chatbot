@@ -5,6 +5,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { config } from '../config.js';
 import { transcribeLocalWav } from '../services/speechService.js';
+import { requireAuth } from '../middleware/auth.js';
 
 const audioUpload = multer({
   storage: multer.memoryStorage(),
@@ -12,6 +13,8 @@ const audioUpload = multer({
 });
 
 export const transcribeRouter = Router();
+
+transcribeRouter.use(requireAuth);
 
 transcribeRouter.post(
   '/',
