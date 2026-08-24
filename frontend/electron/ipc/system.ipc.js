@@ -4,13 +4,16 @@ import * as NotificationManager from "../managers/NotificationManager.js";
 import * as FileService from "../services/FileService.js";
 import * as WindowManager from "../managers/WindowManager.js";
 import * as TextToSpeech from "../services/TextToSpeech.js";
+import { isTrustedSender } from "../utils/ipcTrust.js";
 
 export function registerSystemIPCHandlers() {
 
     /**
      * Desktop Notification
      */
-    ipcMain.handle("show-notification", async (_, payload = {}) => {
+    ipcMain.handle("show-notification", async (event, payload = {}) => {
+
+        if (!isTrustedSender(event)) return false;
 
         const {
             title = "",
@@ -25,7 +28,9 @@ export function registerSystemIPCHandlers() {
     /**
      * Speak Text
      */
-    ipcMain.handle("tts:speak", async (_, payload = {}) => {
+    ipcMain.handle("tts:speak", async (event, payload = {}) => {
+
+        if (!isTrustedSender(event)) return false;
 
         try {
 
@@ -57,7 +62,9 @@ export function registerSystemIPCHandlers() {
     /**
      * Stop Speaking
      */
-    ipcMain.handle("tts:stop", async () => {
+    ipcMain.handle("tts:stop", async (event) => {
+
+        if (!isTrustedSender(event)) return false;
 
         try {
 
@@ -79,7 +86,9 @@ export function registerSystemIPCHandlers() {
     /**
      * Get Installed Voices
      */
-    ipcMain.handle("tts:voices", async () => {
+    ipcMain.handle("tts:voices", async (event) => {
+
+        if (!isTrustedSender(event)) return [];
 
         try {
 
@@ -97,7 +106,9 @@ export function registerSystemIPCHandlers() {
     /**
      * Save File
      */
-    ipcMain.handle("save-file", async (_, payload = {}) => {
+    ipcMain.handle("save-file", async (event, payload = {}) => {
+
+        if (!isTrustedSender(event)) return null;
 
         try {
 

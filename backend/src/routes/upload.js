@@ -10,6 +10,7 @@ import { indexChunks } from '../services/vectorService.js';
 import { appendDocuments } from '../services/documentsStore.js';
 import { requireAuth } from '../middleware/auth.js';
 import { ValidationError } from '../lib/validate.js';
+import { askLimiter } from '../middleware/rateLimiter.js';
 
 const MAX_ORIGINAL_NAME_LENGTH = 255; // common filesystem filename limit
 
@@ -40,6 +41,14 @@ uploadRouter.post(
   // Auth runs before multer so an unauthenticated request is rejected
   // before any file is written to disk, not after.
   requireAuth,
+  // Flagged as a known gap in an earlier phase: no limiter meant a user
+  // could fire unlimited concurrent/rapid upload requests (each up to 500
+  // files, each up to config.maxFileSize, each now capped at MAX_CHUNKS
+  // downstream) with nothing bounding how many of those requests overlap.
+  // Same 20/min ceiling as chat/agent/repair/transcribe — generous for
+  // genuine use (one folder drag-and-drop is one request) while bounding
+  // concurrent embedding load.
+  askLimiter,
   uploader.array('documents', 500),
   async (request, response, next) => {
     try {

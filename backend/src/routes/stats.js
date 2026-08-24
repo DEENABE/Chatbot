@@ -1,8 +1,16 @@
 import { Router } from 'express';
 import os from 'node:os';
 import fs from 'node:fs/promises';
+import { requireAuth } from '../middleware/auth.js';
 
 export const statsRouter = Router();
+
+// Unlike /api/models (fetched unconditionally on app mount, before login
+// completes — see App.jsx), this is only ever called from Topbar.jsx and
+// SystemMonitor.jsx, both post-login UI. No resource ID, no per-user data —
+// low sensitivity either way — but there's no reason to leave a route
+// unauthenticated once confirmed nothing legitimate needs it to be.
+statsRouter.use(requireAuth);
 
 let previousCpus = os.cpus();
 
