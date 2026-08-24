@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 import { ConfirmationGate } from '../ConfirmationGate.js';
 import { BaseToolService } from '../BaseToolService.js';
@@ -122,6 +125,103 @@ test('PowerShellService still executes a real, safe command via executeConfirmed
   const result = await svc.executeConfirmed('execute', { command: 'Write-Output hello-from-test' });
   assert.equal(result.success, true);
   assert.match(result.data.stdout, /hello-from-test/);
+});
+
+// ── Phase 9: executeScript/executeBatch/startProcess bypass fixes ───────
+//
+// Three findings from the Phase 9 hardening pass: PowerShellService.
+// executeScript and CmdService.executeBatch ran a script/batch file's
+// content without ever checking it against isBlockedCommand (only the raw-
+// text execute()/runCmd() path did) — a confirmed script file could contain
+// any BLOCKED_PATTERNS command and run anyway, since the confirmation
+// dialog only shows the file path, never its contents. Separately,
+// ProcessService.startProcess launched an arbitrary executable+args via
+// spawn() with no policy check at all, letting `startProcess('powershell.exe',
+// ['-Command', '<blocked>'])` bypass every guard PowerShellService.execute
+// enforces for the exact same capability.
+
+test('PowerShellService.executeScript refuses a script whose content is blocked, even though the path itself is fine', async () => {
+  const svc = new PowerShellService(gate());
+  const scriptPath = path.join(os.tmpdir(), `chanakya-test-blocked-${Date.now()}.ps1`);
+  fs.writeFileSync(scriptPath, 'Remove-Item C:\\Windows -Recurse -Force');
+  try {
+    await assert.rejects(
+      () => svc.executeConfirmed('executeScript', { scriptPath }),
+      /blocked/i
+    );
+  } finally {
+    fs.rmSync(scriptPath, { force: true });
+  }
+});
+
+test('PowerShellService.executeScript still runs a real, safe script', async () => {
+  const svc = new PowerShellService(gate());
+  const scriptPath = path.join(os.tmpdir(), `chanakya-test-safe-${Date.now()}.ps1`);
+  fs.writeFileSync(scriptPath, 'Write-Output hello-from-script');
+  try {
+    const result = await svc.executeConfirmed('executeScript', { scriptPath });
+    assert.equal(result.success, true);
+    assert.match(result.data.stdout, /hello-from-script/);
+  } finally {
+    fs.rmSync(scriptPath, { force: true });
+  }
+});
+
+test('CmdService.executeBatch refuses a batch file whose content is blocked', async () => {
+  const svc = new CmdService(gate());
+  const scriptPath = path.join(os.tmpdir(), `chanakya-test-blocked-${Date.now()}.bat`);
+  fs.writeFileSync(scriptPath, 'diskpart');
+  try {
+    await assert.rejects(
+      () => svc.executeConfirmed('executeBatch', { scriptPath }),
+      /blocked/i
+    );
+  } finally {
+    fs.rmSync(scriptPath, { force: true });
+  }
+});
+
+test('ProcessService.startProcess refuses a blocked command line, matching PowerShellService.execute for the same capability', async () => {
+  const svc = new ProcessService(gate());
+  await assert.rejects(
+    () => svc.executeConfirmed('startProcess', { command: 'powershell.exe', args: ['-Command', 'diskpart'] }),
+    /blocked/i
+  );
+});
+
+test('ProcessService.startProcess still allows an ordinary command', async () => {
+  const svc = new ProcessService(gate());
+  const result = await svc.executeConfirmed('startProcess', { command: 'cmd.exe', args: ['/c', 'exit', '0'] });
+  assert.equal(result.success, true);
+  assert.equal(typeof result.data.pid, 'number');
+});
+
+test('FileService.open refuses to launch an interactive shell (cmd/powershell) without confirmation', async () => {
+  const svc = new FileService(gate());
+  for (const target of ['powershell', 'cmd', 'PowerShell.exe', 'Windows Terminal']) {
+    await assert.rejects(
+      () => svc.execute('open', { target }),
+      /shell/i,
+      `target "${target}" should be refused`
+    );
+  }
+});
+
+test('FileService.open still allows an ordinary (non-shell) target through to the resolver', async () => {
+  const svc = new FileService(gate());
+  // A deliberately unresolvable name so nothing actually launches on the
+  // test machine — it isn't a shell alias, so it must clear the shell-
+  // launch guard and reach the real PowerShell resolver, which then fails
+  // with "no application... found". Checked by error code, not a message
+  // substring: the resolver's own failure text legitimately mentions
+  // "PowerShell" (it's implemented via powershell.exe), which would false-
+  // positive a naive /shell/i check against the *resolver's* error, not
+  // the guard's. Only the guard is under test here, not the resolver's
+  // success path (that's covered by openTarget's own behavior elsewhere).
+  await assert.rejects(
+    () => svc.execute('open', { target: 'chanakya-test-nonexistent-app-xyz' }),
+    (err) => err.code !== 'SHELL_LAUNCH_BLOCKED'
+  );
 });
 
 // ── ProcessService: critical-process protection ─────────────────────────

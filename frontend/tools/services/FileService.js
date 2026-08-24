@@ -154,6 +154,29 @@ function assertNotProtectedPath(p) {
 }
 
 /**
+ * `open` is deliberately non-destructive (no confirmation, runs immediately)
+ * so ordinary "open X" requests aren't slowed down — but that made it a
+ * silent bypass of PowerShellService.execute/CmdService.execute's
+ * confirmation + isBlockedCommand gating: `open("powershell")` launched a
+ * full interactive shell instantly, no confirmation, no blocklist check,
+ * strictly more powerful than either of those properly-gated tools. Shell
+ * launchers are refused here; the actual gated tools remain the only way to
+ * run PowerShell/CMD.
+ */
+const SHELL_ALIAS_TARGETS = new Set([
+  'cmd', 'command prompt', 'terminal', 'windows terminal',
+  'powershell', 'pwsh', 'wt', 'wt.exe', 'cmd.exe', 'powershell.exe', 'pwsh.exe'
+]);
+
+function assertNotShellLaunch(target) {
+  if (SHELL_ALIAS_TARGETS.has(target.trim().toLowerCase())) {
+    const error = new Error(`Refusing to open '${target}' — launching an interactive shell must go through the powershell/cmd tool, which requires confirmation.`);
+    error.code = 'SHELL_LAUNCH_BLOCKED';
+    throw error;
+  }
+}
+
+/**
  * FileService provides file-system operations as tool actions.
  *
  * @extends BaseToolService
@@ -292,6 +315,7 @@ export class FileService extends BaseToolService {
     if (!target) {
       throw new Error('A target path or application name is required.');
     }
+    assertNotShellLaunch(target);
     return new Promise((resolve, reject) => {
       let stdout = '';
       let stderr = '';

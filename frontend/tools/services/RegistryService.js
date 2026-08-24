@@ -193,7 +193,11 @@ export class RegistryService extends BaseToolService {
    */
   _runReg(args) {
     return new Promise((resolve, reject) => {
-      execFile('reg.exe', args, { windowsHide: true }, (err, stdout, stderr) => {
+      // Unlike every other service here (PowerShellService, CmdService,
+      // WinServicesService all wrap spawn() with an explicit timeout),
+      // this execFile call had none — a stuck reg.exe (e.g. a permission
+      // prompt or a corrupted hive) would hang this promise forever.
+      execFile('reg.exe', args, { windowsHide: true, timeout: 15_000 }, (err, stdout, stderr) => {
         if (err) {
           const message = stderr?.trim() || err.message;
           reject(new Error(`reg.exe failed: ${message}`));

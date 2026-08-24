@@ -8,6 +8,7 @@
 
 import { execFile, spawn } from 'child_process';
 import { BaseToolService } from '../BaseToolService.js';
+import { isBlockedCommand } from '../dangerGuard.js';
 
 /**
  * Process names that must never be terminated through this tool — mirrors
@@ -324,6 +325,21 @@ export class ProcessService extends BaseToolService {
 
     if (!command || typeof command !== 'string') {
       throw new Error('command must be a non-empty string');
+    }
+
+    // Unlike PowerShellService.runPS/CmdService.runCmd, this launches an
+    // arbitrary executable directly via spawn() — including powershell.exe
+    // or cmd.exe with attacker-controlled args — which previously never
+    // passed through the same command-policy check, making it a silent
+    // bypass of every other guard in the tool engine. Checked against the
+    // full command line (command + args) so `startProcess('powershell.exe',
+    // ['-Command', '<blocked pattern>'])` is caught the same as calling
+    // powershell.execute directly would be.
+    const fullCommandLine = [command, ...(Array.isArray(args) ? args : [])].join(' ');
+    if (isBlockedCommand(fullCommandLine)) {
+      const error = new Error('This command is irreversible or session-disrupting and is blocked regardless of confirmation.');
+      error.code = 'COMMAND_BLOCKED';
+      throw error;
     }
 
     const spawnOpts = {

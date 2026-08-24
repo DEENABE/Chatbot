@@ -7,12 +7,24 @@
  */
 
 import { spawn } from 'child_process';
+import { readFile } from 'fs/promises';
 import path from 'path';
 import { BaseToolService } from '../BaseToolService.js';
 import { isBlockedCommand } from '../dangerGuard.js';
 
 /** Default execution timeout in milliseconds. */
 const DEFAULT_TIMEOUT = 30_000;
+
+/** Maximum bytes of stdout/stderr retained per command (prevents unbounded memory growth). */
+const MAX_OUTPUT_CHARS = 20_000;
+
+/** Largest script file this service will read for the pre-execution content check. */
+const MAX_SCRIPT_CHECK_BYTES = 2 * 1024 * 1024;
+
+function truncate(text) {
+  if (text.length <= MAX_OUTPUT_CHARS) return text;
+  return `${text.slice(0, MAX_OUTPUT_CHARS)}\n…[output truncated, ${text.length - MAX_OUTPUT_CHARS} more chars]`;
+}
 
 /**
  * PowerShellService provides PowerShell execution as tool actions.
@@ -126,6 +138,26 @@ export class PowerShellService extends BaseToolService {
     const args = params.args || [];
     const timeout = params.timeout || DEFAULT_TIMEOUT;
 
+    // executeScript previously never went through the same command-policy
+    // check as execute() — a script file's content could contain any of the
+    // BLOCKED_PATTERNS (format a disk, delete system files, disable
+    // Defender, ...) and run unchecked as long as the confirmation dialog
+    // (which only shows the file path, not its contents) was approved.
+    // Read-and-check here, on the same funnel every confirmed execution
+    // passes through, closes that bypass without restricting which scripts
+    // can legitimately be run.
+    let content;
+    try {
+      content = await readFile(scriptPath, { encoding: 'utf8' });
+    } catch (err) {
+      throw new Error(`Cannot read script for safety check: ${err.message}`);
+    }
+    if (content.length <= MAX_SCRIPT_CHECK_BYTES && isBlockedCommand(content)) {
+      const error = new Error('This script contains an irreversible or session-disrupting operation and is blocked regardless of confirmation.');
+      error.code = 'COMMAND_BLOCKED';
+      throw error;
+    }
+
     return this._runCommand('powershell.exe', [
       '-NoProfile',
       '-NonInteractive',
@@ -208,7 +240,7 @@ export class PowerShellService extends BaseToolService {
         clearTimeout(timer);
         if (!settled) {
           settled = true;
-          resolve({ stdout, stderr, exitCode, timedOut });
+          resolve({ stdout: truncate(stdout), stderr: truncate(stderr), exitCode, timedOut });
         }
       });
     });
