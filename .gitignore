@@ -115,7 +115,7 @@ CLAUDE.md
 
 
  #---claude auto check---
- .github/workflows/claude-auto-check.yml
+ .github/workflows/claude-auto-check.yml/codeql.yml
 
  #---.env example---
     .env.example
