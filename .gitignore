@@ -132,6 +132,8 @@ CLAUDE.md
 
 #---docs---
 docs/translation.architecture.md
+docs/code-reference.md
+docs/Translator-Feature-Explained.docx
 
 # ─── IndicTrans2 microservice (Python) ──────────────────────────
 # Local virtualenv and downloaded model checkpoints (~6GB) — never
