@@ -5,6 +5,13 @@ import { useAppStore } from "../stores/useAppStore.js";
 import { presets } from "../animations/presets.js";
 import ChanakyaAvatar from "./ChanakyaAvatar.jsx";
 
+// Mirrors authService.js's assertValidPassword / username-length rules so a
+// bad value is caught here, with an immediate, specific message, instead of
+// round-tripping to the server for a generic 400.
+const MIN_PASSWORD_LENGTH = 8;
+const MAX_PASSWORD_LENGTH = 128;
+const MIN_USERNAME_LENGTH = 2;
+
 export default function LoginScreen() {
   const [isRegister, setIsRegister] = useState(false);
   const [isReset, setIsReset] = useState(false);
@@ -34,6 +41,16 @@ export default function LoginScreen() {
     setResetStep('request');
     setError("");
     setInfo("");
+    // Password (and the register-only fields) are cleared on every mode
+    // switch — carrying a value over silently, e.g. a short password typed
+    // while testing Sign In, produced a confusing generic 400 on Register
+    // with no indication the password itself was the reason. Username is
+    // kept: the common case is the same person continuing with the same
+    // name between Sign In and Register.
+    setPassword("");
+    setConfirmPassword("");
+    setDisplayName("");
+    setResetToken("");
   };
 
   const handleSubmit = async (e) => {
@@ -61,6 +78,16 @@ export default function LoginScreen() {
           setConfirmPassword("");
         }
       } else if (isRegister) {
+        const trimmedUsername = username.trim();
+        if (trimmedUsername.length < MIN_USERNAME_LENGTH) {
+          throw new Error(`Username must be at least ${MIN_USERNAME_LENGTH} characters.`);
+        }
+        if (password.length < MIN_PASSWORD_LENGTH) {
+          throw new Error(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+        }
+        if (password.length > MAX_PASSWORD_LENGTH) {
+          throw new Error(`Password must be ${MAX_PASSWORD_LENGTH} characters or fewer.`);
+        }
         await register(username, displayName, password);
         // Login/register succeeded — `user` is now set, so this same
         // (already-expanded) window naturally re-renders into the chat
@@ -275,6 +302,9 @@ export default function LoginScreen() {
                     {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
                   </button>
                 </div>
+                {isRegister && (
+                  <p className="mt-1 text-[9px] text-stone-600">At least {MIN_PASSWORD_LENGTH} characters.</p>
+                )}
               </div>
             )}
 

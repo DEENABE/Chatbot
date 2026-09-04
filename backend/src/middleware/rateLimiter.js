@@ -113,12 +113,41 @@ export const resetConfirmLimiter = rateLimit({
 // window and generous ceiling since legitimately creating an account is a
 // rare, one-time action compared to logging in, and this is a local
 // desktop app more than one named local user might reasonably share.
+//
+// skipFailedRequests: true — the actual abuse this bounds is account-
+// creation *volume* (filling the DB with junk accounts), not request
+// volume. Without this, a validation error (weak password, a username
+// that's already taken, a stray empty field — ordinary mistakes while
+// typing, not abuse) consumed a slot from the same budget as a real new
+// account, so a few typos during normal use could exhaust the ceiling
+// before a single account was ever created, then reject the next
+// legitimate attempt with 429 REGISTER_RATE_LIMITED. Only counting
+// responses >=400 out (express-rate-limit's built-in definition of
+// "failed") still caps real successful registrations at the same limit as
+// before — this doesn't loosen that bound at all.
 export const registerLimiter = rateLimit({
   windowMs: config.rateLimits.registerWindowMs,
   max: config.rateLimits.registerMaxAttempts,
   standardHeaders: true,
   legacyHeaders: false,
+  skipFailedRequests: true,
   handler: rateLimitHandler('REGISTER_RATE_LIMITED')
+});
+
+// Translator: keyed by the authenticated userId (requireAuth runs before
+// this in routes/translate.js), not IP — every request in this desktop app
+// comes from the same loopback address, so an IP-based key would let one
+// busy user exhaust the budget for everyone else on the machine.
+export const translateLimiter = rateLimit({
+  windowMs: config.rateLimits.translateWindowMs,
+  max: config.rateLimits.translateMaxRequests,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (request) => request.userId || request.ip,
+  handler: (_request, response) => {
+    console.log('[translate] TRANSLATE_RATE_LIMITED');
+    response.status(429).json({ error: 'Too many translation requests. Wait a minute and try again.' });
+  }
 });
 
 // Progressive delay for login, layered on top of (not instead of)

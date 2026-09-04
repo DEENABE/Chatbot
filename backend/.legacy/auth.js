@@ -10,8 +10,9 @@ authRouter.post('/register', async (request, response) => {
     const user = await registerUser(username, displayName, password);
     response.status(201).json({ user });
   } catch (error) {
-    response.status(400).json({ error: error.message });
-  }
+  console.error('REGISTER ERROR:', error);
+  response.status(400).json({ error: error.message });
+}
 });
 
 // Login user

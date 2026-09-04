@@ -6,6 +6,7 @@ import * as apiService from '../services/api.js';
 import VoiceRecorder from '../voice/VoiceRecorder.jsx';
 import ScreenRecorder from '../screen/ScreenRecorder.jsx';
 import { presets } from '../animations/presets.js';
+import { warnAboutSkippedUploads } from '../utils/uploadFeedback.js';
 
 export default function InputArea() {
   const [showVoicePanel, setShowVoicePanel] = useState(false);
@@ -145,12 +146,14 @@ export default function InputArea() {
   const handleUploadFile = async (e) => {
     if (e.target.files && e.target.files.length > 0) {
       try {
-        await uploadDocuments(e.target.files);
+        const result = await uploadDocuments(e.target.files);
         fetchDocuments(); // Refresh knowledge base
+        warnAboutSkippedUploads(result);
       } catch (err) {
         alert('File upload failed: ' + err);
       }
     }
+    e.target.value = '';
   };
 
   const handleTranscriptionSuccess = (text) => {

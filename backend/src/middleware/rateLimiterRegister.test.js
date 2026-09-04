@@ -48,3 +48,43 @@ test('register: normal registration works, excessive attempts throttled, works a
   const res = await register(freshUsername('rl-register-after'));
   assert.equal(res.status, 201, 'legitimate registration must work again after the cooldown');
 });
+
+test('register: failed (validation-error) attempts do not consume the same-account-creation budget', async () => {
+  // Start from a clean window — the previous test's final call lands inside
+  // whatever window is active when this one starts, and would otherwise
+  // eat into the budget this test is trying to measure.
+  await wait(6200);
+
+  // AUTH_REGISTER_MAX_ATTEMPTS is 3 for this whole file. Real-world trigger:
+  // a user retries after a typo (weak password, a name already taken) —
+  // ordinary mistakes, not abuse — and those must not eat into the budget
+  // that bounds actual new-account volume.
+  const name = freshUsername('rl-register-failed');
+  const failStatuses = [];
+  for (let i = 0; i < 5; i++) {
+    // No password at all -> guaranteed validation failure (400), never a
+    // real account. Same username each time so this also isn't silently
+    // creating 5 accounts under different names.
+    const res = await fetch(`${base}/auth/register`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: name, displayName: 'x' })
+    });
+    failStatuses.push(res.status);
+  }
+  assert.ok(failStatuses.every((s) => s === 400), `all 5 must fail validation (400), got ${failStatuses}`);
+
+  // The budget (3 successes per window) must still be fully available —
+  // none of the 5 failures above should have consumed a slot.
+  const successStatuses = [];
+  for (let i = 0; i < 3; i++) {
+    successStatuses.push((await register(freshUsername('rl-register-failed-ok-' + i))).status);
+  }
+  assert.ok(successStatuses.every((s) => s === 201), `budget must be untouched by prior failures, got ${successStatuses}`);
+
+  // Genuine excessive successful volume must still be throttled — this
+  // test must not have accidentally weakened the real limit.
+  const overLimit = await register(freshUsername('rl-register-failed-over'));
+  assert.equal(overLimit.status, 429, 'actual excessive account-creation volume must still be throttled');
+
+  await wait(6200);
+});

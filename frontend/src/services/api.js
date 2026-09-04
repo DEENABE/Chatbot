@@ -184,6 +184,7 @@ export const auth = {
   updateProfile: (profileData) => api.patch('/auth/profile', profileData),
   changePassword: (currentPassword, newPassword) =>
     api.post('/auth/change-password', { currentPassword, newPassword }),
+  deleteAccount: (password) => api.delete('/auth/account', { data: { password } }),
   forgotPassword: (username) => api.post('/auth/forgot-password', { username }),
   resetPassword: (token, newPassword) =>
     api.post('/auth/reset-password', { token, newPassword })
@@ -205,9 +206,17 @@ export const history = {
 export const documents = {
   get: () => api.get('/documents'),
   upload: (formData, onUploadProgress) =>
+    // A folder can contain many documents, and each one is parsed and
+    // embedded (via Ollama) synchronously before the response comes back.
+    // If Ollama's model was idle-unloaded (see unloadIdleModel), the first
+    // embedding call also pays a cold-load cost on top of that. The
+    // instance-wide 120s timeout was getting hit even for a single small
+    // docx whenever that cold-load happened, so uploads get a much longer
+    // budget than every other request.
     api.post('/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
-      onUploadProgress
+      onUploadProgress,
+      timeout: 600000
     }),
   delete: (id) => api.delete(`/documents/${id}`)
 };
@@ -241,6 +250,16 @@ export const transcribe = {
 // Stats API
 export const stats = {
   get: () => api.get('/stats')
+};
+
+// Translator API
+export const translate = {
+  // Longer than the default 120s instance timeout: a cold model load plus
+  // generation for a longer text can take well over two minutes (see
+  // backend config.js's translate.timeoutMs, now 180s) — this must be at
+  // least that long, or the client would give up before the server does.
+  text: ({ text, sourceLanguage, targetLanguage }) =>
+    api.post('/translate', { text, sourceLanguage, targetLanguage }, { timeout: 200000 })
 };
 
 // Repair feedback / dataset API

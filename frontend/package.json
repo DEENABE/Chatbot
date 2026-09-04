@@ -17,6 +17,7 @@
     "appId": "com.chanakya.ai",
     "productName": "Chanakya AI",
     "electronVersion": "37.10.3",
+    "electronDist": "../.electron-dist/37.10.3-win32-x64",
     "directories": {
       "output": "release-build"
     },

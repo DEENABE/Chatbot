@@ -90,10 +90,16 @@ export const useAppStore = create((set, get) => ({
 
   logout: async () => {
     // Best-effort server-side revocation — the local session is cleared
-    // either way. Skipped if there's no token left to send (e.g. this was
-    // already triggered by a 401 elsewhere).
+    // either way (the catch), so a network hiccup or an already-401'd
+    // session never blocks logging out locally. This must be awaited
+    // BEFORE clearSession(): the two used to fire concurrently, and
+    // clearSession() reliably won the race (it does no real async work in
+    // the non-Electron dev path), wiping the in-memory token before the
+    // POST's own request interceptor read it — so the request went out
+    // with no Authorization header, got 401, and the server-side session
+    // was silently never revoked despite the UI already showing logged out.
     if (await apiService.getToken()) {
-      apiService.auth.logout().catch(() => {});
+      await apiService.auth.logout().catch(() => {});
     }
     await apiService.clearSession();
     set({
@@ -184,6 +190,25 @@ export const useAppStore = create((set, get) => ({
     // device so the caller isn't logged out by its own password change.
     const response = await apiService.auth.changePassword(currentPassword, newPassword);
     await apiService.setSession(response.data.token);
+  },
+
+  deleteAccount: async (password) => {
+    // Irreversible on the server the moment this resolves — the account row
+    // and its vector store are already gone. Reuse logout's local cleanup
+    // (clear the stored token, reset in-memory state) since there is no
+    // account left to be logged in as afterward.
+    await apiService.auth.deleteAccount(password);
+    await apiService.clearSession();
+    set({
+      user: null,
+      conversations: [],
+      folders: [],
+      activeChatId: null,
+      activeMessages: [],
+      documents: [],
+      memories: [],
+      pendingConfirmations: []
+    });
   },
 
   requestPasswordReset: async (username) => {
@@ -318,7 +343,11 @@ export const useAppStore = create((set, get) => ({
   // Free the local model from memory when the assistant is idle (saves RAM/VRAM).
   // Skipped mid-generation; the model reloads automatically on the next request.
   unloadIdleModel: async () => {
-    if (get().isGenerating) return;
+    // /api/models/unload requires auth — with no user logged in, this is a
+    // guaranteed 401. App.jsx fires this on a timer/visibility change
+    // regardless of auth state, so skip the request entirely rather than
+    // hitting the network and logging a needless error every time.
+    if (!get().user || get().isGenerating || get().isUploadingDocs) return;
     try {
       await apiService.models.unload();
     } catch {
@@ -774,12 +803,13 @@ export const useAppStore = create((set, get) => ({
       formData.append('documents', files[i]);
     }
     try {
-      await apiService.documents.upload(formData, (progressEvent) => {
+      const response = await apiService.documents.upload(formData, (progressEvent) => {
         const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
         set({ uploadProgress: percent });
       });
       set({ isUploadingDocs: false, uploadProgress: 100 });
       get().fetchDocuments();
+      return response.data;
     } catch (err) {
       set({ isUploadingDocs: false });
       console.error('Failed to upload docs:', err);

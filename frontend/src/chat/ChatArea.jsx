@@ -13,6 +13,8 @@ import {
   Bookmark, 
   AlertCircle
 } from 'lucide-react';
+import { warnAboutSkippedUploads } from '../utils/uploadFeedback.js';
+import TranslatorPanel from '../translator/TranslatorPanel.jsx';
 
 export default function ChatArea({ activeTab }) {
   const activeChatId = useAppStore((state) => state.activeChatId);
@@ -41,14 +43,17 @@ export default function ChatArea({ activeTab }) {
   const handleDrop = async (e) => {
     e.preventDefault();
     if (e.dataTransfer.files) {
-      await uploadDocuments(e.dataTransfer.files);
+      const result = await uploadDocuments(e.dataTransfer.files);
+      warnAboutSkippedUploads(result);
     }
   };
 
   const handleFileChange = async (e) => {
     if (e.target.files) {
-      await uploadDocuments(e.target.files);
+      const result = await uploadDocuments(e.target.files);
+      warnAboutSkippedUploads(result);
     }
+    e.target.value = '';
   };
 
   const accent = settings.accentColor || '#3b82f6';
@@ -137,6 +142,10 @@ export default function ChatArea({ activeTab }) {
 
   if (activeTab === 'diagnostics') {
     return <SystemMonitor />;
+  }
+
+  if (activeTab === 'translator') {
+    return <TranslatorPanel />;
   }
 
   // Fallback to chat messaging list

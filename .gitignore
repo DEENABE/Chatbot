@@ -17,6 +17,11 @@ frontend/release-build/
 frontend/release-latest/
 # Self-contained backend runtime produced by scripts/prepare-backend.cjs
 frontend/backend-runtime/
+# Pre-extracted Electron distribution (electronDist in frontend/package.json's
+# build config) — a local workaround for an antivirus lock on electron-builder's
+# own fresh-extract-then-rename step; safe to delete and re-extract from the
+# electron npm cache at any time.
+.electron-dist/
 
 # # ─── Backend runtime / generated data ───────────────────────────
 # backend/storage/
@@ -47,6 +52,12 @@ backend/storage/password-reset-token.txt
 # hostnames, usernames, paths, network config) now live under a dedicated
 # directory rather than loose in storage/
 #backend/storage/training-data/
+# Written by lib/portGuard.js on every server startup, purely local runtime
+# state (this machine's own PID) — never meaningful across machines/commits.
+backend/storage/.dev-server.pid
+# Written by services/indictransProcess.js when it auto-spawns the Python
+# translation service — same rationale as the pid file above.
+backend/storage/.indictrans-service.pid
 
 # ─── Logs ───────────────────────────────────────────────────────
 *.log
@@ -98,8 +109,7 @@ scripts/ship.mjs
 #----flie transer-----
 sync.ffs_db
 
-#----security audit (unpatched critical findings — do not publish)-----
-Chanakya_Security_Audit.pdf
+
 
 #---git workflow---
 .github/workflows/ship.yml
@@ -119,3 +129,13 @@ CLAUDE.md
 
  #---.env example---
     .env.example
+
+#---docs---
+docs/translation.architecture.md
+
+# ─── IndicTrans2 microservice (Python) ──────────────────────────
+# Local virtualenv and downloaded model checkpoints (~6GB) — never
+# committed, set up locally per-machine via indictrans-service/README.md.
+indictrans-service/.venv/
+indictrans-service/models/
+indictrans-service/.env

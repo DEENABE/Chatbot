@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { registerUser, loginUser, getUserById, updateUserProfile, changePassword, requestPasswordReset, resetPasswordWithToken } from '../services/authService.js';
+import { registerUser, loginUser, getUserById, updateUserProfile, changePassword, deleteAccount, requestPasswordReset, resetPasswordWithToken, AuthError } from '../services/authService.js';
 import { createSession, revokeSession } from '../services/sessionService.js';
 import {
   ipAuthLimiter,
@@ -24,6 +24,26 @@ const MAX_DISPLAY_NAME = 120;
 const MAX_EMAIL = 254; // RFC 5321 total-address limit
 const MAX_DEPARTMENT = 120;
 
+// authService throws AuthError specifically for its deliberate failures
+// (bad password, duplicate username, wrong credentials) — hand-authored
+// messages that are safe to show the client. Every route below used to
+// catch and echo `error.message` unconditionally, deliberate or not: a
+// genuinely unexpected failure (a DB I/O error, a corrupted database
+// file, a bug) would have leaked its raw internal message to the client
+// and been reported under a client-side status (400/401) instead of a
+// server-side one. This is the same distinction app.js's generic error
+// handler already makes for every other route via ValidationError's
+// `.status` — auth routes just never routed through it, since AuthError
+// carries no status (login needs 401, the rest need 400 — the route
+// already knows which, per call site).
+function respondToAuthError(request, response, error, expectedStatus) {
+  if (!(error instanceof AuthError)) {
+    console.error(`[${request.id || '-'}] auth error:`, error);
+    return response.status(500).json({ error: 'Unexpected local server error.' });
+  }
+  response.status(expectedStatus).json({ error: error.message });
+}
+
 // Register user — auto-issues a session, same as login, so the client can go
 // straight into the app without a separate round trip.
 authRouter.post('/register', ipAuthLimiter, registerLimiter, async (request, response) => {
@@ -35,7 +55,7 @@ authRouter.post('/register', ipAuthLimiter, registerLimiter, async (request, res
     const { token, expiresAt } = createSession(user.id);
     response.status(201).json({ user, token, expiresAt });
   } catch (error) {
-    response.status(400).json({ error: error.message });
+    respondToAuthError(request, response, error, 400);
   }
 });
 
@@ -52,7 +72,7 @@ authRouter.post('/login', ipAuthLimiter, loginLimiter, progressiveLoginDelay, as
     const { token, expiresAt } = createSession(user.id);
     response.json({ user, token, expiresAt });
   } catch (error) {
-    response.status(401).json({ error: error.message });
+    respondToAuthError(request, response, error, 401);
   }
 });
 
@@ -86,7 +106,21 @@ authRouter.post('/change-password', requireAuth, async (request, response) => {
     const { token, expiresAt } = createSession(request.userId);
     response.json({ ok: true, token, expiresAt });
   } catch (error) {
-    response.status(400).json({ error: error.message });
+    respondToAuthError(request, response, error, 400);
+  }
+});
+
+// Delete account — irreversible, so it's gated the same way as
+// change-password (requires the current password, not just a valid
+// session) rather than a bare DELETE that only proves "has a live token".
+authRouter.delete('/account', requireAuth, async (request, response) => {
+  try {
+    const { password } = request.body || {};
+    await deleteAccount(request.userId, password);
+    revokeSession(request.sessionToken);
+    response.json({ ok: true });
+  } catch (error) {
+    respondToAuthError(request, response, error, 400);
   }
 });
 
@@ -115,7 +149,7 @@ authRouter.post('/reset-password', ipAuthLimiter, resetConfirmLimiter, async (re
     await resetPasswordWithToken(token, newPassword);
     response.json({ ok: true });
   } catch (error) {
-    response.status(400).json({ error: error.message });
+    respondToAuthError(request, response, error, 400);
   }
 });
 

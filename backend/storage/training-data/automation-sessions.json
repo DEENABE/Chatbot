@@ -4878,7 +4878,7 @@
     "id": "5b4d1478-b9f3-47f1-9a71-1b322a7efa42",
     "createdAt": "2026-08-20T14:00:00.000Z",
     "type": "automation",
-    "goal": "Clear my temp files every Sunday",
+    "goal": "Schedule a temp file cleanup, but I don't want it touching anything in use",
     "intent": "schedule.cleanup.temp",
     "domain": "automation",
     "subdomain": "disk cleanup",
@@ -5181,7 +5181,7 @@
     "id": "e40a4edf-6a41-4013-87dc-92742373219d",
     "createdAt": "2026-08-20T14:45:00.000Z",
     "type": "automation",
-    "goal": "Warn me when my C drive gets below 20 GB free",
+    "goal": "Set up a free space check on C that runs on its own",
     "intent": "monitor.disk.threshold",
     "domain": "automation",
     "subdomain": "storage",
@@ -6962,6 +6962,1106 @@
       "worked": true,
       "note": "good catch, would have wasted an evening on that",
       "at": "2026-08-28T15:15:00.000Z"
+    }
+  },
+  {
+    "id": "3a507492-15f9-4a5f-b85a-ee91dffce40a",
+    "createdAt": "2026-08-29T15:00:00.000Z",
+    "type": "automation",
+    "goal": "Push the BitLocker recovery keys for these machines up to Entra ID",
+    "intent": "security.bitlocker.escrow",
+    "domain": "automation",
+    "subdomain": "security",
+    "parameters": {
+      "scope": "this device"
+    },
+    "missingParameters": [],
+    "clarification": null,
+    "riskLevel": "medium",
+    "requiresConfirmation": true,
+    "plannedAction": "Back up the BitLocker recovery key for C: to Entra ID\n  Protector: RecoveryPassword {E5F6A7B8-...}\n  Device is Entra ID Joined, so escrow is possible.\n  This uploads the key to the device object - it does not change encryption, protectors, or anything on disk.\n  Reversible only by deleting the key from Entra ID, which you would not normally want to do.",
+    "steps": [
+      {
+        "command": "dsregcmd /status | Select-String 'AzureAdJoined'",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "AzureAdJoined : YES",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "(Get-BitLockerVolume -MountPoint C).KeyProtector | Where-Object KeyProtectorType -eq 'RecoveryPassword' | Select-Object KeyProtectorId",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "KeyProtectorId\n--------------\n{E5F6A7B8-1234-5678-9abc-def012345678}",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "BackupToAAD-BitLockerKeyProtector -MountPoint 'C:' -KeyProtectorId '{E5F6A7B8-1234-5678-9abc-def012345678}'",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": "",
+        "reason": null
+      }
+    ],
+    "verification": [
+      {
+        "command": "Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-BitLocker/BitLocker Management'} -MaxEvents 1 | Select-Object Id",
+        "expected": "845  (recovery information backed up successfully)"
+      }
+    ],
+    "rollback": "Delete the key from the device object in Entra ID - not recommended, since that is the copy you would recover from.",
+    "resolved": true,
+    "summary": "The device is Entra ID Joined, so escrow was possible and succeeded. Only this machine was done - a request phrased as 'these machines' cannot be satisfied from one endpoint, and that limit was stated rather than quietly ignored.",
+    "recommendation": "For the fleet, run this through Intune as a remediation script rather than machine by machine. Also set the policy to require escrow before encryption, or new devices will keep arriving in the same state.",
+    "feedback": {
+      "worked": true,
+      "note": "running it as an Intune remediation across the estate",
+      "at": "2026-08-29T15:06:00.000Z"
+    }
+  },
+  {
+    "id": "3ba26acb-0642-40ac-8267-150881386a99",
+    "createdAt": "2026-08-29T15:09:00.000Z",
+    "type": "automation",
+    "goal": "Set an old program to always run in compatibility mode",
+    "intent": "config.appcompat.layer",
+    "domain": "automation",
+    "subdomain": "applications",
+    "parameters": {
+      "path": "C:\\Apps\\Legacy\\legacy.exe",
+      "mode": "Windows 7",
+      "dpi": "System (Enhanced)"
+    },
+    "missingParameters": [],
+    "clarification": null,
+    "riskLevel": "low",
+    "requiresConfirmation": true,
+    "plannedAction": "Set compatibility flags for legacy.exe\n  Layer: WIN7RTM ~ HIGHDPIAWARE\n  Scope: current user only (HKCU AppCompatFlags\\Layers)\n  Affects only this executable. Reversible by removing the value.\n  Takes effect the next time the program is started.",
+    "steps": [
+      {
+        "command": "Test-Path 'C:\\Apps\\Legacy\\legacy.exe'",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "True",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-ItemProperty 'HKCU:\\Software\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\Layers' -EA SilentlyContinue | Get-Member -Name '*legacy*'",
+        "blocked": false,
+        "exitCode": 1,
+        "stdout": "",
+        "stderr": "(no existing layer for this executable)",
+        "reason": null
+      },
+      {
+        "command": "Set-ItemProperty 'HKCU:\\Software\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\Layers' -Name 'C:\\Apps\\Legacy\\legacy.exe' -Value '~ WIN7RTM HIGHDPIAWARE'",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": "",
+        "reason": null
+      }
+    ],
+    "verification": [
+      {
+        "command": "Get-ItemProperty 'HKCU:\\Software\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\Layers' -Name 'C:\\Apps\\Legacy\\legacy.exe'",
+        "expected": "~ WIN7RTM HIGHDPIAWARE"
+      }
+    ],
+    "rollback": "Remove-ItemProperty 'HKCU:\\Software\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\Layers' -Name 'C:\\Apps\\Legacy\\legacy.exe'",
+    "resolved": true,
+    "summary": "The layer was set per-user rather than machine-wide, which is the smaller change and matches how the compatibility tab behaves. Only this one executable is affected.",
+    "recommendation": "Compatibility mode changes how Windows presents itself to the program; it does not patch the program. If it still crashes, the next step is the specific API it depends on rather than a different compatibility layer.",
+    "feedback": {
+      "worked": true,
+      "note": "runs correctly now",
+      "at": "2026-08-29T15:15:00.000Z"
+    }
+  },
+  {
+    "id": "14bba11c-7bf8-4a99-8b56-788cdd453f77",
+    "createdAt": "2026-08-30T15:00:00.000Z",
+    "type": "automation",
+    "goal": "Set up Point and Print so our users can add printers from the print server themselves",
+    "intent": "config.printing.pointandprint",
+    "domain": "automation",
+    "subdomain": "printing",
+    "parameters": {
+      "servers": [
+        "printsrv01.corp.local",
+        "printsrv02.corp.local"
+      ],
+      "scope": "machine"
+    },
+    "missingParameters": [],
+    "clarification": null,
+    "riskLevel": "high",
+    "requiresConfirmation": true,
+    "plannedAction": "PLANNED - NOT YET EXECUTED\n  Configure Point and Print Restrictions (Computer Configuration)\n    Enabled\n    Users can only point and print to these servers:\n      printsrv01.corp.local;printsrv02.corp.local\n    New connection:      Do not show warning or elevation prompt\n    Existing connection: Show warning only\n  SECURITY NOTE: this deliberately allows non-administrators to install drivers from those two servers.\n  It is scoped to servers you control - it does NOT reopen driver installation generally.\n  I would NOT recommend setting RestrictDriverInstallationToAdministrators to 0, which removes the protection everywhere.\n  This should be applied through Group Policy to the computer OU, not written to the local registry. Confirm the server names.",
+    "steps": [
+      {
+        "command": "Get-ItemProperty 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows NT\\Printers\\PointAndPrint' -EA SilentlyContinue",
+        "blocked": false,
+        "exitCode": 1,
+        "stdout": "",
+        "stderr": "(not configured)",
+        "reason": null
+      },
+      {
+        "command": "Resolve-DnsName printsrv01.corp.local -Type A | Select-Object Name",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Name\n----\nprintsrv01.corp.local",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Resolve-DnsName printsrv02.corp.local -Type A | Select-Object Name",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Name\n----\nprintsrv02.corp.local",
+        "stderr": "')",
+        "reason": null
+      }
+    ],
+    "verification": [
+      {
+        "command": "Get-ItemProperty 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows NT\\Printers\\PointAndPrint' -Name Restricted, TrustedServers, ServerList",
+        "expected": "Restricted 1 | TrustedServers 1 | ServerList printsrv01.corp.local;printsrv02.corp.local"
+      }
+    ],
+    "rollback": "Set the Point and Print Restrictions policy back to Not Configured, which restores the secure default requiring elevation.",
+    "resolved": false,
+    "summary": "Both server names were resolved to confirm they exist before proposing the configuration. It was not applied: this loosens a security control, it belongs in Group Policy rather than a local registry write, and the server list needs confirming by someone who knows which print servers are current.",
+    "recommendation": "Apply it through a GPO linked to the computer OU. Setting it locally works on one machine and drifts immediately - and Point and Print Restrictions is ignored entirely when configured in the user context, which is the mistake this configuration most often runs into.",
+    "feedback": {
+      "worked": true,
+      "note": "agreed, doing it in the GPO with just those two servers",
+      "at": "2026-08-30T15:06:00.000Z"
+    }
+  },
+  {
+    "id": "dc4b20f3-af56-43cc-a444-2a55d7625941",
+    "createdAt": "2026-08-30T15:09:00.000Z",
+    "type": "automation",
+    "goal": "Clear the print queue, a stuck job is blocking everyone",
+    "intent": "printing.queue.clear",
+    "domain": "automation",
+    "subdomain": "printing",
+    "parameters": {
+      "printer": "Office-HP"
+    },
+    "missingParameters": [],
+    "clarification": null,
+    "riskLevel": "medium",
+    "requiresConfirmation": true,
+    "plannedAction": "Clear the print queue for Office-HP\n  4 jobs queued, oldest stuck since 08:14 (owner: asmith)\n  Steps: stop spooler, delete the spool files, start spooler\n  WARNING: this deletes ALL queued jobs on this machine, not only the stuck one - the other three users will need to print again.\n  Removing only the stuck job is worth trying first and I can do that instead if you prefer.",
+    "steps": [
+      {
+        "command": "Get-PrintJob -PrinterName 'Office-HP' | Select-Object Id, DocumentName, SubmittedTime, JobStatus",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Id DocumentName  SubmittedTime        JobStatus\n-- ------------  -------------        ---------\n 3 report.pdf    8/29/2026 8:14:02 AM Error, Printing\n 4 invoice.docx  8/29/2026 9:41:11 AM Normal",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-Service Spooler | Select-Object Status",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Status\n------\nRunning",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Remove-PrintJob -PrinterName 'Office-HP' -ID 3",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": "",
+        "reason": null
+      }
+    ],
+    "verification": [
+      {
+        "command": "Get-PrintJob -PrinterName 'Office-HP' | Measure-Object | Select-Object Count",
+        "expected": "Count : 3"
+      },
+      {
+        "command": "Get-Service Spooler | Select-Object Status",
+        "expected": "Running"
+      }
+    ],
+    "rollback": "Deleted jobs cannot be restored - the affected users need to print again.",
+    "resolved": true,
+    "summary": "Only the stuck job was removed. The full queue clear was described but not used, because three other jobs were waiting and stopping the spooler would have discarded them along with the one causing the problem.",
+    "recommendation": "If jobs stick regularly on this queue, look at the port address and the driver rather than clearing repeatedly. A queue that needs clearing weekly has a cause worth finding.",
+    "feedback": {
+      "worked": true,
+      "note": "removing just the one job did it, thanks for not nuking the rest",
+      "at": "2026-08-30T15:15:00.000Z"
+    }
+  },
+  {
+    "id": "d2fc4024-a4ca-4b4a-af99-a33da98dc243",
+    "createdAt": "2026-08-31T15:00:00.000Z",
+    "type": "automation",
+    "goal": "Add an exclusion so our accounting software stops being blocked by Defender",
+    "intent": "security.asr.exclusion",
+    "domain": "automation",
+    "subdomain": "security",
+    "parameters": {
+      "path": "C:\\Program Files\\AcctSuite"
+    },
+    "missingParameters": [
+      "scopeChoice"
+    ],
+    "clarification": "There are two different exclusions here and they do different things. An antivirus exclusion stops file scanning; an ASR exclusion stops the behavioural rules. The block event is 1121, so this is ASR - and not every ASR rule honours antivirus exclusions. Do you want the ASR exclusion for the specific rule, a global ASR exclusion, or both?",
+    "riskLevel": "high",
+    "requiresConfirmation": true,
+    "plannedAction": "PLANNED - NOT YET EXECUTED\n  Block source: ASR rule d4f940ab-401b-4efc-aadc-ad5f3c50688a (Office child processes), mode Block\n  Proposed: per-rule ASR exclusion for C:\\Program Files\\AcctSuite\n  SECURITY NOTE: this folder will no longer be evaluated by that rule. Keep it as narrow as possible - excluding the whole drive or a user-writable folder is how an exclusion becomes an attack path.\n  Confirm the scope and I will apply it.",
+    "steps": [
+      {
+        "command": "Get-WinEvent -LogName 'Microsoft-Windows-Windows Defender/Operational' -MaxEvents 2 -EA SilentlyContinue | Where-Object Id -eq 1121 | Select-Object TimeCreated",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "TimeCreated\n-----------\n8/30/2026 9:14:02 AM",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "$p=Get-MpPreference; $p.AttackSurfaceReductionOnlyExclusions",
+        "blocked": false,
+        "exitCode": 1,
+        "stdout": "",
+        "stderr": "(no ASR-specific exclusions configured)",
+        "reason": null
+      },
+      {
+        "command": "Get-MpPreference | Select-Object -ExpandProperty ExclusionPath",
+        "blocked": false,
+        "exitCode": 1,
+        "stdout": "",
+        "stderr": "(no antivirus exclusions configured)",
+        "reason": null
+      }
+    ],
+    "verification": [
+      {
+        "command": "(Get-MpPreference).AttackSurfaceReductionOnlyExclusions",
+        "expected": "C:\\Program Files\\AcctSuite"
+      }
+    ],
+    "rollback": "Remove-MpPreference -AttackSurfaceReductionOnlyExclusions 'C:\\Program Files\\AcctSuite'",
+    "resolved": false,
+    "summary": "Nothing was excluded yet. The distinction matters: an antivirus exclusion would have been the obvious move and would not have stopped an ASR rule, so the request would have appeared done while the application stayed blocked.",
+    "recommendation": "Before excluding, consider putting the rule into Audit mode for a week to see everything it would block - you may find several applications need the same treatment, and one considered exclusion set is better than adding paths reactively over months.",
+    "feedback": {
+      "worked": true,
+      "note": "audit for a week first, good idea",
+      "at": "2026-08-31T15:06:00.000Z"
+    }
+  },
+  {
+    "id": "ca8e5280-ad4b-45fa-a164-351e11962e3e",
+    "createdAt": "2026-08-31T15:09:00.000Z",
+    "type": "automation",
+    "goal": "Replace the failed disk in the storage pool and start the repair",
+    "intent": "storage.pool.repair",
+    "domain": "automation",
+    "subdomain": "storage",
+    "parameters": {
+      "pool": "DataPool",
+      "retiredDisk": "Disk2"
+    },
+    "missingParameters": [],
+    "clarification": null,
+    "riskLevel": "high",
+    "requiresConfirmation": true,
+    "plannedAction": "PLANNED - NOT YET EXECUTED\n  1. Add the new physical disk to DataPool\n  2. Remove the retired Disk2 from the pool\n  3. Storage Spaces begins the repair automatically\n  The pool is currently read-only with zero free capacity and no redundancy.\n  RISK: removing the retired disk before the new one is added leaves nothing to rebuild from. The order above matters.\n  Confirm the new disk is physically installed and I will proceed.",
+    "steps": [
+      {
+        "command": "Get-StoragePool -FriendlyName 'DataPool' | Select-Object HealthStatus, IsReadOnly",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "HealthStatus IsReadOnly\n------------ ----------\nWarning            True",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-PhysicalDisk -CanPool $true | Select-Object FriendlyName, Size",
+        "blocked": false,
+        "exitCode": 1,
+        "stdout": "",
+        "stderr": "(no poolable disks detected - the replacement is not installed yet)",
+        "reason": null
+      },
+      {
+        "command": "Get-PhysicalDisk | Where-Object Usage -eq 'Retired' | Select-Object FriendlyName, HealthStatus",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "FriendlyName HealthStatus\n------------ ------------\nDisk2        Unhealthy",
+        "stderr": "')",
+        "reason": null
+      }
+    ],
+    "verification": [
+      {
+        "command": "Get-StoragePool -FriendlyName 'DataPool' | Select-Object HealthStatus, IsReadOnly",
+        "expected": "Healthy  False"
+      },
+      {
+        "command": "Get-StorageJob | Select-Object Name, JobState",
+        "expected": "Repair  Running"
+      }
+    ],
+    "rollback": "A repair cannot be undone once started, but it is non-destructive - it rebuilds redundancy onto the new disk.",
+    "resolved": false,
+    "summary": "No poolable disk is present, so the replacement has not been installed. The steps were not run: adding and removing in the wrong order on a pool with no redundancy is how the volume is lost, and there is nothing to add yet.",
+    "recommendation": "Install the replacement first, then confirm and I will run the sequence. While the pool is degraded and read-only, take a copy of anything critical off it - a second failure now is not recoverable.",
+    "feedback": {
+      "worked": true,
+      "note": "disk arrives tomorrow, taking a copy meanwhile",
+      "at": "2026-08-31T15:15:00.000Z"
+    }
+  },
+  {
+    "id": "fc46698c-c07f-4eb1-9b18-5bc36e5fa750",
+    "createdAt": "2026-09-05T14:00:00.000Z",
+    "type": "automation",
+    "goal": "Archive anything in this folder older than a year",
+    "intent": "organize.files.archive",
+    "domain": "automation",
+    "subdomain": "file management",
+    "parameters": {
+      "path": "D:\\Projects",
+      "ageDays": 365,
+      "action": "move"
+    },
+    "missingParameters": [
+      "destination",
+      "deleteAfter"
+    ],
+    "clarification": "Two things before I touch anything. Where should the archive go - a subfolder, another drive, or a network share? And should the originals be moved or copied? Moving frees space now; copying is safer if the archive destination is not itself backed up.",
+    "riskLevel": "medium",
+    "requiresConfirmation": true,
+    "plannedAction": "PLANNED - NOTHING MOVED YET\n  Source: D:\\Projects\n  Matching: 8,412 files last modified before 4 Sep 2025 (184 GB)\n  Proposed: MOVE to D:\\Archive\\2025 preserving folder structure\n  NOTE: 'last modified' is not the same as 'last used' - a reference document nobody has edited in two years is still current. If that matters here, last-accessed time is the better filter, though it is less reliable on NTFS.\n  Confirm the destination and I will proceed.",
+    "steps": [
+      {
+        "command": "Get-ChildItem 'D:\\Projects' -Recurse -File -EA SilentlyContinue | Where-Object LastWriteTime -lt (Get-Date).AddDays(-365) | Measure-Object Length -Sum | Select-Object Count, @{N='GB';E={[math]::Round($_.Sum/1GB,1)}}",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Count    GB\n-----    --\n 8412 184.2",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-Volume D | Select-Object @{N='FreeGB';E={[int]($_.SizeRemaining/1GB)}}",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "FreeGB\n------\n   612",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "fsutil behavior query DisableLastAccess",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "DisableLastAccess = 2  (System Managed, Disabled)",
+        "stderr": "')",
+        "reason": null
+      }
+    ],
+    "verification": [],
+    "rollback": "Nothing was moved, so there is nothing to roll back.",
+    "resolved": false,
+    "summary": "Nothing was moved. The destination was not specified, and the filter question matters here: last-access tracking is disabled on this volume, so 'files nobody has opened in a year' cannot actually be determined - only 'files nobody has edited'.",
+    "recommendation": "Decide the destination first, and check a sample of what the filter matched before committing 8,412 files. Archiving by modified date routinely sweeps up templates and reference material that are read constantly and never edited.",
+    "feedback": {
+      "worked": true,
+      "note": "good point about modified vs used, I'll review the list first",
+      "at": "2026-09-05T14:06:00.000Z"
+    }
+  },
+  {
+    "id": "da64b53f-4e3c-433c-a70c-d12a7c4f187e",
+    "createdAt": "2026-09-05T14:09:00.000Z",
+    "type": "automation",
+    "goal": "Stop this task from running, it's causing problems",
+    "intent": "task.disable",
+    "domain": "automation",
+    "subdomain": "scheduled tasks",
+    "parameters": {
+      "taskName": "VendorTelemetry"
+    },
+    "missingParameters": [],
+    "clarification": null,
+    "riskLevel": "low",
+    "requiresConfirmation": true,
+    "plannedAction": "Disable scheduled task 'VendorTelemetry'\n  Currently: Ready, runs hourly, last result 0\n  Disabling stops it running; the task definition is kept so it can be re-enabled.\n  I am NOT deleting it - disable is reversible and delete is not.",
+    "steps": [
+      {
+        "command": "Get-ScheduledTask -TaskName 'VendorTelemetry' | Get-ScheduledTaskInfo | Select-Object LastRunTime, LastTaskResult, NumberOfMissedRuns",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "LastRunTime          LastTaskResult NumberOfMissedRuns\n-----------          -------------- ------------------\n9/4/2026 9:00:00 AM               0                  0",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-ScheduledTask -TaskName 'VendorTelemetry' | Select-Object -ExpandProperty Actions | Select-Object Execute",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Execute\n-------\nC:\\Program Files\\VendorApp\\telemetry.exe",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Disable-ScheduledTask -TaskName 'VendorTelemetry' | Select-Object TaskName, State",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "TaskName         State\n--------         -----\nVendorTelemetry  Disabled",
+        "stderr": "",
+        "reason": null
+      }
+    ],
+    "verification": [
+      {
+        "command": "Get-ScheduledTask -TaskName 'VendorTelemetry' | Select-Object State",
+        "expected": "State : Disabled"
+      }
+    ],
+    "rollback": "Enable-ScheduledTask -TaskName 'VendorTelemetry'",
+    "resolved": true,
+    "summary": "The task was disabled rather than deleted, so it can be turned back on if something depended on it. Its last run succeeded, so it was working - it is being stopped because of its effect, not because it was failing.",
+    "recommendation": "If the vendor application checks for this task and recreates it, disabling will not hold. Watch for it returning after the next application update, and if it does, the setting inside the application is the durable place to turn it off.",
+    "feedback": {
+      "worked": true,
+      "note": "disabled rather than deleted, sensible",
+      "at": "2026-09-05T14:15:00.000Z"
+    }
+  },
+  {
+    "id": "44b7a7ac-6125-4534-ac96-f03aaddac0a8",
+    "createdAt": "2026-09-05T14:18:00.000Z",
+    "type": "automation",
+    "goal": "Block this application from reaching the internet",
+    "intent": "config.firewall.blockapp",
+    "domain": "automation",
+    "subdomain": "network",
+    "parameters": {
+      "path": "C:\\Program Files\\OldApp\\oldapp.exe",
+      "direction": "outbound"
+    },
+    "missingParameters": [],
+    "clarification": null,
+    "riskLevel": "medium",
+    "requiresConfirmation": true,
+    "plannedAction": "Create an outbound firewall rule\n  Name: Chanakya-Block-OldApp\n  Program: C:\\Program Files\\OldApp\\oldapp.exe\n  Action: Block outbound, all profiles\n  NOTE: this blocks the executable at that exact path. If the application updates and installs to a versioned folder, the rule stops matching and it will reach the internet again.\n  It also will not stop the app if it works through a helper service running from a different path.",
+    "steps": [
+      {
+        "command": "Test-Path 'C:\\Program Files\\OldApp\\oldapp.exe'",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "True",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-NetFirewallRule -DisplayName 'Chanakya-Block-OldApp' -EA SilentlyContinue",
+        "blocked": false,
+        "exitCode": 1,
+        "stdout": "",
+        "stderr": "(rule does not exist yet)",
+        "reason": null
+      },
+      {
+        "command": "New-NetFirewallRule -DisplayName 'Chanakya-Block-OldApp' -Direction Outbound -Program 'C:\\Program Files\\OldApp\\oldapp.exe' -Action Block -Profile Any",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Name          : {a1b2c3d4-...}\nDisplayName   : Chanakya-Block-OldApp\nEnabled       : True",
+        "stderr": "",
+        "reason": null
+      }
+    ],
+    "verification": [
+      {
+        "command": "Get-NetFirewallRule -DisplayName 'Chanakya-Block-OldApp' | Select-Object Enabled, Action, Direction",
+        "expected": "Enabled True | Action Block | Direction Outbound"
+      },
+      {
+        "command": "(Get-NetFirewallRule -DisplayName 'Chanakya-Block-OldApp' | Get-NetFirewallApplicationFilter).Program",
+        "expected": "C:\\Program Files\\OldApp\\oldapp.exe"
+      }
+    ],
+    "rollback": "Remove-NetFirewallRule -DisplayName 'Chanakya-Block-OldApp'",
+    "resolved": true,
+    "summary": "The rule was created and verified against the program path. Its limitation was stated up front rather than after the fact - a path-based block is only as durable as the path, and applications that relocate on update slip past it silently.",
+    "recommendation": "Check the rule still matches after the application updates. If this is about licensing or telemetry rather than security, the vendor's own offline mode is more reliable than a firewall rule the application can step around by changing folder.",
+    "feedback": {
+      "worked": true,
+      "note": "understood the limitation, will re-check after updates",
+      "at": "2026-09-05T14:24:00.000Z"
+    }
+  },
+  {
+    "id": "8f8d3df6-2421-4ae3-a5f2-5f60e24a6765",
+    "createdAt": "2026-09-05T14:27:00.000Z",
+    "type": "automation",
+    "goal": "Copy my whole user folder to this external drive",
+    "intent": "backup.profile.copy",
+    "domain": "automation",
+    "subdomain": "backup/restore",
+    "parameters": {
+      "source": "%USERPROFILE%",
+      "destination": "E:\\Backup"
+    },
+    "missingParameters": [
+      "includeAppData"
+    ],
+    "clarification": "Your profile is 284 GB, and 61 GB of that is AppData - browser caches, application state, temporary files. Do you want AppData included? Excluding it makes the copy much faster and smaller, but some applications keep real settings and data in there.",
+    "riskLevel": "medium",
+    "requiresConfirmation": true,
+    "plannedAction": "PLANNED - NOTHING COPIED YET\n  Source: C:\\Users\\jdoe   (284 GB, 412,806 files)\n  Destination: E:\\Backup   (free: 1.8 TB)\n  Proposed: robocopy /E /R:2 /W:5 /XJ, excluding AppData\\Local\\Temp and browser cache folders\n  /XJ skips junction points - without it the copy follows the legacy 'Documents and Settings' links and loops.\n  This is a COPY. Nothing on C: is modified or removed.\n  Estimated 3-5 hours over USB 3.",
+    "steps": [
+      {
+        "command": "Get-ChildItem $env:USERPROFILE -Recurse -File -EA SilentlyContinue | Measure-Object Length -Sum | Select-Object Count, @{N='GB';E={[int]($_.Sum/1GB)}}",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Count      GB\n-----      --\n412806    284",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-ChildItem \"$env:USERPROFILE\\AppData\" -Recurse -File -EA SilentlyContinue | Measure-Object Length -Sum | Select-Object @{N='GB';E={[int]($_.Sum/1GB)}}",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "GB\n--\n61",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-Volume E | Select-Object FileSystem, @{N='FreeGB';E={[int]($_.SizeRemaining/1GB)}}",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "FileSystem FreeGB\n---------- ------\nNTFS         1843",
+        "stderr": "')",
+        "reason": null
+      }
+    ],
+    "verification": [
+      {
+        "command": "(Get-ChildItem 'E:\\Backup' -Recurse -File | Measure-Object).Count",
+        "expected": "approximately 380,000 after excluding caches"
+      },
+      {
+        "command": "Get-Volume E | Select-Object @{N='FreeGB';E={[int]($_.SizeRemaining/1GB)}}",
+        "expected": "around 1,600"
+      }
+    ],
+    "rollback": "Remove-Item 'E:\\Backup' -Recurse  (nothing on C: was changed)",
+    "resolved": false,
+    "summary": "Nothing was copied yet - the AppData question changes the job substantially. The destination is NTFS, which matters: an exFAT or FAT32 target would silently drop alternate data streams and permissions, and would fail on files over 4 GB.",
+    "recommendation": "Once it completes, open a few files from the copy rather than trusting the file count. A backup nobody has restored from is an assumption; robocopy reporting success does not prove the files are readable.",
+    "feedback": {
+      "worked": true,
+      "note": "skip AppData, and I'll spot-check some files after",
+      "at": "2026-09-05T14:33:00.000Z"
+    }
+  },
+  {
+    "id": "f1afe072-5d0b-459c-a5c7-ddcc7dadfc08",
+    "createdAt": "2026-09-05T14:36:00.000Z",
+    "type": "automation",
+    "goal": "Reset the password for this user",
+    "intent": "account.password.reset",
+    "domain": "automation",
+    "subdomain": "user accounts",
+    "parameters": {
+      "username": "asmith"
+    },
+    "missingParameters": [
+      "deliveryMethod"
+    ],
+    "clarification": "How should the new password reach them? I can set one you specify, or generate one - but I have no way to deliver it securely, so you will need to hand it over in person or through whatever channel you normally use. I would rather ask than put a password somewhere it should not be.",
+    "riskLevel": "high",
+    "requiresConfirmation": true,
+    "plannedAction": "PLANNED - NOT YET EXECUTED\n  Reset local password for asmith\n  Also proposed: require change at next logon\n  WARNING: resetting a local account password destroys anything encrypted with it - EFS-encrypted files, saved credentials in Credential Manager, and IE/Edge stored passwords become unrecoverable.\n  This account has EFS certificates present, so that risk is real here rather than theoretical.\n  Confirm you understand that before I proceed.",
+    "steps": [
+      {
+        "command": "Get-LocalUser -Name asmith | Select-Object Name, Enabled, PasswordLastSet",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Name   Enabled PasswordLastSet\n----   ------- ---------------\nasmith    True 2/14/2026 9:41:02 AM",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-ChildItem 'Cert:\\CurrentUser\\My' -EA SilentlyContinue | Where-Object EnhancedKeyUsageList -match 'Encrypting File System' | Measure-Object | Select-Object Count",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Count\n-----\n    1",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "cmdkey /list | Select-String 'Target' | Measure-Object | Select-Object Count",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Count\n-----\n    7",
+        "stderr": "')",
+        "reason": null
+      }
+    ],
+    "verification": [
+      {
+        "command": "Get-LocalUser -Name asmith | Select-Object PasswordLastSet",
+        "expected": "(today's date after reset)"
+      }
+    ],
+    "rollback": "There is no rollback - the previous password cannot be restored, and anything it protected stays inaccessible.",
+    "resolved": false,
+    "summary": "Not executed. An EFS certificate is present and seven stored credentials exist, so a password reset on this local account would make encrypted files unrecoverable. That consequence is specific to resetting rather than changing a password, and it is worth confirming before rather than explaining after.",
+    "recommendation": "If the user knows their current password, have them change it instead - that migrates the encryption keys and loses nothing. A reset is only appropriate when the current password is genuinely unavailable, and the EFS files should be exported first if they matter.",
+    "feedback": {
+      "worked": true,
+      "note": "they know the old one, having them change it instead",
+      "at": "2026-09-05T14:42:00.000Z"
+    }
+  },
+  {
+    "id": "49ffeff8-7fd8-4679-883f-07f2ca6c6997",
+    "createdAt": "2026-09-05T14:45:00.000Z",
+    "type": "automation",
+    "goal": "Set all our meeting room PCs to never turn the screen off",
+    "intent": "config.power.display",
+    "domain": "automation",
+    "subdomain": "display",
+    "parameters": {
+      "acTimeout": 0,
+      "scope": "this machine"
+    },
+    "missingParameters": [],
+    "clarification": null,
+    "riskLevel": "low",
+    "requiresConfirmation": true,
+    "plannedAction": "Change display timeout on AC power\n  From: 10 minutes  To: Never\n  On battery: unchanged (this is a desktop, so no practical effect)\n  Applies to this machine only - I cannot reach the others from here.\n  NOTE: a display left on continuously with a static image will burn in on OLED panels. On LCD this is harmless.",
+    "steps": [
+      {
+        "command": "powercfg /q SCHEME_CURRENT SUB_VIDEO VIDEOIDLE | Select-String 'AC Power Setting'",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Current AC Power Setting Index: 0x00000258",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-CimInstance Win32_Battery -EA SilentlyContinue | Measure-Object | Select-Object Count",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Count\n-----\n    0",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "powercfg /setacvalueindex SCHEME_CURRENT SUB_VIDEO VIDEOIDLE 0; powercfg /setactive SCHEME_CURRENT",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": "",
+        "reason": null
+      }
+    ],
+    "verification": [
+      {
+        "command": "powercfg /q SCHEME_CURRENT SUB_VIDEO VIDEOIDLE | Select-String 'AC Power Setting'",
+        "expected": "Current AC Power Setting Index: 0x00000000"
+      }
+    ],
+    "rollback": "powercfg /setacvalueindex SCHEME_CURRENT SUB_VIDEO VIDEOIDLE 600; powercfg /setactive SCHEME_CURRENT",
+    "resolved": true,
+    "summary": "Applied and verified - 0x258 is 600 seconds, now 0 for never. The scope limit was stated: 'all our meeting room PCs' cannot be done from one endpoint, so only this one changed.",
+    "recommendation": "For the rest, deploy this through Group Policy or Intune rather than visiting each machine - a per-machine power setting drifts as soon as anyone reimages. Also consider a screen saver with a moving image instead of never blanking, if any of the displays are OLED.",
+    "feedback": {
+      "worked": true,
+      "note": "pushing the rest via GPO, this one was the test",
+      "at": "2026-09-05T14:51:00.000Z"
+    }
+  },
+  {
+    "id": "4c974676-8c68-4c26-9dcd-4597db089b1a",
+    "createdAt": "2026-09-05T14:54:00.000Z",
+    "type": "automation",
+    "goal": "Make this program start automatically when I log in",
+    "intent": "config.startup.add",
+    "domain": "automation",
+    "subdomain": "applications",
+    "parameters": {
+      "path": "C:\\Tools\\Dashboard\\dashboard.exe",
+      "scope": "current user"
+    },
+    "missingParameters": [],
+    "clarification": null,
+    "riskLevel": "low",
+    "requiresConfirmation": true,
+    "plannedAction": "Add a startup entry\n  Program: C:\\Tools\\Dashboard\\dashboard.exe\n  Method: shortcut in your Startup folder (not the Run registry key)\n  Scope: your account only\n  A shortcut is easier for you to find and remove later than a registry value, and Task Manager's Startup tab will show it.\n  Reversible by deleting the shortcut.",
+    "steps": [
+      {
+        "command": "Test-Path 'C:\\Tools\\Dashboard\\dashboard.exe'",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "True",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-CimInstance Win32_StartupCommand | Measure-Object | Select-Object Count",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Count\n-----\n    9",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "$s=(New-Object -ComObject WScript.Shell).CreateShortcut(\"$env:APPDATA\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\Dashboard.lnk\"); $s.TargetPath='C:\\Tools\\Dashboard\\dashboard.exe'; $s.Save()",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": "",
+        "reason": null
+      }
+    ],
+    "verification": [
+      {
+        "command": "Test-Path \"$env:APPDATA\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\Dashboard.lnk\"",
+        "expected": "True"
+      },
+      {
+        "command": "Get-CimInstance Win32_StartupCommand | Where-Object Name -match 'Dashboard' | Select-Object Name, Location",
+        "expected": "Dashboard  Startup"
+      }
+    ],
+    "rollback": "Remove-Item \"$env:APPDATA\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\Dashboard.lnk\"",
+    "resolved": true,
+    "summary": "A Startup folder shortcut was used rather than a Run registry value. Both work; the shortcut is discoverable in Explorer and removable without a registry editor, which matters when someone else has to maintain this later.",
+    "recommendation": "You now have ten startup items. If sign-in starts feeling slow, the Diagnostics-Performance log records per-application startup time and names the slow one directly, rather than leaving you to disable items one at a time.",
+    "feedback": {
+      "worked": true,
+      "note": "shortcut is much easier to manage than a registry key",
+      "at": "2026-09-05T15:00:00.000Z"
+    }
+  },
+  {
+    "id": "324014d7-0b02-4329-b580-00041f2b3cb9",
+    "createdAt": "2026-09-05T15:03:00.000Z",
+    "type": "automation",
+    "goal": "Delete all the .tmp files on this machine",
+    "intent": "cleanup.files.byextension",
+    "domain": "automation",
+    "subdomain": "cleanup",
+    "parameters": {
+      "extension": ".tmp",
+      "scope": "all drives"
+    },
+    "missingParameters": [],
+    "clarification": null,
+    "riskLevel": "high",
+    "requiresConfirmation": true,
+    "plannedAction": "PLANNED - NOTHING DELETED YET\n  Found 18,402 .tmp files (24 GB) across C: and D:\n  Where they are:\n    C:\\Users\\...\\AppData\\Local\\Temp    14,201 files   safe\n    C:\\Windows\\Temp                       2,840 files   safe\n    D:\\Projects\\CAD\\                        918 files   NOT SAFE - some CAD packages use .tmp as working files for open documents\n    C:\\ProgramData\\Vendor\\queue\\             443 files   NOT SAFE - looks like a pending work queue\n  I would delete the first two groups only, and leave the others alone.\n  Confirm the scope.",
+    "steps": [
+      {
+        "command": "Get-ChildItem 'C:\\','D:\\' -Recurse -Filter '*.tmp' -File -EA SilentlyContinue | Measure-Object Length -Sum | Select-Object Count, @{N='GB';E={[int]($_.Sum/1GB)}}",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Count    GB\n-----    --\n18402    24",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-ChildItem 'C:\\','D:\\' -Recurse -Filter '*.tmp' -File -EA SilentlyContinue | Group-Object { Split-Path $_.DirectoryName -Parent } | Sort-Object Count -Descending | Select-Object -First 3 Count, Name",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Count Name\n----- ----\n14201 C:\\Users\\jdoe\\AppData\\Local\n 2840 C:\\Windows\n  918 D:\\Projects\\CAD",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-Process | Where-Object { $_.Name -match 'acad|solidworks|inventor' } -EA SilentlyContinue | Select-Object Name, Id",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Name   Id\n----   --\nacad 7204",
+        "stderr": "')",
+        "reason": null
+      }
+    ],
+    "verification": [
+      {
+        "command": "Get-ChildItem \"$env:TEMP\" -Filter '*.tmp' -File | Measure-Object | Select-Object Count",
+        "expected": "Count : 0"
+      }
+    ],
+    "rollback": "Deleted files are not recoverable - they do not go to the Recycle Bin when removed this way.",
+    "resolved": true,
+    "summary": "Only the two temp directories were cleared. The CAD folder was excluded because AutoCAD is running right now and some CAD packages hold open documents in .tmp files - deleting those loses unsaved work. Matching by extension alone would have caught them.",
+    "recommendation": "Recover space from Temp on a schedule with an age filter instead, so files in active use are skipped automatically. An extension-wide sweep across whole drives will keep finding legitimate working files as new software is installed.",
+    "feedback": {
+      "worked": true,
+      "note": "would have destroyed a colleague's open drawing",
+      "at": "2026-09-05T15:09:00.000Z"
+    }
+  },
+  {
+    "id": "c0fffa2f-f4ba-46d7-860b-391dae0e8f01",
+    "createdAt": "2026-09-05T15:12:00.000Z",
+    "type": "automation",
+    "goal": "Alert me when the C drive gets full again",
+    "intent": "monitor.disk.recurring",
+    "domain": "automation",
+    "subdomain": "monitoring",
+    "parameters": {
+      "drive": "C",
+      "threshold": "15%"
+    },
+    "missingParameters": [
+      "notificationMethod"
+    ],
+    "clarification": "I have no email or messaging capability, so I cannot notify you outside this machine. Options are a Windows toast notification, a custom event in the Application log for your monitoring to pick up, or a file written to a folder you watch. Which fits how you actually work?",
+    "riskLevel": "low",
+    "requiresConfirmation": true,
+    "plannedAction": "Create scheduled task 'Chanakya-DiskWatch'\n  Runs: every 4 hours\n  Checks: C: free space below 15%\n  Action: writes event ID 9001 to the Application log, source 'Chanakya'\n  Read-only with respect to your data - it measures and reports, it never deletes.\n  The event source has to be registered once, which needs elevation.",
+    "steps": [
+      {
+        "command": "Get-Volume C | Select-Object @{N='FreePct';E={[int](100*$_.SizeRemaining/$_.Size)}}, @{N='FreeGB';E={[int]($_.SizeRemaining/1GB)}}",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "FreePct FreeGB\n------- ------\n     18     86",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-EventLog -LogName Application -Source 'Chanakya' -Newest 1 -EA SilentlyContinue",
+        "blocked": false,
+        "exitCode": 1,
+        "stdout": "",
+        "stderr": "(event source not registered)",
+        "reason": null
+      },
+      {
+        "command": "New-EventLog -LogName Application -Source 'Chanakya'; $a=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -WindowStyle Hidden -Command \"if((Get-Volume C).SizeRemaining/(Get-Volume C).Size -lt 0.15){Write-EventLog -LogName Application -Source Chanakya -EventId 9001 -Message \\\"C: below 15%\\\"}\"'; $t=New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Hours 4); Register-ScheduledTask -TaskName 'Chanakya-DiskWatch' -Action $a -Trigger $t",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "TaskPath TaskName          State\n-------- --------          -----\n\\        Chanakya-DiskWatch Ready",
+        "stderr": "",
+        "reason": null
+      }
+    ],
+    "verification": [
+      {
+        "command": "Get-ScheduledTask -TaskName 'Chanakya-DiskWatch' | Select-Object State",
+        "expected": "State : Ready"
+      },
+      {
+        "command": "[System.Diagnostics.EventLog]::SourceExists('Chanakya')",
+        "expected": "True"
+      }
+    ],
+    "rollback": "Unregister-ScheduledTask -TaskName 'Chanakya-DiskWatch' -Confirm:$false; Remove-EventLog -Source 'Chanakya'",
+    "resolved": true,
+    "summary": "The event log route was chosen because it plugs into monitoring you already have, rather than adding a notification path that only works when someone is looking at this screen. At 18% free the threshold will trigger soon, which is a useful test.",
+    "recommendation": "Worth pairing with knowing what fills the drive. Windows Update cleanup, the hibernation file and shadow copies are the usual three on a system volume, and an alert that fires monthly without that context becomes noise people learn to ignore.",
+    "feedback": {
+      "worked": true,
+      "note": "event log fits our monitoring, and it fired within a day",
+      "at": "2026-09-05T15:18:00.000Z"
+    }
+  },
+  {
+    "id": "d8b281da-5b51-42c6-8833-c285fdd2d898",
+    "createdAt": "2026-09-05T15:21:00.000Z",
+    "type": "automation",
+    "goal": "Merge these PDFs into one file",
+    "intent": "convert.documents.merge",
+    "domain": "automation",
+    "subdomain": "office automation",
+    "parameters": {
+      "path": "D:\\Reports\\Q3",
+      "output": "D:\\Reports\\Q3-combined.pdf"
+    },
+    "missingParameters": [
+      "order"
+    ],
+    "clarification": "There are 14 PDFs. What order should they go in - filename, date modified, or a specific sequence you give me? Filename order puts 'Section10' before 'Section2', which is rarely what people mean.",
+    "riskLevel": "low",
+    "requiresConfirmation": true,
+    "plannedAction": "Merge 14 PDFs into D:\\Reports\\Q3-combined.pdf\n  Order: natural sort by filename (Section1, Section2 ... Section10)\n  Source files are not modified or deleted.\n  Output is a new file; if it already exists I will stop rather than overwrite.",
+    "steps": [
+      {
+        "command": "Get-ChildItem 'D:\\Reports\\Q3' -Filter '*.pdf' | Measure-Object | Select-Object Count",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Count\n-----\n   14",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Test-Path 'D:\\Reports\\Q3-combined.pdf'",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "False",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-ChildItem 'D:\\Reports\\Q3' -Filter '*.pdf' | Sort-Object { [int]($_.BaseName -replace '\\D','') } | Select-Object -First 3 Name",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Name\n----\nSection1.pdf\nSection2.pdf\nSection3.pdf",
+        "stderr": "')",
+        "reason": null
+      }
+    ],
+    "verification": [
+      {
+        "command": "Test-Path 'D:\\Reports\\Q3-combined.pdf'",
+        "expected": "True"
+      },
+      {
+        "command": "(Get-ChildItem 'D:\\Reports\\Q3' -Filter '*.pdf' | Measure-Object).Count",
+        "expected": "14  (sources unchanged)"
+      }
+    ],
+    "rollback": "Remove-Item 'D:\\Reports\\Q3-combined.pdf'  (the source files were never modified)",
+    "resolved": true,
+    "summary": "Natural sort was used rather than plain filename sort, so Section10 lands after Section9 instead of after Section1. The order was confirmed first because getting it wrong produces a plausible-looking file that is silently in the wrong sequence.",
+    "recommendation": "Check the page count and a few section boundaries in the output. A merge that succeeds mechanically can still be wrong in ways the file size will not reveal.",
+    "feedback": {
+      "worked": true,
+      "note": "natural sort was exactly what I needed",
+      "at": "2026-09-05T15:27:00.000Z"
+    }
+  },
+  {
+    "id": "31c052a0-5fba-452c-be28-adc43a7686b5",
+    "createdAt": "2026-09-05T15:30:00.000Z",
+    "type": "automation",
+    "goal": "Turn off SMBv1, I read it's insecure",
+    "intent": "config.smb.disable",
+    "domain": "automation",
+    "subdomain": "security",
+    "parameters": {
+      "protocol": "SMBv1"
+    },
+    "missingParameters": [],
+    "clarification": null,
+    "riskLevel": "medium",
+    "requiresConfirmation": true,
+    "plannedAction": "Disable SMBv1 client and server\n  Currently: SMBv1 server ENABLED, and 2 active SMBv1 connections exist\n  WARNING: those two connections are to 10.4.9.14 - something on your network still uses SMBv1. Disabling it will break access to that device.\n  It is very likely a printer, scanner or NAS old enough not to support SMB2.\n  You are right that SMBv1 should go. Identify that device first so this is planned rather than a surprise on Monday.",
+    "steps": [
+      {
+        "command": "Get-SmbServerConfiguration | Select-Object EnableSMB1Protocol, EnableSMB2Protocol",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "EnableSMB1Protocol EnableSMB2Protocol\n------------------ ------------------\n              True               True",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-SmbSession -EA SilentlyContinue | Where-Object Dialect -like '1.*' | Select-Object ClientComputerName, Dialect",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "ClientComputerName Dialect\n------------------ -------\n10.4.9.14          1.5",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-WindowsOptionalFeature -Online -FeatureName SMB1Protocol | Select-Object State",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "State : Enabled",
+        "stderr": "')",
+        "reason": null
+      }
+    ],
+    "verification": [
+      {
+        "command": "Get-SmbServerConfiguration | Select-Object EnableSMB1Protocol",
+        "expected": "EnableSMB1Protocol : False"
+      }
+    ],
+    "rollback": "Set-SmbServerConfiguration -EnableSMB1Protocol $true -Force  (and re-enable the optional feature)",
+    "resolved": false,
+    "summary": "Not disabled yet. The intent is correct - SMBv1 has no authentication integrity and is the protocol WannaCry spread over - but two live SMBv1 sessions exist right now, so turning it off would break whatever 10.4.9.14 is.",
+    "recommendation": "Find that device, and either update its firmware to support SMB2 or replace it. Then disable SMBv1 everywhere. Doing it in that order turns a Monday morning outage into a planned change - the security argument does not become weaker for waiting a week.",
+    "feedback": {
+      "worked": true,
+      "note": "it was the old label printer, ordering a replacement",
+      "at": "2026-09-05T15:36:00.000Z"
+    }
+  },
+  {
+    "id": "5a96fe9a-ee47-4926-8ff1-d7df7ee79819",
+    "createdAt": "2026-09-05T15:39:00.000Z",
+    "type": "automation",
+    "goal": "Free up space by removing old Windows update files",
+    "intent": "cleanup.componentstore",
+    "domain": "automation",
+    "subdomain": "maintenance",
+    "parameters": {
+      "target": "WinSxS"
+    },
+    "missingParameters": [],
+    "clarification": null,
+    "riskLevel": "medium",
+    "requiresConfirmation": true,
+    "plannedAction": "Run component store cleanup\n  Command: Dism /Online /Cleanup-Image /StartComponentCleanup\n  Removes superseded component versions. Reclaimable: roughly 8 GB.\n  I am NOT using /ResetBase.\n  /ResetBase reclaims more but makes every installed update permanently uninstallable - you can no longer roll back a bad patch. On a machine that takes monthly updates that is a real loss.\n  This takes 20-40 minutes and should not be interrupted.",
+    "steps": [
+      {
+        "command": "Dism.exe /Online /Cleanup-Image /AnalyzeComponentStore | Select-String 'Reclaimable|Actual Size'",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Actual Size of Component Store : 14.82 GB\nComponent Store Cleanup Recommended : Yes",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-Volume C | Select-Object @{N='FreeGB';E={[int]($_.SizeRemaining/1GB)}}",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "FreeGB\n------\n    22",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Dism.exe /Online /Cleanup-Image /StartComponentCleanup",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "The operation completed successfully.",
+        "stderr": "",
+        "reason": null
+      }
+    ],
+    "verification": [
+      {
+        "command": "Dism.exe /Online /Cleanup-Image /AnalyzeComponentStore | Select-String 'Actual Size'",
+        "expected": "Actual Size of Component Store : 6.91 GB"
+      },
+      {
+        "command": "Get-Volume C | Select-Object @{N='FreeGB';E={[int]($_.SizeRemaining/1GB)}}",
+        "expected": "FreeGB : 30"
+      }
+    ],
+    "rollback": "Component cleanup cannot be undone - the superseded versions are gone. Without /ResetBase, update rollback still works for currently installed updates.",
+    "resolved": true,
+    "summary": "Cleanup recovered about 8 GB. /ResetBase was deliberately left out and the reason stated - it buys perhaps another 2 GB and costs the ability to uninstall any currently installed update, which matters the first time a patch breaks something.",
+    "recommendation": "WinSxS is not as large as Explorer reports - hard links mean much of it is counted twice. Use the DISM analyse output rather than the folder size when deciding whether cleanup is worth running.",
+    "feedback": {
+      "worked": true,
+      "note": "didn't know about the ResetBase trade-off",
+      "at": "2026-09-05T15:45:00.000Z"
     }
   }
 ]

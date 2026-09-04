@@ -90,8 +90,14 @@ export function startBackend(app) {
       : path.resolve(path.dirname(serverPath), '..')
   });
 
+  // Append, not overwrite: this file is the only record of what a backend
+  // error actually said. Truncating it on every launch means a crash or
+  // auth error from a previous session is gone by the time anyone goes
+  // looking for it, right after the one thing that would make it
+  // diagnosable (a restart) has already happened.
   const logPath = path.join(app.getPath('userData'), 'backend.log');
-  const logStream = fs.createWriteStream(logPath, { flags: 'w' });
+  const logStream = fs.createWriteStream(logPath, { flags: 'a' });
+  logStream.write(`\n[${new Date().toISOString()}] === backend starting ===\n`);
 
   backendProcess.stdout?.on('data', (data) => {
     const text = data.toString();
@@ -125,8 +131,29 @@ export function startBackend(app) {
 
 export function killBackend() {
   if (backendProcess && !backendProcess.killed) {
-    logger.log('Terminating backend process...');
-    backendProcess.kill();
+    const pid = backendProcess.pid;
+    logger.log(`Terminating backend process (PID ${pid})...`);
+    // taskkill /T kills the whole process TREE rooted at this PID, not just
+    // this one process. Plain backendProcess.kill() only ever touched the
+    // backend itself — but the backend's own agent tools (powershellRunner.js,
+    // CmdService.js, PowerShellService.js) spawn powershell.exe/cmd.exe as
+    // grandchildren while running agent commands. On Windows, killing a
+    // parent process does NOT kill its children (no cascade without a Job
+    // Object), so any agent command still in flight when the app closes was
+    // left running as a genuine orphan — its own per-call timeout lives in
+    // the now-dead parent's event loop and can never fire. This is
+    // synchronous (blocks until the whole tree is confirmed gone) rather
+    // than the previous fire-and-forget .kill(), so cleanUpProcesses()
+    // callers can rely on it having actually finished before app.quit().
+    if (process.platform === 'win32') {
+      try {
+        execSync(`taskkill /PID ${pid} /T /F`, { stdio: 'ignore' });
+      } catch {
+        // Already exited between the .killed check above and here — fine.
+      }
+    } else {
+      backendProcess.kill();
+    }
     backendProcess = null;
   }
 }

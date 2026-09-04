@@ -12,6 +12,10 @@ if (!['127.0.0.1', 'localhost', '::1', '[::1]'].includes(ollamaHost)) {
 const appDataPath = process.env.APP_DATA_PATH || root;
 
 export const config = {
+  // Must match frontend/electron/utils/constants.js's BACKEND_PORT — that
+  // file can't import this one (separate package, no shared module path
+  // across the Electron/Node boundary), so the default here is kept in
+  // sync with it by hand. If you change one, change the other.
   port: Number(process.env.PORT || 3001),
   // Loopback only — the README already claimed this, but app.listen() never
   // actually passed a host, so Node defaulted to 0.0.0.0 (every interface).
@@ -34,6 +38,44 @@ export const config = {
   pluginsDir: path.join(appDataPath, 'storage', 'plugins'),
   ocrDir: path.join(appDataPath, 'storage', 'ocr'),
   frontendDist: path.resolve(root, '..', 'frontend', 'dist'),
+
+  // Translator feature (routes/translate.js, services/translationService.js).
+  // The actual translation engine is IndicTrans2, running in a separate
+  // local Python microservice (indictrans-service/ at the repo root) —
+  // reached over loopback HTTP exactly like Ollama is, never a remote
+  // endpoint. Qwen3/Ollama is used only for the OPTIONAL post-processing
+  // pass below, never as the translator itself.
+  //
+  // Earlier in this app's history the translator called Ollama/qwen3
+  // directly (no IndicTrans2 involved) — that history is why
+  // postProcessingModel below still defaults through DEFAULT_MODEL/'qwen3'
+  // the same way the old direct-translation model selection did: qwen3
+  // measurably outperformed llama3 on Indic-language output quality
+  // (llama3 hallucinated content on simple phrases), and that same quality
+  // gap is just as relevant to a fluency-polish pass over Indic text.
+  translate: {
+    maxChars: Number(process.env.TRANSLATE_MAX_CHARS || 5000),
+
+    // Where the IndicTrans2 microservice listens. Same loopback-only
+    // posture as ollamaUrl (see the OLLAMA_URL check above this object) —
+    // this app refuses remote AI endpoints by design.
+    serviceUrl: process.env.INDICTRANS_SERVICE_URL || 'http://127.0.0.1:8100',
+    // IndicTrans2 inference latency on CPU (the common case for a desktop
+    // install) is unproven without a real deployment — 120s is a
+    // deliberately generous starting point for a ~5000-char request; the
+    // service itself fails predictably (503/504, see translationService.js)
+    // rather than hanging indefinitely if this is ever too tight.
+    serviceTimeoutMs: Number(process.env.INDICTRANS_TIMEOUT_MS || 120_000),
+
+    // Optional Qwen3 fluency/terminology polish over IndicTrans2's raw
+    // output. OFF by default — must be explicitly enabled, and its
+    // failure is always non-fatal (falls back to the unpolished
+    // IndicTrans2 output rather than failing the whole request).
+    postProcessingEnabled: process.env.TRANSLATION_POST_PROCESSING === 'true',
+    postProcessingModel:
+      process.env.TRANSLATION_POST_PROCESSING_MODEL || process.env.DEFAULT_MODEL || 'qwen3',
+    postProcessingTimeoutMs: Number(process.env.TRANSLATION_POST_PROCESSING_TIMEOUT_MS || 30_000)
+  },
 
   // Auth abuse protection (middleware/rateLimiter.js). Configurable rather
   // than hardcoded so limits can be tuned without touching application
@@ -75,7 +117,13 @@ export const config = {
     // mistyping their password twice never notices this.
     progressiveDelayThreshold: Number(process.env.AUTH_LOGIN_PROGRESSIVE_DELAY_THRESHOLD || 3),
     progressiveDelayStepMs: Number(process.env.AUTH_LOGIN_PROGRESSIVE_DELAY_STEP_MS || 300),
-    progressiveDelayMaxMs: Number(process.env.AUTH_LOGIN_PROGRESSIVE_DELAY_MAX_MS || 3000)
+    progressiveDelayMaxMs: Number(process.env.AUTH_LOGIN_PROGRESSIVE_DELAY_MAX_MS || 3000),
+
+    // Translator: keyed per authenticated user (not IP — see
+    // middleware/rateLimiter.js), so one busy account can't exhaust another
+    // user's budget on this shared desktop app.
+    translateWindowMs: Number(process.env.TRANSLATE_WINDOW_MS || 60 * 1000),
+    translateMaxRequests: Number(process.env.TRANSLATE_MAX_REQUESTS || 15)
   }
 };
 

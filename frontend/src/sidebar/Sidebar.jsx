@@ -18,6 +18,7 @@ import {
   FileText,
   Brain,
   Activity,
+  Languages,
   PanelLeftClose,
   PanelLeftOpen
 } from 'lucide-react';
@@ -190,6 +191,19 @@ export default function Sidebar({ activeTab, setActiveTab }) {
         >
           <Activity size={16} style={{ color: activeTab === 'diagnostics' ? accent : undefined }} />
           {open && <span>Diagnostics</span>}
+        </button>
+
+        <button
+          onClick={() => setActiveTab('translator')}
+          className="flex h-10 w-full items-center gap-3 rounded-xl px-3 transition-all text-xs font-semibold"
+          style={{
+            background: activeTab === 'translator' ? `linear-gradient(135deg, ${accent}25, ${accent}05)` : 'transparent',
+            border: activeTab === 'translator' ? `1px solid ${accent}35` : '1px solid transparent',
+            color: activeTab === 'translator' ? '#fff' : '#888'
+          }}
+        >
+          <Languages size={16} style={{ color: activeTab === 'translator' ? accent : undefined }} />
+          {open && <span>Translator</span>}
         </button>
       </div>
 

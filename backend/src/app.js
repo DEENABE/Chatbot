@@ -15,6 +15,7 @@ import { memoryRouter } from './routes/memory.js';
 import { statsRouter } from './routes/stats.js';
 import { agentRouter } from './routes/agent.js';
 import { repairRouter } from './routes/repair.js';
+import { translateRouter } from './routes/translate.js';
 import { askLimiter } from './middleware/rateLimiter.js';
 
 export const app = express();
@@ -117,6 +118,7 @@ app.use('/api/memory', memoryRouter);
 app.use('/api/stats', statsRouter);
 app.use('/api/agent', askLimiter, agentRouter);
 app.use('/api/repair', askLimiter, repairRouter);
+app.use('/api/translate', translateRouter);
 
 app.use('/ocr', express.static(config.ocrDir));
 app.use(express.static(config.frontendDist));
@@ -155,6 +157,9 @@ app.use((error, request, response, _next) => {
   console.error(`[${request.id || '-'}]`, error);
   if (error.code === 'LIMIT_FILE_SIZE') {
     return response.status(413).json({ error: 'File is larger than the allowed upload size.' });
+  }
+  if (error.code === 'LIMIT_FILE_COUNT') {
+    return response.status(413).json({ error: 'That folder has more than 500 files — upload it in smaller batches.' });
   }
   if (Number.isInteger(error.status) && error.status >= 400 && error.status < 500) {
     return response.status(error.status).json({ error: error.message });

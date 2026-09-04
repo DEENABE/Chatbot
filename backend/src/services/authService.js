@@ -5,6 +5,17 @@ import { db } from './db.js';
 import { revokeAllSessionsForUser, hashToken } from './sessionService.js';
 import { config } from '../config.js';
 
+// Marks every deliberate failure this module throws (bad password, unknown
+// user, duplicate username) as safe to show to the client verbatim — the
+// route layer (routes/auth.js) echoes `error.message` only for an
+// AuthError; anything else (a DB I/O error, a corrupted database, a bug)
+// falls back to a generic message instead of leaking internal detail. Kept
+// local to this module rather than reusing lib/validate.js's
+// ValidationError: that class hardcodes `.status = 400`, which doesn't fit
+// login's 401 — the route already decides the right status per-endpoint,
+// this class only needs to mark "message is safe", not carry a status.
+export class AuthError extends Error {}
+
 function hashPassword(password, salt) {
   if (!salt) salt = crypto.randomBytes(16).toString('hex');
   const hash = crypto.scryptSync(password, salt, 64).toString('hex');
@@ -32,13 +43,13 @@ const MAX_PASSWORD_LENGTH = 128;
 // each other on what "a valid new password" means.
 function assertValidPassword(password, label = 'Password') {
   if (!isNonEmptyString(password)) {
-    throw new Error(`${label} must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+    throw new AuthError(`${label} must be at least ${MIN_PASSWORD_LENGTH} characters.`);
   }
   if (password.length < MIN_PASSWORD_LENGTH) {
-    throw new Error(`${label} must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+    throw new AuthError(`${label} must be at least ${MIN_PASSWORD_LENGTH} characters.`);
   }
   if (password.length > MAX_PASSWORD_LENGTH) {
-    throw new Error(`${label} must be ${MAX_PASSWORD_LENGTH} characters or fewer.`);
+    throw new AuthError(`${label} must be ${MAX_PASSWORD_LENGTH} characters or fewer.`);
   }
 }
 
@@ -56,19 +67,19 @@ function hashesMatch(a, b) {
 
 export async function registerUser(username, displayName, password) {
   if (!isNonEmptyString(username)) {
-    throw new Error('Username is required.');
+    throw new AuthError('Username is required.');
   }
   const lowerName = username.toLowerCase().trim();
 
   if (!lowerName || lowerName.length < 2) {
-    throw new Error('Username must be at least 2 characters.');
+    throw new AuthError('Username must be at least 2 characters.');
   }
   assertValidPassword(password);
 
   // Check if user already exists
   const existingUser = db.prepare('SELECT id FROM users WHERE username = ?').get(lowerName);
   if (existingUser) {
-    throw new Error('Username already taken.');
+    throw new AuthError('Username already taken.');
   }
 
   const { hash, salt } = hashPassword(password);
@@ -109,18 +120,18 @@ export async function loginUser(username, password) {
   // credentials" (that distinction is exactly what username enumeration
   // attacks go looking for).
   if (!isNonEmptyString(username) || !isNonEmptyString(password)) {
-    throw new Error('Invalid username or password.');
+    throw new AuthError('Invalid username or password.');
   }
   const lowerName = username.toLowerCase().trim();
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(lowerName);
 
   if (!user) {
-    throw new Error('Invalid username or password.');
+    throw new AuthError('Invalid username or password.');
   }
 
   const { hash } = hashPassword(password, user.salt);
   if (!hashesMatch(hash, user.passwordHash)) {
-    throw new Error('Invalid username or password.');
+    throw new AuthError('Invalid username or password.');
   }
 
   return {
@@ -153,14 +164,14 @@ export async function getUserById(userId) {
 export async function changePassword(userId, currentPassword, newPassword) {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
   if (!user) {
-    throw new Error('User not found.');
+    throw new AuthError('User not found.');
   }
   if (!isNonEmptyString(currentPassword)) {
-    throw new Error('Current password is incorrect.');
+    throw new AuthError('Current password is incorrect.');
   }
   const { hash } = hashPassword(currentPassword, user.salt);
   if (!hashesMatch(hash, user.passwordHash)) {
-    throw new Error('Current password is incorrect.');
+    throw new AuthError('Current password is incorrect.');
   }
   assertValidPassword(newPassword, 'New password');
   const { hash: newHash, salt: newSalt } = hashPassword(newPassword);
@@ -260,7 +271,7 @@ export async function requestPasswordReset(username) {
 export async function resetPasswordWithToken(token, newPassword) {
   if (!isNonEmptyString(token) || token.length > 256) {
     console.log('[auth] PASSWORD_RESET_FAILED');
-    throw new Error('Invalid or expired reset code.');
+    throw new AuthError('Invalid or expired reset code.');
   }
   assertValidPassword(newPassword, 'New password');
 
@@ -277,7 +288,7 @@ export async function resetPasswordWithToken(token, newPassword) {
 
   if (claim.changes === 0) {
     console.log('[auth] PASSWORD_RESET_FAILED');
-    throw new Error('Invalid or expired reset code.');
+    throw new AuthError('Invalid or expired reset code.');
   }
 
   const record = db.prepare('SELECT userId FROM password_resets WHERE tokenHash = ?').get(tokenHash);
@@ -286,7 +297,7 @@ export async function resetPasswordWithToken(token, newPassword) {
     // Structurally shouldn't happen — ON DELETE CASCADE removes this row
     // the moment the user is deleted — but never trust that silently.
     console.log('[auth] PASSWORD_RESET_FAILED');
-    throw new Error('Invalid or expired reset code.');
+    throw new AuthError('Invalid or expired reset code.');
   }
 
   // The token is already claimed at this point (fail-closed): if hashing or
@@ -305,6 +316,49 @@ export async function resetPasswordWithToken(token, newPassword) {
 
   clearLocalResetToken();
   console.log('[auth] PASSWORD_RESET_SUCCESS');
+  return { ok: true };
+}
+
+// Irreversible: deletes the account row (ON DELETE CASCADE in schema.sql
+// takes care of sessions/chats/messages/memories/documents/folders/
+// password_resets for this userId) plus the one piece of this user's data
+// that lives outside SQLite — their per-user LanceDB vector store directory
+// (see vectorService.js's `db(userId)`, which derives the exact same path).
+// Requires the current password, same proof-of-identity bar as
+// changePassword, since this is far more destructive than a routine edit.
+export async function deleteAccount(userId, password) {
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+  if (!user) {
+    throw new AuthError('User not found.');
+  }
+  if (!isNonEmptyString(password)) {
+    throw new AuthError('Password is incorrect.');
+  }
+  const { hash } = hashPassword(password, user.salt);
+  if (!hashesMatch(hash, user.passwordHash)) {
+    throw new AuthError('Password is incorrect.');
+  }
+
+  db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+
+  // The DB runs in WAL mode (db/connection.js): a committed DELETE lands in
+  // the -wal sidecar file first and is only merged into the main .sqlite
+  // file at SQLite's own checkpoint threshold (a few MB of writes) or on
+  // clean shutdown. Any tool that reads db.sqlite directly without also
+  // understanding WAL — a plain SQLite viewer, a copy of the file — sees
+  // the pre-delete state until then, i.e. a "deleted" account that still
+  // looks present. Account deletion is rare and deliberate, so forcing an
+  // immediate checkpoint here (unlike on every ordinary write, where the
+  // I/O cost isn't worth paying) makes the on-disk file accurate right away.
+  db.pragma('wal_checkpoint(TRUNCATE)');
+
+  const vectorDir = path.join(path.dirname(config.dbFile), 'users', userId);
+  try {
+    fs.rmSync(vectorDir, { recursive: true, force: true });
+  } catch (error) {
+    console.error(`[auth] Failed to remove vector store for deleted account ${userId}:`, error.message);
+  }
+
   return { ok: true };
 }
 

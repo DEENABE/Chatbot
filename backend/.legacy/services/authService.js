@@ -8,26 +8,41 @@ function hashPassword(password, salt) {
 }
 
 export async function registerUser(username, displayName, password) {
+  if (typeof username !== 'string' || !username.trim()) {
+    throw new Error('Username is required.');
+  }
+
+  if (typeof password !== 'string' || !password) {
+    throw new Error('Password is required.');
+  }
+
   const lowerName = username.toLowerCase().trim();
 
-  if (!lowerName || lowerName.length < 2) {
+  if (lowerName.length < 4) {
     throw new Error('Username must be at least 2 characters.');
   }
-  if (!password || password.length < 4) {
+
+  if (password.length < 4) {
     throw new Error('Password must be at least 4 characters.');
   }
 
-  // Check if user already exists
-  const existingUser = db.prepare('SELECT id FROM users WHERE username = ?').get(lowerName);
+  const existingUser = db
+    .prepare('SELECT id FROM users WHERE username = ?')
+    .get(lowerName);
+
   if (existingUser) {
     throw new Error('Username already taken.');
   }
 
   const { hash, salt } = hashPassword(password);
+
   const user = {
     id: crypto.randomUUID(),
     username: lowerName,
-    displayName: displayName?.trim() || lowerName,
+    displayName:
+      typeof displayName === 'string' && displayName.trim()
+        ? displayName.trim()
+        : lowerName,
     email: null,
     department: null,
     role: 'Employee',
@@ -38,8 +53,30 @@ export async function registerUser(username, displayName, password) {
   };
 
   db.prepare(`
-    INSERT INTO users (id, username, displayName, email, department, role, permissions, passwordHash, salt, createdAt)
-    VALUES (@id, @username, @displayName, @email, @department, @role, @permissions, @passwordHash, @salt, @createdAt)
+    INSERT INTO users (
+      id,
+      username,
+      displayName,
+      email,
+      department,
+      role,
+      permissions,
+      passwordHash,
+      salt,
+      createdAt
+    )
+    VALUES (
+      @id,
+      @username,
+      @displayName,
+      @email,
+      @department,
+      @role,
+      @permissions,
+      @passwordHash,
+      @salt,
+      @createdAt
+    )
   `).run(user);
 
   return {

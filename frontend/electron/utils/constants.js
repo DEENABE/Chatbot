@@ -12,5 +12,9 @@ export const TOOLBAR_HEIGHT = 400;
 // The greeting needs room to read; the bubble window itself is only 80 wide.
 // The window widens symmetrically on hover so the avatar does not visibly move.
 export const HOVER_WIDTH = 300;
+// Must match backend/src/config.js's `port` (PORT env var, default 3001) —
+// this is a separate package from the backend (different node_modules, no
+// shared import path across the Electron/Node boundary), so the two are
+// kept in sync by hand. If you change one, change the other.
 export const BACKEND_PORT = 3001;
 export const HEALTH_CHECK_URL = `http://127.0.0.1:${BACKEND_PORT}/api/health`;

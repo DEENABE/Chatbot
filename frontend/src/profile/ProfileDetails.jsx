@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, User, Folder, FileText, Brain, ShieldAlert, Award, KeyRound, Lock, Check, ChevronDown } from 'lucide-react';
+import { X, User, Folder, FileText, Brain, ShieldAlert, Award, KeyRound, Lock, Check, ChevronDown, Trash2, AlertTriangle } from 'lucide-react';
 import { useAppStore } from '../stores/useAppStore.js';
 import { presets } from '../animations/presets.js';
 
@@ -13,6 +13,7 @@ export default function ProfileDetails({ onClose }) {
   const memories = useAppStore((state) => state.memories);
   const settings = useAppStore((state) => state.settings);
   const changePassword = useAppStore((state) => state.changePassword);
+  const deleteAccount = useAppStore((state) => state.deleteAccount);
 
   const accent = settings.accentColor || '#3b82f6';
 
@@ -23,6 +24,29 @@ export default function ProfileDetails({ onClose }) {
   const [pwError, setPwError] = useState('');
   const [pwSuccess, setPwSuccess] = useState(false);
   const [pwLoading, setPwLoading] = useState(false);
+
+  const [showDeleteForm, setShowDeleteForm] = useState(false);
+  const [deleteConfirmed, setDeleteConfirmed] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const handleDeleteAccount = async (e) => {
+    e.preventDefault();
+    setDeleteError('');
+    if (!deleteConfirmed) {
+      setDeleteError('Check the box to confirm you understand this cannot be undone.');
+      return;
+    }
+    setDeleteLoading(true);
+    try {
+      await deleteAccount(deletePassword);
+      onClose();
+    } catch (err) {
+      setDeleteError(err.response?.data?.error || err.message || 'Could not delete account.');
+      setDeleteLoading(false);
+    }
+  };
 
   const handleChangePassword = async (e) => {
     e.preventDefault();
@@ -223,6 +247,84 @@ export default function ProfileDetails({ onClose }) {
                         <><Check size={13} /> Updated</>
                       ) : (
                         'Update Password'
+                      )}
+                    </button>
+                  </div>
+                </motion.form>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Danger Zone / Delete Account */}
+          <div className="mt-2">
+            <button
+              onClick={() => {
+                setShowDeleteForm((v) => !v);
+                setDeleteError('');
+                setDeleteConfirmed(false);
+                setDeletePassword('');
+              }}
+              className="flex w-full items-center justify-between rounded-lg border border-red-500/10 bg-red-500/[0.03] px-3 py-2 text-[11px] font-medium text-red-400/80 hover:bg-red-500/[0.06] transition-colors cursor-pointer"
+            >
+              <span className="flex items-center gap-1.5">
+                <Trash2 size={12} />
+                Delete Account
+              </span>
+              <ChevronDown size={13} className={`transition-transform ${showDeleteForm ? 'rotate-180' : ''}`} />
+            </button>
+
+            <AnimatePresence initial={false}>
+              {showDeleteForm && (
+                <motion.form
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  onSubmit={handleDeleteAccount}
+                  className="overflow-hidden"
+                >
+                  <div className="space-y-2 pt-2.5">
+                    <div className="flex gap-2 rounded-lg border border-red-500/20 bg-red-500/5 p-2.5 text-[10px] text-red-400/90 leading-[1.4]">
+                      <AlertTriangle size={12} className="shrink-0 mt-0.5" />
+                      <span>This permanently deletes your account, chats, documents, and memories on this device. This cannot be undone.</span>
+                    </div>
+
+                    <div className="relative">
+                      <Lock className="absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-stone-600" />
+                      <input
+                        type="password"
+                        value={deletePassword}
+                        onChange={(e) => setDeletePassword(e.target.value)}
+                        placeholder="Confirm your password"
+                        required
+                        className={pwInputStyle}
+                      />
+                    </div>
+
+                    <label className="flex items-start gap-2 text-[10px] text-stone-400 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={deleteConfirmed}
+                        onChange={(e) => setDeleteConfirmed(e.target.checked)}
+                        className="mt-0.5 accent-red-500"
+                      />
+                      I understand this cannot be undone.
+                    </label>
+
+                    {deleteError && (
+                      <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-2.5 py-1.5 text-[10px] text-red-400">
+                        {deleteError}
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={deleteLoading}
+                      className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-red-500/90 py-2 text-[11px] font-semibold text-white transition-all hover:bg-red-500 disabled:opacity-50 cursor-pointer"
+                    >
+                      {deleteLoading ? (
+                        <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                      ) : (
+                        <><Trash2 size={13} /> Permanently Delete Account</>
                       )}
                     </button>
                   </div>

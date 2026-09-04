@@ -73,6 +73,7 @@ Open `http://127.0.0.1:3001`. Express serves the compiled frontend and API from 
 | `GET` | `/api/models` | Supported and locally installed Ollama models |
 | `GET` | `/api/history` | Persisted conversation sessions and messages |
 | `GET` | `/api/documents` | Persisted local knowledge-library metadata |
+| `POST` | `/api/translate` | English/Hindi/Tamil/Kannada/Telugu/Malayalam translation via IndicTrans2 — see [docs/translation-architecture.md](docs/translation-architecture.md) |
 | `GET` | `/api/health` | Local API health check |
 
 Example chat request:
@@ -112,6 +113,15 @@ Copy `.env.example` to `.env` and adjust:
 | `MAX_FILE_SIZE_MB` | `25` |
 | `RAG_TOP_K` | `5` |
 | `FRONTEND_ORIGIN` | `http://localhost:5173` |
+
+## Translator (IndicTrans2)
+
+The Translator sidebar tab (English/Hindi/Tamil/Kannada/Telugu/Malayalam) is a
+separate optional local service, not required for the rest of the app —
+chat, RAG, and documents all work without it. See
+[`docs/translation-architecture.md`](docs/translation-architecture.md) for
+the full architecture, and [`indictrans-service/README.md`](indictrans-service/README.md)
+for setup (requires Python 3.10+; not installed automatically).
 
 ## Tests
 

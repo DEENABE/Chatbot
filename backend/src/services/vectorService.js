@@ -85,7 +85,7 @@ export async function deleteChunks(documentId, userId) {
   // documentId is string-interpolated into a LanceDB filter expression below
   // (LanceDB's delete() takes a filter string, not a parameterized query) —
   // same shape check as userId above, so a malformed id can't break out of
-  // the intended `documentId = '...'` filter instead of just matching nothing.
+  // the intended filter instead of just matching nothing.
   if (!isValidUuid(documentId)) {
     console.error(`[vector] Refusing to delete chunks for non-UUID documentId: ${documentId}`);
     return;
@@ -94,7 +94,21 @@ export async function deleteChunks(documentId, userId) {
     const connection = await db(userId);
     if (!(await connection.tableNames()).includes(TABLE_NAME)) return;
     const table = await connection.openTable(TABLE_NAME);
-    await table.delete(`documentId = '${documentId}'`);
+    // A filter on `documentId` directly doesn't work on this @lancedb/lancedb
+    // version (0.18.2): DataFusion's SQL parser folds an unquoted identifier
+    // to lowercase, so `documentId = '...'` was resolving to the
+    // nonexistent column `documentid` and throwing on every call — and
+    // double-quoting it (`"documentId" = '...'`), which the resulting error
+    // message itself suggests, parses without error but silently matches
+    // zero rows instead (verified empirically), so every "deleted" document
+    // was actually left fully indexed forever. Matching manually against the
+    // camelCase field client-side, then deleting by the lowercase `id`
+    // column (safe to filter on directly — no case-folding ambiguity),
+    // sidesteps the identifier-quoting bug entirely.
+    const rows = await table.query().select(['id', 'documentId']).toArray();
+    const idsToDelete = rows.filter((row) => row.documentId === documentId).map((row) => row.id);
+    if (!idsToDelete.length) return;
+    await table.delete(`id IN (${idsToDelete.map((id) => `'${id}'`).join(',')})`);
     console.log(`[vector] Deleted vector chunks for document: ${documentId}`);
   } catch (err) {
     console.error(`[vector] Failed to delete chunks for document ${documentId}:`, err.message);

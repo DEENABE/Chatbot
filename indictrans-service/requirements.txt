@@ -1,0 +1,35 @@
+# IndicTrans2 microservice dependencies.
+#
+# torch: install the CPU build by default via this file. For CUDA/GPU
+# support, follow https://pytorch.org/get-started/locally/ to install the
+# matching CUDA wheel for your system BEFORE running `pip install -r
+# requirements.txt` (pip will then see torch already satisfied and skip
+# reinstalling the CPU build) — see README.md.
+torch>=2.1,<3.0
+
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.27,<1.0
+pydantic>=2.5,<3.0
+python-dotenv>=1.0,<2.0
+
+# Pinned to 4.44.2: IndicTrans2's custom trust_remote_code modeling class
+# (modeling_indictrans.py) indexes past_key_values as a raw tuple.
+# transformers >=4.45ish made Cache objects mandatory in generate()'s
+# KV-cache handling, which breaks that assumption — throws
+# `AttributeError: 'NoneType' object has no attribute 'shape'` during
+# beam search for en-indic, and silently produces garbled "?????" output
+# for indic-en/indic-indic. Going older than ~4.39 breaks the OTHER
+# direction: IndicTransToolkit's collator imports
+# `pad_without_fast_tokenizer_warning`, which doesn't exist before then.
+# 4.44.2 is the confirmed-working overlap — verified against real
+# checkpoints for all three directions (en-indic, indic-en, indic-indic).
+transformers==4.44.2
+sentencepiece>=0.2.0
+huggingface_hub>=0.20,<1.0
+
+# AI4Bharat's official pre/post-processing toolkit for IndicTrans2 models
+# (script normalization, transliteration, sentence handling). Pin against
+# whatever version the checkpoint's model card on HuggingFace specifies at
+# setup time — the version below is a starting point, not guaranteed to
+# match every future checkpoint revision.
+IndicTransToolkit>=1.0.3
