@@ -1,13 +1,20 @@
 import Database from 'better-sqlite3';
+import { config } from '../src/config.js';
 
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = path.join(__dirname, '..', 'storage', 'db.sqlite');
+// Was previously hardcoded to __dirname/../storage/db.sqlite — a SECOND,
+// independent path resolution that silently diverged from config.dbFile
+// (the one path every other part of this app actually reads/writes). That
+// made this "viewer" show stale/wrong data (or fail outright, once the old
+// repo-local db.sqlite was retired) while the real running app was
+// perfectly healthy on the real database — exactly the kind of confusion
+// this fix removes. Always follow config.dbFile; never re-derive the path.
+const dbPath = config.dbFile;
 const db = new Database(dbPath, { readonly: true });
 
 console.log('═══════════════════════════════════════════');
 console.log('  CHANAKYA AI — db.sqlite VIEWER');
+console.log('═══════════════════════════════════════════');
+console.log(`  Path: ${dbPath}`);
 console.log('═══════════════════════════════════════════\n');
 
 // 1. List all tables

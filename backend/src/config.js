@@ -9,9 +9,26 @@ if (!['127.0.0.1', 'localhost', '::1', '[::1]'].includes(ollamaHost)) {
   throw new Error('OLLAMA_URL must point to localhost. Chanakya AI refuses remote AI endpoints.');
 }
 
+// Persistent data lives in backend/'s OWN storage/ folder — `root` here is
+// computed from this file's own location (import.meta.url), never a
+// hardcoded machine path, so this is portable: whatever directory backend/
+// happens to be running from (a dev checkout, or the packaged .exe's own
+// resources/backend), its storage/ sibling is what gets used. Deliberately
+// NOT an OS profile folder (e.g. Electron's app.getPath('userData')) — the
+// user wants one visible, predictable location they can find themselves,
+// not one hidden in AppData. frontend/electron/managers/BackendManager.js
+// no longer overrides this for the packaged app (it used to force
+// app.getPath('userData')); frontend/scripts/prepare-backend.cjs and
+// afterPack.cjs preserve this folder's contents across rebuilds (see the
+// comments there) specifically so repackaging the .exe never wipes it.
 const appDataPath = process.env.APP_DATA_PATH || root;
 
 export const config = {
+  // The one canonical persistent-data root everything else in this file
+  // (dbFile, uploadDir, vectorDir, pluginsDir, ocrDir) is derived from.
+  // Exposed directly so diagnostics/scripts can report it without having
+  // to re-derive it from dbFile's path.
+  appDataPath,
   // Must match frontend/electron/utils/constants.js's BACKEND_PORT — that
   // file can't import this one (separate package, no shared module path
   // across the Electron/Node boundary), so the default here is kept in

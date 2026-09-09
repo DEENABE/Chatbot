@@ -31,13 +31,40 @@ function isOurNodeProcess(pid) {
   }
 }
 
+// The pid file's own path is shared per-machine (same storage directory
+// regardless of PORT — see server.js), so a bare "is this PID alive and a
+// node.exe" check isn't enough by itself: running a SECOND instance on a
+// DIFFERENT port (e.g. a one-off test on PORT=13005 while the real dev
+// server is still legitimately running on 3001) would otherwise read the
+// real server's pid, see it's alive, see it's node.exe, and kill it —
+// even though it was never actually competing for the port this instance
+// is about to bind. Confirmed this exact failure mode happened once during
+// testing. The fix: only ever reclaim a pid that is *itself* the one
+// LISTENING on the specific port we're about to bind — verified via
+// netstat, not assumed from the file alone.
+function isListeningOnPort(pid, port) {
+  try {
+    const out = execSync('netstat -ano -p tcp', { encoding: 'utf8' });
+    for (const line of out.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed.includes(`:${port} `) && !trimmed.includes(`:${port}\t`)) continue;
+      if (!/LISTENING/.test(trimmed)) continue;
+      if (trimmed.trim().endsWith(` ${pid}`)) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 /**
- * If `pidFilePath` names a still-alive node.exe process (i.e. a previous
- * run of this script that didn't shut down cleanly), terminate its whole
- * tree before we try to bind. Safe to call unconditionally on every
- * startup — a missing/stale file is a normal no-op, not an error.
+ * If `pidFilePath` names a still-alive node.exe process that is ITSELF
+ * listening on `port` (i.e. a previous run of this script, on this same
+ * port, that didn't shut down cleanly), terminate its whole tree before we
+ * try to bind. Safe to call unconditionally on every startup — a missing,
+ * stale, or port-mismatched file is a normal no-op, not an error.
  */
-export function reclaimStalePort(pidFilePath) {
+export function reclaimStalePort(pidFilePath, port) {
   if (process.platform !== 'win32') return;
   let previousPid;
   try {
@@ -50,7 +77,13 @@ export function reclaimStalePort(pidFilePath) {
     try { fs.unlinkSync(pidFilePath); } catch { /* already gone */ }
     return;
   }
-  console.log(`Reclaiming the port from a previous dev session (PID ${previousPid}, left running from an unclean shutdown)...`);
+  if (!isListeningOnPort(previousPid, port)) {
+    // Alive, and a node.exe — but not actually on the port we care about
+    // (e.g. someone's other Node process, or an instance intentionally
+    // running on a different port). Never touch it.
+    return;
+  }
+  console.log(`Reclaiming port ${port} from a previous dev session (PID ${previousPid}, left running from an unclean shutdown)...`);
   try {
     execSync(`taskkill /PID ${previousPid} /T /F`, { stdio: 'ignore' });
   } catch {

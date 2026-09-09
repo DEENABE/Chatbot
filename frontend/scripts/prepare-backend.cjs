@@ -22,6 +22,67 @@ const backendSrc = path.join(repoRoot, 'backend');
 const out = path.join(frontendDir, 'backend-runtime');
 const tmp = path.join(os.tmpdir(), 'chanakya-backend-build');
 
+// Synchronous sleep (no external deps) — used only to retry a Windows
+// rename that's transiently locked, see renameWithRetry below.
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+// fs.renameSync on the storage/ directory hit a persistent EPERM during
+// testing — even several seconds after the exe process was already fully
+// closed, so this isn't the transient "OS hasn't released the handle yet"
+// race it looks like at first; something else (most likely antivirus
+// real-time scanning the just-modified db.sqlite) was holding a lock long
+// enough to fail every retry. A rename needs nothing else referencing the
+// directory at all; a plain copy doesn't — most readers/scanners open
+// files with shared-read access, so cpSync succeeds where renameSync
+// didn't. Copy to the stash rather than move; the original is left in
+// place but gets deleted anyway moments later by afterPack.cjs's own
+// `fs.rmSync(dest)` when it wipes resources/backend for the fresh copy —
+// so nothing extra to clean up here.
+function withRetry(label, fn, attempts = 6, delayMs = 500) {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      fn();
+      return;
+    } catch (err) {
+      if (attempt === attempts) throw err;
+      console.log(`[prepare-backend] ${label} locked (attempt ${attempt}/${attempts}: ${err.code}), retrying in ${delayMs}ms...`);
+      sleepSync(delayMs);
+    }
+  }
+}
+
+// The packaged app now stores its database/uploads/etc INSIDE its own
+// resources/backend/storage (config.js's appDataPath defaults to wherever
+// backend/ itself lives — portable with the install, not a separate OS
+// profile folder). electron-builder rebuilds release-build/win-unpacked
+// from scratch on every `npm run electron:build`, which would otherwise
+// silently delete a previous build's real user data (accounts, chat
+// history) on every single rebuild. Stash any existing storage/ from the
+// PREVIOUS build here, first thing, before electron-builder touches
+// anything — afterPack.cjs restores it once the fresh package exists.
+const preservedStorageStash = path.join(frontendDir, '.storage-preserve-tmp');
+const previousPackagedStorage = path.join(frontendDir, 'release-build', 'win-unpacked', 'resources', 'backend', 'storage');
+if (fs.existsSync(previousPackagedStorage)) {
+  // A fresh, real storage/ exists in the current package — this run's own
+  // copy supersedes anything already stashed (from, say, a previous build
+  // that failed partway through its own restore step), so it's safe to
+  // clear the old stash ONLY here, right before writing a new one.
+  withRetry('clear old stash', () => fs.rmSync(preservedStorageStash, { recursive: true, force: true }));
+  fs.mkdirSync(preservedStorageStash, { recursive: true });
+  withRetry('preserve app data', () => fs.cpSync(previousPackagedStorage, path.join(preservedStorageStash, 'storage'), { recursive: true }));
+  console.log('[prepare-backend] preserved existing packaged app data for restore after this rebuild');
+} else if (fs.existsSync(preservedStorageStash)) {
+  // Nothing to preserve from THIS run (a previous build already wiped its
+  // own resources/backend/storage on its way to failing before it could
+  // restore) — but a stash from that earlier, still-unrestored attempt may
+  // be the only surviving copy of real user data. Never touch it in this
+  // branch; afterPack.cjs still gets to restore it into the fresh package
+  // being built now.
+  console.log('[prepare-backend] no current packaged storage/ to preserve, but a stash from an earlier interrupted build exists — leaving it for afterPack.cjs to restore');
+}
+
 console.log('[prepare-backend] isolated production install…');
 fs.rmSync(tmp, { recursive: true, force: true });
 fs.mkdirSync(tmp, { recursive: true });

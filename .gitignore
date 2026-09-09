@@ -17,6 +17,10 @@ frontend/release-build/
 frontend/release-latest/
 # Self-contained backend runtime produced by scripts/prepare-backend.cjs
 frontend/backend-runtime/
+# Transient stash used by prepare-backend.cjs/afterPack.cjs to carry the
+# packaged app's real storage/ (db.sqlite, uploads, etc) across a rebuild —
+# only ever exists mid-build, never meant to be committed.
+frontend/.storage-preserve-tmp/
 # Pre-extracted Electron distribution (electronDist in frontend/package.json's
 # build config) — a local workaround for an antivirus lock on electron-builder's
 # own fresh-extract-then-rename step; safe to delete and re-extract from the
@@ -133,7 +137,7 @@ CLAUDE.md
 #---docs---
 docs/translation.architecture.md
 docs/code-reference.md
-docs/Translator-Feature-Explained.docx
+docs/Translator-Feature-Explained-v2.docx
 
 # ─── IndicTrans2 microservice (Python) ──────────────────────────
 # Local virtualenv and downloaded model checkpoints (~6GB) — never
@@ -141,3 +145,5 @@ docs/Translator-Feature-Explained.docx
 indictrans-service/.venv/
 indictrans-service/models/
 indictrans-service/.env
+Chanakya_Codebase_Complete_Architecture_Guide.docx
+generate_doc_guide.py

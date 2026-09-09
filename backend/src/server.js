@@ -4,9 +4,16 @@ import { config } from './config.js';
 import { getDb } from './db/connection.js';
 import { reclaimStalePort, recordOwnPid, clearOwnPid } from './lib/portGuard.js';
 import { ensureIndicTransRunning } from './services/indictransProcess.js';
+import { logStartupDiagnostics, logDatabaseInitialized } from './lib/storageDiagnostics.js';
+
+// Printed before the database is even opened, so the path is on record
+// even if getDb() itself fails — "where is this trying to read/write"
+// should never depend on startup succeeding.
+logStartupDiagnostics();
 
 // Initialize JSON database
 getDb();
+logDatabaseInitialized();
 
 const port = config.port;
 
@@ -16,7 +23,7 @@ const port = config.port;
 // on the port. See lib/portGuard.js for why this is safe to do
 // unconditionally (it never touches a process it can't verify is ours).
 const pidFilePath = path.join(path.dirname(config.dbFile), '.dev-server.pid');
-reclaimStalePort(pidFilePath);
+reclaimStalePort(pidFilePath, port);
 
 const server = app.listen(port, config.host, () => {
   recordOwnPid(pidFilePath);
@@ -98,35 +105,57 @@ process.on('unhandledRejection', (reason) => {
   console.error('Unhandled promise rejection:', reason);
 });
 
-// One-time, non-blocking, non-fatal check that the IndicTrans2 translation
-// service is reachable — mirrors the fact that Ollama itself isn't
-// health-checked at Node startup either (this app fails per-request, not
-// at boot, when an optional local AI backend isn't running). Translation
-// requests will simply fail with a clear error until the service is up;
-// this only saves a trip to the logs to find out why.
-async function checkIndicTransHealth(isRetry = false) {
-  if (!isRetry) await ensureIndicTransRunning();
-  try {
-    const response = await fetch(`${config.translate.serviceUrl}/health`, {
-      signal: AbortSignal.timeout(3000)
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const body = await response.json();
-    console.log(`[translate] IndicTrans2 service reachable (device=${body.device}, models=${JSON.stringify(body.models_loaded)})`);
-  } catch (error) {
-    if (!isRetry) {
-      // A just-auto-started service takes ~10s to load its models — the
-      // 3s probe above almost always lands before that finishes. One
-      // delayed follow-up avoids logging a misleading "not started"
-      // warning for a service that's actually mid-startup; this retry
-      // itself never spawns anything (ensureIndicTransRunning already ran
-      // above), so it costs nothing if IndicTrans2 genuinely isn't set up.
-      setTimeout(() => checkIndicTransHealth(true), 12_000).unref();
+// Non-blocking readiness check for the IndicTrans2 translation service —
+// mirrors the fact that Ollama itself isn't health-checked at Node startup
+// either (this app fails per-request, not at boot, when an optional local
+// AI backend isn't running). Never blocks the HTTP server from accepting
+// requests; only affects what gets logged and when.
+//
+// This polls rather than checking once, because a single delayed retry
+// (the previous version of this function) had a real gap: model loading
+// is ~10s on a warm disk cache but can run past that on a cold one (first
+// launch after a reboot, or a large first-time page-in of ~6GB across
+// three checkpoints), so a fixed one-shot retry sometimes fired its
+// "not reachable" warning for a service that was still legitimately
+// loading and became reachable moments later — a false alarm, not a real
+// failure. Polling every 5s for up to 90s removes that false-alarm window
+// while still giving up (and logging plainly) if the service genuinely
+// isn't running.
+async function checkIndicTransHealth() {
+  await ensureIndicTransRunning();
+
+  const pollIntervalMs = 5000;
+  const maxWaitMs = 90_000;
+  const deadline = Date.now() + maxWaitMs;
+  let attempt = 0;
+
+  while (Date.now() < deadline) {
+    attempt += 1;
+    try {
+      const response = await fetch(`${config.translate.serviceUrl}/health`, {
+        signal: AbortSignal.timeout(3000)
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const body = await response.json();
+      console.log(`[translate] IndicTrans2 service reachable (device=${body.device}, models=${JSON.stringify(body.models_loaded)})`);
       return;
+    } catch (error) {
+      if (Date.now() + pollIntervalMs >= deadline) {
+        console.warn(
+          `[translate] IndicTrans2 service not reachable at ${config.translate.serviceUrl} after ` +
+            `${Math.round(maxWaitMs / 1000)}s (${attempt} attempts) — translation requests will fail ` +
+            `until it is started. See indictrans-service/README.md. (${error.message})`
+        );
+        return;
+      }
+      // Quiet on early attempts — a service that was just auto-started is
+      // *expected* to be unreachable for the first several seconds while
+      // its models load; logging that as a warning every 5s would just be
+      // noise for the normal case.
+      if (attempt === 1) {
+        console.log('[translate] Waiting for IndicTrans2 service to become reachable (loading models)...');
+      }
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
     }
-    console.warn(
-      `[translate] IndicTrans2 service not reachable at ${config.translate.serviceUrl} — ` +
-        `translation requests will fail until it is started. See indictrans-service/README.md. (${error.message})`
-    );
   }
 }

@@ -63,7 +63,12 @@ export function startBackend(app) {
 
   if (isPacked) {
     env.NODE_ENV = 'production';
-    env.APP_DATA_PATH = app.getPath('userData');
+    // Deliberately NOT setting APP_DATA_PATH here anymore — the backend's
+    // own config.js now defaults persistent storage to its own resources/
+    // backend/storage folder (portable with the install), not an OS
+    // profile directory. See config.js for the full reasoning, and
+    // scripts/prepare-backend.cjs / afterPack.cjs for how that folder
+    // survives being rebuilt/repackaged.
   }
 
   // Unified Node Environment loading:
