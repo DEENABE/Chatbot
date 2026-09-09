@@ -116,7 +116,7 @@ sync.ffs_db
 
 
 #---git workflow---
-.github/workflows/ship.yml
+.github/workflows/codeql.yml
 
 #---claude.md--
 CLAUDE.md
@@ -135,9 +135,7 @@ CLAUDE.md
     .env.example
 
 #---docs---
-docs/translation.architecture.md
-docs/code-reference.md
-docs/Translator-Feature-Explained-v2.docx
+docs
 
 # ─── IndicTrans2 microservice (Python) ──────────────────────────
 # Local virtualenv and downloaded model checkpoints (~6GB) — never
