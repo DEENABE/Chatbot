@@ -22,7 +22,7 @@ export const DEFAULT_MODEL = process.env.AGENT_MODEL || 'qwen3.5:9b';
  * @param {AbortSignal} [args.signal]
  * @returns {Promise<Object>} Parsed JSON object (best-effort).
  */
-export async function completeJSON({ system, prompt, model = DEFAULT_MODEL, temperature = 0.1, signal }) {
+export async function completeJSON({ system, prompt, model = DEFAULT_MODEL, temperature = 0.1, signal, think }) {
   const scope=memoryScope.getStore();
   if(scope?.userId){const memory=memoryManager.retriever.retrieve({...scope,message:prompt});system+='\n'+MEMORY_GUIDANCE;prompt=memory.text+'\n\nCURRENT REQUEST AND RUNTIME EVIDENCE\n'+prompt;}
   let response;
@@ -38,6 +38,8 @@ export async function completeJSON({ system, prompt, model = DEFAULT_MODEL, temp
         format: 'json',
         stream: false,
         keep_alive: config.ollamaKeepAlive,
+        // Callers that only need a decision can switch reasoning off: same answers here, far lower latency on CPU.
+        ...(think === undefined ? {} : { think }),
         options: { temperature, num_ctx: 8192 }
       })
     });

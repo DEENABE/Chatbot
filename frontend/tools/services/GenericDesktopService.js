@@ -1,6 +1,6 @@
 import {BaseToolService} from '../BaseToolService.js';
 import {executionContext,checkCancellation} from '../ExecutionContext.js';
-import {buildSemanticSnapshot,ActionGroundingEngine,digest} from '../apps/SemanticUI.js';
+import {buildSemanticSnapshot,ActionGroundingEngine,digest,SNAPSHOT_TTL_MS} from '../apps/SemanticUI.js';
 import {AppKnowledgeRegistry} from '../apps/AppKnowledgeRegistry.js';
 import {assertDesktopApplication} from '../apps/Phase2ApplicationPolicy.js';
 import {AppPermissionStore,levelAllows,levelSummary} from '../apps/AppPermissionStore.js';
@@ -131,7 +131,7 @@ export class GenericDesktopService extends BaseToolService {
   }
   async verify(params){
     const r=this.record(params);
-    if(r.used||Date.now()-r.createdAt>120000||!Array.isArray(params.evidenceIds)||!params.evidenceIds.length||params.evidenceIds.length>10)throw failure('STALE_SNAPSHOT');
+    if(r.used||Date.now()-r.createdAt>SNAPSHOT_TTL_MS||!Array.isArray(params.evidenceIds)||!params.evidenceIds.length||params.evidenceIds.length>10)throw failure('STALE_SNAPSHOT');
     const evidence=params.evidenceIds.map(id=>r.snapshot.elements.find(e=>e.elementId===id));
     if(evidence.some(e=>!e))throw failure('UNGROUNDED_ACTION');
     const raw=await this.reader({action:'observe',executablePath:r.app.executablePath,appUserModelId:r.app.appUserModelId,windowId:r.raw.windowId,processId:r.raw.processId,focus:false});
