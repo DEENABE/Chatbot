@@ -143,3 +143,12 @@ test('elevation-manifest tools and MMC consoles are spawned through Explorer wit
   assert.equal(systemLaunchCommand({...by('device-manager'),launchArgs:['C:\Temp\evil.msc']}),undefined);
   assert.equal(systemLaunchCommand({...panel,launchArgs:['/name','Microsoft.X;calc']}),undefined);
 });
+test('every catalog alias resolves to its own page and sensitive catalog pages need an exact name',()=>{
+  const all=mergeSystemCapabilities([]);
+  for(const [id,name,aliases] of SETTINGS_CATALOG)for(const phrase of [name,...aliases]){
+    const r=resolver.resolve(phrase,all);assert.equal(r.app?.id,id,`${phrase}: ${r.status}`);
+  }
+  assert.ok(SETTINGS_CATALOG.length>=130);
+  for(const id of ['workplace-settings','otherusers-settings','deviceencryption-settings','filesystem-settings'])assert.equal(all.find(a=>a.id===id).resolutionRisk,'sensitive',id);
+  assert.equal(resolver.resolve('devce encryption',all).success,false);
+});

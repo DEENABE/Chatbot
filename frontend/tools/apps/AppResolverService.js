@@ -31,7 +31,10 @@ export class AppResolverService{
   const exactPeers=matches.filter(r=>r.exact);
   // Two exact metadata identities must never be resolved merely by score order.
   const uniqueExact=first?.matchType==='EXACT'?ranked.filter(r=>r.matchType==='EXACT').length===1:first?.exact&&exactPeers.length===1;
-  const sharedShortAlias=first?.matchType!=='EXACT'&&!normalizeAppName(query).includes(' ')&&matches.slice(1).some(r=>r.partial);
+  // A code-owned system capability's exact alias is unique by construction (checked by tests), so partial hits on other
+  // pages ("display" vs "Advanced Display Settings") do not make it shared.
+  const codeOwnedExact=first?.exact&&first.app.source==='windows_system'&&exactPeers.length===1;
+  const sharedShortAlias=!codeOwnedExact&&first?.matchType!=='EXACT'&&!normalizeAppName(query).includes(' ')&&matches.slice(1).some(r=>r.partial);
   const accepted=first?.auto&&!sharedShortAlias&&(uniqueExact||!first.exact&&(first.score>=t.highConfidence&&margin>=t.highMargin||first.score>=t.mediumConfidence&&margin>=t.mediumMargin));
   const view=rows=>rows.slice(0,10).map(r=>({id:r.app.id,name:r.app.name,confidence:r.score,score:r.score,matchType:r.matchType,matchedAgainst:r.matchedAgainst,nameSource:r.nameSource,...(options.debug?{components:r.components}: {})}));
   let result;
