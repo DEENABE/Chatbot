@@ -6,12 +6,12 @@ import { postProcessTranslation } from './translationPostProcess.js';
 /**
  * @module services/translationService
  * @description Translation orchestration: validate -> glossary -> call the
- * IndicTrans2 microservice -> optional Qwen3 post-processing -> return.
+ * IndicTrans2 microservice -> optional Qwen post-processing -> return.
  *
  * The actual translation engine is AI4Bharat's IndicTrans2, running in a
  * separate local Python process (indictrans-service/ at the repo root),
  * reached over loopback HTTP — the same pattern this app already uses for
- * Ollama. Qwen3 is NOT the translator; it is only ever an optional,
+ * Ollama. Qwen is NOT the translator; it is only ever an optional,
  * disabled-by-default polish pass over IndicTrans2's own output (see
  * translationPostProcess.js and config.js's translate.postProcessingEnabled).
  *
@@ -40,7 +40,7 @@ export class TranslationError extends Error {
 
 /**
  * Translate `text` between two supported languages via the IndicTrans2
- * microservice, with optional glossary substitution and optional Qwen3
+ * microservice, with optional glossary substitution and optional Qwen
  * post-processing.
  *
  * Callers are expected to have validated inputs already (routes/translate.js

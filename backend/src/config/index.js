@@ -4,7 +4,7 @@ export const config = {
   port: Number(process.env.PORT || 3000),
 
   ollamaHost: process.env.OLLAMA_HOST || 'http://localhost:11434',
-  chatModel: process.env.CHAT_MODEL || 'qwen2.5:7b',
+  chatModel: process.env.CHAT_MODEL || 'qwen3.5:9b',
   embedModel: process.env.EMBED_MODEL || 'nomic-embed-text',
 
   dbPath: process.env.DB_PATH || './data/assistant.db',
@@ -21,8 +21,7 @@ export const config = {
   contextLimits: {
     'llama3.1:8b': 128000,
     'llama3.1:70b': 128000,
-    'qwen2.5:7b': 32768,
-    'qwen2.5:14b': 32768,
+    'qwen3.5:9b': 262144,
     'mistral:7b': 32768,
     'gemma2:9b': 8192,
     'gemma2:27b': 8192

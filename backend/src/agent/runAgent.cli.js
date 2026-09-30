@@ -4,7 +4,7 @@
  *
  * Usage:
  *   node src/agent/runAgent.cli.js "my wifi keeps disconnecting"
- *   node src/agent/runAgent.cli.js "audio not working" --model qwen2.5 --max 8
+ *   node src/agent/runAgent.cli.js "audio not working" --model qwen3.5:9b --max 8
  */
 
 import { runAgent } from './agentLoop.js';
@@ -24,7 +24,7 @@ function parseArgs(argv) {
 const { goal, model, maxSteps } = parseArgs(process.argv.slice(2));
 
 if (!goal) {
-  console.error('Usage: node src/agent/runAgent.cli.js "<describe your PC problem>" [--model qwen2.5] [--max 10]');
+  console.error('Usage: node src/agent/runAgent.cli.js "<describe your PC problem>" [--model qwen3.5:9b] [--max 10]');
   process.exit(1);
 }
 

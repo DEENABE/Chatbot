@@ -1,35 +1,8 @@
 import { create } from 'zustand';
+import { createChatExecution, executeChatCall, finishChat, executeCancellableTool } from '../services/chatExecution.js';
 import * as apiService from '../services/api.js';
 
-function mapToolsToOllamaSchema(toolsMap) {
-  const ollamaTools = [];
-  for (const [serviceName, actions] of Object.entries(toolsMap)) {
-    for (const action of actions) {
-      const properties = {};
-      const required = [];
-      for (const [paramName, paramSchema] of Object.entries(action.schema || {})) {
-        properties[paramName] = {
-          type: paramSchema.type === 'path' ? 'string' : paramSchema.type || 'string',
-          description: paramSchema.description || `Parameter ${paramName}`
-        };
-        if (paramSchema.required) required.push(paramName);
-      }
-      ollamaTools.push({
-        type: 'function',
-        function: {
-          name: `${serviceName}_${action.action}`,
-          description: action.description || `Call action ${action.action} on ${serviceName}`,
-          parameters: {
-            type: 'object',
-            properties,
-            required
-          }
-        }
-      });
-    }
-  }
-  return ollamaTools;
-}
+import {mapToolsToOllamaSchema} from '../services/toolSchemas.js';
 
 export const useAppStore = create((set, get) => ({
   // User Management
@@ -129,9 +102,50 @@ export const useAppStore = create((set, get) => ({
   pendingConfirmations: [],
   addConfirmation: (conf) => set((state) => ({ pendingConfirmations: [...state.pendingConfirmations, conf] })),
   removeConfirmation: (id) => set((state) => ({ pendingConfirmations: state.pendingConfirmations.filter(c => c.confirmationId !== id) })),
+  renewConfirmation: async (id) => {
+    const conf = get().pendingConfirmations.find(c => c.confirmationId === id);
+    if(conf?.repair) {
+      if(conf.renewing)return;
+      const renewalId=conf.renewalId||crypto.randomUUID();
+      set(s=>({pendingConfirmations:s.pendingConfirmations.map(c=>c.confirmationId===id?{...c,renewing:true,renewalId}:c)}));
+      try {
+        const {data:saved}=await apiService.repair.renew(conf.repair.sessionId,{expectedRevision:conf.repair.revision,renewalId});
+        const o=saved.state.plan[saved.state.currentStepIndex].observation;
+        set(s=>({pendingConfirmations:s.pendingConfirmations.map(c=>c.confirmationId===id?{...c,confirmationId:o.confirmationId,message:o.confirmationMessage,repair:{...c.repair,revision:saved.revision},renewing:false,renewalId:null}:c)}));
+      } catch(error) {set(s=>({pendingConfirmations:s.pendingConfirmations.map(c=>c.confirmationId===id?{...c,renewing:false,renewalError:error.response?.data?.error||error.message}:c)}));}
+      return;
+    }
+    if (!conf?.execution || conf.renewing) return;
+    const renewalId = conf.renewalId || crypto.randomUUID();
+    set(state => ({ pendingConfirmations: state.pendingConfirmations.map(c => c.confirmationId === id ? { ...c, renewalId, renewing: true, renewalError: null } : c) }));
+    try {
+      const renewal = await window.toolEngine.renewConfirmation(id, renewalId);
+      conf.execution.renewConfirmation(renewal);
+      set(state => ({ pendingConfirmations: state.pendingConfirmations.map(c => c.confirmationId === id ? {
+        ...c, confirmationId: renewal.confirmationId, message: renewal.message, expiresAt: renewal.expiresAt,
+        renewalId: null, renewing: false, renewalError: null,
+      } : c) }));
+    } catch (error) {
+      set(state => ({ pendingConfirmations: state.pendingConfirmations.map(c => c.confirmationId === id ? { ...c, renewing: false, renewalError: error.message } : c) }));
+    }
+  },
   resolveConfirmation: async (id, approved) => {
     const conf = get().pendingConfirmations.find(c => c.confirmationId === id);
-    if (!conf) return;
+    if (!conf || conf.renewing) return;
+    if(conf.repair) {
+      set({isGenerating:true});
+      set(s=>({pendingConfirmations:s.pendingConfirmations.map(c=>c.confirmationId===id?{...c,renewing:true}:c)}));
+      const abort=new AbortController();get().setAbortController(abort);
+      const cancel=()=>{apiService.repair.cancel(conf.repair.sessionId,conf.repair.requestId).catch(()=>{});};
+      abort.signal.addEventListener('abort',cancel,{once:true});
+      try {
+        const {data:r}=approved?await apiService.repair.resume(conf.repair.sessionId,{expectedRevision:conf.repair.revision,confirmationId:id},abort.signal):await apiService.repair.cancel(conf.repair.sessionId,conf.repair.requestId);
+        get().removeConfirmation(id);
+        set(s=>({activeMessages:s.activeMessages.map(m=>m.id===conf.messageId?{...m,content:m.content+'\n\n'+(approved?r.summary:'Repair cancelled. Any admitted effect requires inspection.')}:m)}));
+      } catch(error) {set(s=>({pendingConfirmations:s.pendingConfirmations.map(c=>c.confirmationId===id?{...c,renewing:false,renewalError:error.response?.data?.error||'Continuation failed. Inspect the checkpoint before trying again.'}:c)}));}
+      finally {abort.signal.removeEventListener('abort',cancel);get().setAbortController(null);set({isGenerating:false});}
+      return;
+    }
     get().removeConfirmation(id);
     
     if (!window.toolEngine) return;
@@ -149,8 +163,14 @@ export const useAppStore = create((set, get) => ({
     try {
       let result;
       if (approved) {
-        result = await window.toolEngine.confirm(id);
+        if (!conf.execution) throw new Error('Missing execution checkpoint for confirmation.');
+        const continuationAbort = new AbortController();
+        get().setAbortController(continuationAbort);
+        result = await conf.execution.execute(step => executeCancellableTool(window.toolEngine, '_system', 'confirm',
+          { confirmationId: id }, step.toolCallId, { ...step, signal: continuationAbort.signal }),
+          { confirmationId: id, signal: continuationAbort.signal });
       } else {
+        conf.execution?.stop('cancelled', 'User declined confirmation.');
         result = await window.toolEngine.cancel(id);
       }
 
@@ -164,10 +184,29 @@ export const useAppStore = create((set, get) => ({
         }));
       }
 
-      // Automatically trigger LLM to continue
-      get().sendMessage('', false);
+      if (approved && conf.execution && !conf.execution.stopped) {
+        // A model can return several calls. Preserve the queue across approval.
+        const remaining = conf.remainingCalls || [];
+        for (let i = 0; i < remaining.length && !conf.execution.stopped; i++) {
+          const call = remaining[i];
+          const observation = await executeChatCall(conf.execution, call, conf.tools || [],
+            (tool, action, params, toolCallId, identity) => executeCancellableTool(window.toolEngine, tool, action, params, toolCallId, identity), get().activeAbortController?.signal);
+          if (!observation) break;
+          const messageId = crypto.randomUUID();
+          set((state) => ({ activeMessages: [...state.activeMessages, {
+            id: messageId, chatId: get().activeChatId, role: 'tool', tool_call_id: observation.toolCallId,
+            tool_name: call.function?.name, content: JSON.stringify(observation), createdAt: new Date().toISOString(),
+          }] }));
+          if (observation.needsConfirmation) get().addConfirmation({
+            confirmationId: observation.confirmationId, message: observation.confirmationMessage, approvalDetails:observation.approvalDetails,
+            messageId, execution: conf.execution, tools: conf.tools, remainingCalls: remaining.slice(i + 1),
+          });
+        }
+        if (!conf.execution.stopped) await get().sendMessage('', false, { execution: conf.execution });
+      }
 
     } catch (e) {
+      conf.execution?.stop('error', e.message);
       console.error('Confirmation resolution failed', e);
     }
   },
@@ -314,7 +353,7 @@ export const useAppStore = create((set, get) => ({
 
   // Models Selection
   models: [],
-  selectedModelId: localStorage.getItem('chanakya-model') || 'qwen3',
+  selectedModelId: localStorage.getItem('chanakya-model') || 'qwen3.5:9b',
   isModelsLoading: false,
   fetchModels: async () => {
     set({ isModelsLoading: true });
@@ -515,7 +554,7 @@ export const useAppStore = create((set, get) => ({
 
     try {
       await apiService.streamRepair(
-        { goal, model: get().selectedModelId },
+        { goal, model: get().selectedModelId, conversationId:chatId },
         {
           signal: abortController.signal,
           onEvent: (event) => {
@@ -545,6 +584,11 @@ export const useAppStore = create((set, get) => ({
                 append(`\n⛔ **Needs your approval (not run automatically):** \`${p.command}\`\n_${p.reason}_\n`);
                 break;
               case 'final':
+                if(p.confirmationId) {
+                  append(`\n**Approval required:** ${p.confirmationMessage}\n`);
+                  get().addConfirmation({confirmationId:p.confirmationId,message:p.confirmationMessage,approvalDetails:p.approvalDetails,messageId:assistantMsg.id,repair:{sessionId:p.sessionId,revision:p.revision,requestId:p.requestId}});
+                  break;
+                }
                 append(`\n\n### ${p.resolved ? '✅ Resolved' : '⚠️ Not fully resolved'}\n${p.answer}\n${p.recommendation ? `\n**👉 Recommendation:** ${p.recommendation}\n` : ''}`);
                 if (p.sessionId) set({ pendingRepairFeedback: { sessionId: p.sessionId, chatId } });
                 break;
@@ -564,8 +608,8 @@ export const useAppStore = create((set, get) => ({
     }
   },
 
-  sendMessage: async (content, screenCapture) => {
-    if (!content.trim() && !screenCapture) return;
+  sendMessage: async (content, screenCapture, continuation = null) => {
+    if (!content.trim() && !screenCapture && !continuation) return;
     if (get().isGenerating) return;
 
     let chatId = get().activeChatId;
@@ -583,7 +627,7 @@ export const useAppStore = create((set, get) => ({
 
     set((state) => ({
       activeChatId: chatId,
-      activeMessages: [...state.activeMessages, tempUserMessage],
+      activeMessages: continuation ? state.activeMessages : [...state.activeMessages, tempUserMessage],
       isGenerating: true,
       activeSources: [],
       pendingRepairFeedback: null
@@ -593,7 +637,7 @@ export const useAppStore = create((set, get) => ({
     get().setAbortController(chatAbortController);
 
     // Auto-Repair mode: run the autonomous diagnose-and-fix agent instead of chat.
-    if (get().autoRepairMode) {
+    if ((get().autoRepairMode || /\b(spooler|printer|printing|print service)\b/i.test(content)) && !continuation) {
       await get()._streamAutoRepair(content, chatId, chatAbortController);
       set({ isGenerating: false, avatarSpeaking: false });
       get().setAbortController(null);
@@ -611,10 +655,16 @@ export const useAppStore = create((set, get) => ({
       }
     }
 
-    let isDone = false;
+    let execution;
+    try { execution = continuation?.execution || createChatExecution(content); }
+    catch (error) {
+      set((state) => ({ isGenerating: false, activeMessages: [...state.activeMessages, { id: crypto.randomUUID(), chatId, role: 'assistant', content: `Checkpoint unavailable: ${error.message}` }] }));
+      get().setAbortController(null);
+      return;
+    }
 
     // ReAct Loop: Continue generating if a tool call was made
-    while (!isDone && !chatAbortController.signal.aborted) {
+    while (!execution.stopped && !chatAbortController.signal.aborted) {
       const tempAssistantMessage = {
         id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15),
         chatId,
@@ -629,7 +679,7 @@ export const useAppStore = create((set, get) => ({
 
       const startTime = Date.now();
       let tokenCount = 0;
-      let pendingToolCall = null;
+      const pendingToolCalls = [];
 
       try {
         // Build history to send to LLM (exclude the newly added empty assistant message)
@@ -637,14 +687,14 @@ export const useAppStore = create((set, get) => ({
           .slice(0, -1)
           .map((m) => {
              if (m.role === 'tool') {
-               return { role: 'tool', content: m.content };
+               return { role: 'tool', content: m.content, tool_call_id: m.tool_call_id, tool_name: m.tool_name };
              }
-             return { role: m.role, content: m.content };
+             return { role: m.role, content: m.content, ...(m.tool_calls ? { tool_calls: m.tool_calls } : {}) };
           });
 
         await apiService.streamChat(
           {
-            message: content, // The initial user query
+            message: execution.state.task, // Preserve the original goal on continuation.
             history: chatHistory,
             tools: ollamaTools,
             model: get().selectedModelId,
@@ -684,7 +734,11 @@ export const useAppStore = create((set, get) => ({
               }
             },
             onToolCall: (toolCall) => {
-              pendingToolCall = toolCall;
+              pendingToolCalls.push(toolCall);
+            },
+            onMemory: (decision) => {
+              const notice=decision==='ASK_USER'?'That preference was not saved. Say "Remember ..." or save it in Memory settings.':decision==='DO_NOT_SAVE'?'That content was not saved as long-term memory.':decision==='SAVE'||decision==='UPDATE_EXISTING'?'Saved to your long-term memory.':null;
+              if(notice)set(state=>({activeMessages:state.activeMessages.map(m=>m.id===tempAssistantMessage.id?{...m,content:m.content+notice+'\n\n'}:m)}));
             },
             onDone: (dbMessage) => {
               // Finalize message object
@@ -692,64 +746,30 @@ export const useAppStore = create((set, get) => ({
           }
         );
 
-        // 2. Handle Tool Call
-        if (pendingToolCall && window.toolEngine) {
-          const fnName = pendingToolCall.function.name; // e.g. "file_readFile"
-          const [serviceName, action] = fnName.split('_');
-          let args = {};
-          
-          try {
-            args = pendingToolCall.function.arguments || {};
-            // Sometimes arguments come back as a JSON string, sometimes as an object
-            if (typeof args === 'string') {
-               args = JSON.parse(args);
-            }
-          } catch(e) {
-            console.warn('Failed to parse tool arguments', e);
+        // Transport/UI adapter: AgentState admits every call, including multiple calls per response.
+        if (pendingToolCalls.length) {
+          set((state) => ({ activeMessages: state.activeMessages.map(m =>
+            m.id === tempAssistantMessage.id ? { ...m, tool_calls: pendingToolCalls } : m) }));
+          for (const call of pendingToolCalls) {
+            if (execution.stopped) break;
+            const observation = await executeChatCall(execution, call, ollamaTools,
+              (tool, action, params, toolCallId, identity) => window.toolEngine
+                ? executeCancellableTool(window.toolEngine, tool, action, params, toolCallId, identity)
+                : Promise.resolve({ success: false, error: { code: 'BRIDGE_UNAVAILABLE', message: 'Tool Engine unavailable.' } }),
+              chatAbortController.signal);
+            if (!observation) break;
+            const messageId = crypto.randomUUID();
+            set((state) => ({ activeMessages: [...state.activeMessages, {
+              id: messageId, chatId, role: 'tool', tool_call_id: observation.toolCallId,
+              tool_name: call.function?.name, content: JSON.stringify(observation), createdAt: new Date().toISOString(),
+            }] }));
+            if (observation.needsConfirmation) get().addConfirmation({
+              confirmationId: observation.confirmationId, message: observation.confirmationMessage, approvalDetails:observation.approvalDetails,
+              messageId, execution, tools: ollamaTools, remainingCalls: pendingToolCalls.slice(pendingToolCalls.indexOf(call) + 1),
+            });
           }
-
-          // Show tool execution message
-          const tempToolMsg = {
-             id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15),
-             chatId,
-             role: 'tool',
-             content: `[EXECUTING TOOL] ${serviceName}.${action}(${JSON.stringify(args)})`,
-             createdAt: new Date().toISOString()
-          };
-          
-          set((state) => ({
-             activeMessages: [...state.activeMessages, tempToolMsg]
-          }));
-
-          let toolOutput = "";
-          try {
-            const toolResult = await window.toolEngine.execute(serviceName, action, args);
-            
-            if (toolResult && toolResult.needsConfirmation) {
-               // Add to pending confirmations so the modal shows up
-               get().addConfirmation({
-                 confirmationId: toolResult.confirmationId,
-                 message: toolResult.message,
-                 messageId: tempToolMsg.id
-               });
-               toolOutput = "ACTION PAUSED: Requires user confirmation. Check UI.";
-               isDone = true; // Stop loop, wait for user
-            } else {
-               toolOutput = JSON.stringify(toolResult);
-            }
-          } catch(e) {
-            toolOutput = JSON.stringify({ error: e.message });
-          }
-
-          set((state) => ({
-             activeMessages: state.activeMessages.map((m) => 
-               m.id === tempToolMsg.id ? { ...m, content: toolOutput } : m
-             )
-          }));
-          
-          // Loop will continue and send the new tool message back to LLM unless isDone is true
         } else {
-          isDone = true; // No more tool calls, we are done
+          finishChat(execution);
           get().fetchHistory();
         }
 
@@ -764,8 +784,14 @@ export const useAppStore = create((set, get) => ({
             )
           }));
         }
-        isDone = true;
+        execution.stop(err.name === 'AbortError' ? 'cancelled' : 'error', err.message);
       }
+    }
+
+    if (chatAbortController.signal.aborted && !execution.stopped) execution.stop('cancelled', 'aborted');
+    if (execution.state.phase === 'error') {
+      set((state) => ({ activeMessages: [...state.activeMessages, { id: crypto.randomUUID(), chatId, role: 'assistant',
+        content: `Execution stopped: ${execution.state.verdict?.summary || 'Unknown failure'}`, createdAt: new Date().toISOString() }] }));
     }
 
     set({ isGenerating: false, avatarSpeaking: false });

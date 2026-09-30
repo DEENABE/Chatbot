@@ -3,7 +3,7 @@
  *
  * Usage:
  *   node src/ai/runRepair.cli.js "my bluetooth is off, turn it on"
- *   node src/ai/runRepair.cli.js "internet is slow" --model qwen3 --max 8
+ *   node src/ai/runRepair.cli.js "internet is slow" --model qwen3.5:9b --max 8
  */
 
 import { runRepair } from './Orchestrator.js';
@@ -22,7 +22,7 @@ function parseArgs(argv) {
 
 const { goal, model, maxSteps } = parseArgs(process.argv.slice(2));
 if (!goal) {
-  console.error('Usage: node src/ai/runRepair.cli.js "<problem>" [--model qwen3] [--max 8]');
+  console.error('Usage: node src/ai/runRepair.cli.js "<problem>" [--model qwen3.5:9b] [--max 8]');
   process.exit(1);
 }
 

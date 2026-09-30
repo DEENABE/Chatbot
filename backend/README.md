@@ -10,7 +10,7 @@ context compression before generation, with per-user token usage tracking.
 - [Ollama](https://ollama.com) installed and running locally
 - Pull the models you need:
   ```bash
-  ollama pull qwen2.5:7b          # or llama3.1:8b, mistral:7b, gemma2:9b
+  ollama pull qwen3.5:9b          # or llama3.1:8b, mistral:7b, gemma2:9b
   ollama pull nomic-embed-text    # embedding model
   ```
 
@@ -23,7 +23,7 @@ cp .env.example .env
 ```
 
 Edit `.env` — set `CHAT_MODEL` to whichever model you're actually running
-(`llama3.1:8b`, `qwen2.5:7b`, `mistral:7b`, or `gemma2:9b`), and point
+(`llama3.1:8b`, `qwen3.5:9b`, `mistral:7b`, or `gemma2:9b`), and point
 `SOURCE_DB_URL` at your real database once you wire it up (see step 3).
 
 ## 3. Connect your real database

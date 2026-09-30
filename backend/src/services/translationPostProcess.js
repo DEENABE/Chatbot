@@ -1,6 +1,6 @@
-// Optional Qwen3 post-processing pass over IndicTrans2's output — light
+// Optional Qwen post-processing pass over IndicTrans2's output — light
 // fluency/terminology polish ONLY, gated behind TRANSLATION_POST_PROCESSING
-// (default off, see config.js). Qwen3 must never become the translator
+// (default off, see config.js). Qwen must never become the translator
 // itself: IndicTrans2 has already done the actual translation by the time
 // this runs, and this step's own failure is non-fatal (see
 // translationService.js, which falls back to the unpolished IndicTrans2

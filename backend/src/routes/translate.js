@@ -76,7 +76,7 @@ translateRouter.post('/', requireAuth, translateLimiter, async (request, respons
     // existing no-content-logging convention (see e.g. authService.js's
     // PASSWORD_RESET_* markers).
     const durationMs = Date.now() - startedAt;
-    const engine = config.translate.postProcessingEnabled ? 'indictrans2+qwen3' : 'indictrans2';
+    const engine = config.translate.postProcessingEnabled ? 'indictrans2+qwen' : 'indictrans2';
     console.log(
       `[${request.id || '-'}] [translate] source=${sourceLanguage} target=${targetLanguage} ` +
         `chars=${text.length} durationMs=${durationMs} engine=${engine}`

@@ -6,8 +6,10 @@
  */
 
 import { config } from '../config.js';
+import {memoryManager,memoryScope} from '../memory/runtime.js';
+import {MEMORY_GUIDANCE} from '../memory/MemoryRetriever.js';
 
-export const DEFAULT_MODEL = process.env.AGENT_MODEL || 'qwen3';
+export const DEFAULT_MODEL = process.env.AGENT_MODEL || 'qwen3.5:9b';
 
 /**
  * Ask the model for a single JSON object.
@@ -21,6 +23,8 @@ export const DEFAULT_MODEL = process.env.AGENT_MODEL || 'qwen3';
  * @returns {Promise<Object>} Parsed JSON object (best-effort).
  */
 export async function completeJSON({ system, prompt, model = DEFAULT_MODEL, temperature = 0.1, signal }) {
+  const scope=memoryScope.getStore();
+  if(scope?.userId){const memory=memoryManager.retriever.retrieve({...scope,message:prompt});system+='\n'+MEMORY_GUIDANCE;prompt=memory.text+'\n\nCURRENT REQUEST AND RUNTIME EVIDENCE\n'+prompt;}
   let response;
   try {
     response = await fetch(`${config.ollamaUrl}/api/generate`, {

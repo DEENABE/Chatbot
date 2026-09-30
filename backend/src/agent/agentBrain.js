@@ -14,10 +14,9 @@ import { config } from '../config.js';
 
 /**
  * Model used for agent reasoning. Overridable per request or via AGENT_MODEL.
- * Defaults to qwen3 (already installed, strong at JSON/tool reasoning).
- * qwen2.5 also works — `ollama pull qwen2.5` then set AGENT_MODEL=qwen2.5.
+ * Defaults to qwen3.5:9b (strong at JSON/tool reasoning; `ollama pull qwen3.5:9b`).
  */
-export const AGENT_DEFAULT_MODEL = process.env.AGENT_MODEL || 'qwen3';
+export const AGENT_DEFAULT_MODEL = process.env.AGENT_MODEL || 'qwen3.5:9b';
 
 const SYSTEM_PROMPT = `You are Chanakya-Fix, an autonomous Windows troubleshooting agent running locally on the user's PC. You diagnose and fix Windows problems by running PowerShell commands one at a time.
 
@@ -125,7 +124,7 @@ export async function decideNextStep({ goal, steps = [], model = AGENT_DEFAULT_M
   return {
     thought: typeof decision.thought === 'string' ? decision.thought : '',
     command: decision.command ? String(decision.command) : null,
-    done: Boolean(decision.done),
+    done: decision.done === true,
     answer: decision.answer ? String(decision.answer) : null,
   };
 }

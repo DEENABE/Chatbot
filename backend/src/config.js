@@ -60,13 +60,13 @@ export const config = {
   // The actual translation engine is IndicTrans2, running in a separate
   // local Python microservice (indictrans-service/ at the repo root) —
   // reached over loopback HTTP exactly like Ollama is, never a remote
-  // endpoint. Qwen3/Ollama is used only for the OPTIONAL post-processing
+  // endpoint. Qwen (Ollama) is used only for the OPTIONAL post-processing
   // pass below, never as the translator itself.
   //
-  // Earlier in this app's history the translator called Ollama/qwen3
+  // Earlier in this app's history the translator called Ollama/Qwen
   // directly (no IndicTrans2 involved) — that history is why
-  // postProcessingModel below still defaults through DEFAULT_MODEL/'qwen3'
-  // the same way the old direct-translation model selection did: qwen3
+  // postProcessingModel below still defaults through DEFAULT_MODEL/'qwen3.5:9b'
+  // the same way the old direct-translation model selection did: Qwen
   // measurably outperformed llama3 on Indic-language output quality
   // (llama3 hallucinated content on simple phrases), and that same quality
   // gap is just as relevant to a fluency-polish pass over Indic text.
@@ -84,13 +84,13 @@ export const config = {
     // rather than hanging indefinitely if this is ever too tight.
     serviceTimeoutMs: Number(process.env.INDICTRANS_TIMEOUT_MS || 120_000),
 
-    // Optional Qwen3 fluency/terminology polish over IndicTrans2's raw
+    // Optional Qwen fluency/terminology polish over IndicTrans2's raw
     // output. OFF by default — must be explicitly enabled, and its
     // failure is always non-fatal (falls back to the unpolished
     // IndicTrans2 output rather than failing the whole request).
     postProcessingEnabled: process.env.TRANSLATION_POST_PROCESSING === 'true',
     postProcessingModel:
-      process.env.TRANSLATION_POST_PROCESSING_MODEL || process.env.DEFAULT_MODEL || 'qwen3',
+      process.env.TRANSLATION_POST_PROCESSING_MODEL || process.env.DEFAULT_MODEL || 'qwen3.5:9b',
     postProcessingTimeoutMs: Number(process.env.TRANSLATION_POST_PROCESSING_TIMEOUT_MS || 30_000)
   },
 
@@ -147,8 +147,7 @@ export const config = {
 export const supportedModels = [
   { id: 'llama3', label: 'Llama 3', family: 'Meta' },
   { id: 'mistral', label: 'Mistral', family: 'Mistral AI' },
-  { id: 'qwen3', label: 'Qwen 3', family: 'Alibaba' },
-  { id: 'qwen2.5', label: 'Qwen 2.5 (agent)', family: 'Alibaba' },
+  { id: 'qwen3.5:9b', label: 'Qwen 3.5 (9B)', family: 'Alibaba' },
   { id: 'llama3.1', label: 'Llama 3.1', family: 'Meta' },
   // { id: 'gemma3', label: 'Gemma 3', family: 'Google' }
 ];

@@ -29,6 +29,6 @@ fs.writeFileSync(outPath, examples.map((e) => JSON.stringify(e)).join('\n') + '\
 console.log(`Exported ${examples.length} training examples (of ${total} logged sessions) to:\n${outPath}`);
 console.log('\nNext steps to fine-tune:');
 console.log('  1. Collect more examples (aim for a few hundred).');
-console.log('  2. Train a LoRA on Qwen2.5 with Unsloth (needs an NVIDIA GPU or Colab).');
+console.log('  2. Train a LoRA on Qwen3.5 with Unsloth (needs an NVIDIA GPU or Colab).');
 console.log('  3. Export to GGUF, then: ollama create chanakya-repair -f Modelfile');
 console.log('  4. Set AGENT_MODEL=chanakya-repair');
