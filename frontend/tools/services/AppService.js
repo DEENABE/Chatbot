@@ -27,7 +27,7 @@ export class AppService extends BaseToolService {
       getCapabilities:action(async p=>{const r=await this.resolve(p.query);return r.success?{success:true,app:publicApp(r.app),capabilities:capabilitiesFor(r.app)}:r;},'Get supported app target types'),
       openWithTarget:action(p=>this.openWithTarget(p),'Open and verify a document, folder, media or URL in an installed app',{app:{type:'string',required:true,maxLength:200},target:{type:'object',required:true,properties:targetSchema}}),
       openApp:action(p=>this.openApp(p),'Open a discovered installed application by name; never supply paths.'),
-      listApps:action(p=>this.listApps(p),'List installed third-party applications the assistant can work with, with category and the user-set permission level (blocked/read/interact/modify). Optional name filter.',{query:{type:'string',maxLength:200},limit:{type:'number',min:1,max:100}}),
+      listApps:action(p=>this.listApps(p),'List installed third-party applications the assistant can work with, with category and the user-set permission level (blocked/read/interact/modify). Optional name filter.',{query:{type:'string',maxLength:200},limit:{type:'number',min:1,max:200},withAliases:{type:'boolean'}}),
       describeApp:action(p=>this.describeApp(p),'Describe one installed application: category, what the assistant can do in it, and its permission level. Call before planning UI work in an unfamiliar app.'),
       setAppPermission:{...action(p=>this.setAppPermission(p),'Set the permission level of an application (user-approved only).',{appId:{type:'string',required:true,maxLength:80},level:{type:'enum',required:true,values:[...PERMISSION_LEVELS]}}),destructive:true},
       open:action(p=>this.openApp({query:p.query||p.app}),'Open a discovered application',{query:{type:'string',maxLength:200},app:{type:'string',maxLength:200}}),
@@ -48,14 +48,14 @@ export class AppService extends BaseToolService {
     const level=this.permissions.levelFor(app);
     return level==='blocked'?{success:false,status:'APP_PERMISSION_DENIED',code:'APP_PERMISSION_DENIED',permission:levelSummary(level),message:`${app.name} is blocked in App Permissions, so the assistant will not open or control it.`}:null;
   }
-  async listApps({query,limit=40}={}){
+  async listApps({query,limit=40,withAliases=false}={}){
     await this.registry.ensureTrusted();
     let apps=this.registry.apps.filter(isCatalogApp);
     if(query&&validAppQuery(query)){const ranked=this.resolver.search(query,apps,this.registry.aliases);apps=ranked.map(r=>r.app);}
     const seen=new Set(),entries=[];
-    for(const app of apps){const key=String(app.name).toLowerCase();if(seen.has(key))continue;seen.add(key);entries.push(catalogEntry(app,this.permissions.levelFor(app)));}
+    for(const app of apps){const key=String(app.name).toLowerCase();if(seen.has(key))continue;seen.add(key);const entry=catalogEntry(app,this.permissions.levelFor(app));if(withAliases)entry.aliases=(app.aliases||[]).filter(a=>typeof a==='string'&&a.length>=3&&a.length<=60&&!/\.exe$/i.test(a)&&a.toLowerCase()!==key).slice(0,6);entries.push(entry);}
     if(!query)entries.sort((a,b)=>a.name.localeCompare(b.name));
-    return {success:true,status:'APPS_LISTED',total:entries.length,apps:entries.slice(0,Math.min(Number(limit)||40,100)),levels:Object.fromEntries(PERMISSION_LEVELS.map(l=>[l,levelSummary(l).description])),
+    return {success:true,status:'APPS_LISTED',total:entries.length,apps:entries.slice(0,Math.min(Number(limit)||40,200)),levels:Object.fromEntries(PERMISSION_LEVELS.map(l=>[l,levelSummary(l).description])),
       message:'Use describeApp for details, then desktop_open to launch an app and read its UI.'};
   }
   async describeApp({query}){

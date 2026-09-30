@@ -9,6 +9,7 @@ const identity = () => ({ requestId: crypto.randomUUID(), idempotencyKey: crypto
 // The model cannot call app.setAppPermission; only this panel can, and only after the user approves the prompt.
 export default function AppPermissionsPanel() {
   const addConfirmation = useAppStore(state => state.addConfirmation);
+  const loadInstalledApps = useAppStore(state => state.loadInstalledApps);
   const [apps, setApps] = useState([]);
   const [levels, setLevels] = useState({});
   const [query, setQuery] = useState('');
@@ -23,8 +24,10 @@ export default function AppPermissionsPanel() {
       const data = result?.data || result;
       if (!result?.success && !data?.apps) throw new Error(result?.error?.message || 'Could not list applications.');
       setApps(data.apps || []); setLevels(data.levels || {});
+      // Keep the assistant's view of installed apps current whenever this list is refreshed.
+      loadInstalledApps(true);
     } catch (e) { setError(e.message); } finally { setBusy(false); }
-  }, []);
+  }, [loadInstalledApps]);
   useEffect(() => { load(); }, [load]);
 
   const change = async (app, level) => {

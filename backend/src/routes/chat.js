@@ -8,7 +8,7 @@ import { appendHistory } from '../services/historyService.js';
 import { requireAuth } from '../middleware/auth.js';
 import { memoryManager } from '../memory/runtime.js';
 import { MEMORY_GUIDANCE } from '../memory/MemoryRetriever.js';
-import {computerTask,currentToolEvidence,executionOnlyReply} from '../orchestrator/ComputerTaskPolicy.js';
+import {computerTask,currentToolEvidence,executionOnlyReply,setInstalledApps} from '../orchestrator/ComputerTaskPolicy.js';
 import {nextDesktopDecision} from '../orchestrator/GenericAppPlanner.js';
 
 export const chatRouter = Router();
@@ -115,6 +115,8 @@ chatRouter.post('/', requireAuth, async (request, response) => {
   const trimmedMessage = String(message || '').trim();
   const hasTools = Array.isArray(tools) && tools.length > 0;
   const originalTask=trimmedMessage || history.findLast(h=>h?.role==='user')?.content || '';
+  // The desktop app tells us which applications are installed so free-form requests can be recognised.
+  if(Array.isArray(request.body?.installedApps))setInstalledApps(request.body.installedApps);
   const computerRequest=computerTask(originalTask);
   const evidence=currentToolEvidence(history);
 
@@ -129,7 +131,7 @@ chatRouter.post('/', requireAuth, async (request, response) => {
   try {
     if(computerRequest?.genericDesktop){
       if(trimmedMessage)await appendHistory({conversationId,role:'user',content:trimmedMessage},userId);
-      const decision=hasTools?await nextDesktopDecision({task:originalTask,evidence,model,signal}):{message:'The generic desktop tools are unavailable in this running app.',success:false};
+      const decision=hasTools?await nextDesktopDecision({task:originalTask,evidence,model,signal,intent:computerRequest.genericDesktop}):{message:'The generic desktop tools are unavailable in this running app.',success:false};
       if(decision.call){
         const name=`${decision.call.tool}_${decision.call.action}`;
         if(tools.some(t=>t.function?.name===name)){

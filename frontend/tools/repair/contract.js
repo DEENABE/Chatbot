@@ -32,7 +32,7 @@ const apps = new Set(['notepad.exe','calc.exe','mspaint.exe','taskmgr.exe']);
 export const isAllowedLegacyProcess = params => apps.has(params.command) && (!params.args || params.args.length === 0);
 /** Applied to every model origin regardless of its claimed intent. Utilities remain internal/manual. */
 export function modelPolicy(tool, action, params = {}) {
-  if(tool==='desktop' && ['open','observe','act','actConfirmed','verify'].includes(action))return null;
+  if(tool==='desktop' && ['open','observe','act','actConfirmed','input','inputConfirmed','verify'].includes(action))return null;
   if(tool==='inspector' && ['inspect','resolveControl','navigate'].includes(action))return null;
   if(tool==='browser' && ['openBrowser','attachBrowser','newTab','closeTab','switchTab','navigate','search','click','type','submit','readText','scroll','getPageTitle','getCurrentUrl','getVisibleElements','waitForElement','waitForNavigation','back','forward','downloads'].includes(action))return null;
   if (tool === 'uiAutomation' && ['calculate','typeInNotepad','findWindow','waitForWindow','isWindowOpen','focusWindow','listControls','findControl','waitForControl','readText','navigateControl'].includes(action)) return null;

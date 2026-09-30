@@ -3,6 +3,7 @@ import { createChatExecution, executeChatCall, finishChat, executeCancellableToo
 import * as apiService from '../services/api.js';
 
 import {mapToolsToOllamaSchema} from '../services/toolSchemas.js';
+import {setInstalledApps} from '../../../backend/src/orchestrator/ComputerTaskPolicy.js';
 
 export const useAppStore = create((set, get) => ({
   // User Management
@@ -37,6 +38,7 @@ export const useAppStore = create((set, get) => ({
       get().fetchHistory();
       get().fetchDocuments();
       get().fetchMemories();
+      get().loadInstalledApps();
       return user;
     } catch (err) {
       set({ isAuthLoading: false });
@@ -54,6 +56,7 @@ export const useAppStore = create((set, get) => ({
       get().fetchHistory();
       get().fetchDocuments();
       get().fetchMemories();
+      get().loadInstalledApps();
       return user;
     } catch (err) {
       set({ isAuthLoading: false });
@@ -292,6 +295,7 @@ export const useAppStore = create((set, get) => ({
     try {
       const response = await apiService.auth.me();
       set({ user: response.data.user, isAuthLoading: false });
+      get().loadInstalledApps();
     } catch (err) {
       set({ isAuthLoading: false });
       // A real 401 means the session is actually gone (expired/revoked).
@@ -363,6 +367,17 @@ export const useAppStore = create((set, get) => ({
   // Models Selection
   models: [],
   selectedModelId: localStorage.getItem('chanakya-model') || 'qwen3.5:9b',
+  // Installed third-party apps (name + aliases) so free-form requests naming one can be recognised. Refreshed lazily.
+  installedApps: [],
+  installedAppsAt: 0,
+  loadInstalledApps: async (force = false) => {
+    if (!window.toolEngine || (!force && get().installedApps.length && Date.now() - get().installedAppsAt < 600000)) return;
+    try {
+      const result = await window.toolEngine.execute('app', 'listApps', { limit: 200, withAliases: true }, crypto.randomUUID(), { requestId: crypto.randomUUID(), idempotencyKey: crypto.randomUUID() });
+      const apps = (result?.data?.apps || []).map(a => ({ name: a.name, aliases: a.aliases || [] }));
+      if (apps.length) { setInstalledApps(apps); set({ installedApps: apps, installedAppsAt: Date.now() }); }
+    } catch { /* Admission then falls back to the explicit patterns; chat keeps working. */ }
+  },
   isModelsLoading: false,
   fetchModels: async () => {
     set({ isModelsLoading: true });
@@ -703,6 +718,7 @@ export const useAppStore = create((set, get) => ({
 
         await apiService.streamChat(
           {
+            installedApps: get().installedApps,
             message: execution.state.task, // Preserve the original goal on continuation.
             history: chatHistory,
             tools: ollamaTools,

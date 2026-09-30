@@ -33,8 +33,8 @@ const groups = {
   CRITICAL: ['powershell.execute','powershell.executeScript','cmd.execute','cmd.executeBatch'],
 };
 groups.READ.push('desktop.observe','desktop.verify');
-groups.SAFE_WRITE.push('desktop.open','desktop.act');
-groups.DANGEROUS.push('desktop.actConfirmed');
+groups.SAFE_WRITE.push('desktop.open','desktop.act','desktop.input');
+groups.DANGEROUS.push('desktop.actConfirmed','desktop.inputConfirmed');
 const mcpReads = new Set(['hardware.systemInfo','hardware.cpuUsage','hardware.memoryUsage','hardware.diskInfo','hardware.networkAdapters',
   'process.list','services.list','services.getStatus','network.ipConfig','network.ping','network.netstat','file.readFile','file.listDir','file.fileInfo','file.searchFiles']);
 export function createToolRegistry(services) {

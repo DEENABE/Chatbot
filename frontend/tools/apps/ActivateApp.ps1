@@ -14,6 +14,8 @@ public static class PackagedApp {
  [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access,bool inherit,int pid);
  [DllImport("kernel32.dll",CharSet=CharSet.Unicode)] static extern int GetApplicationUserModelId(IntPtr p,ref uint length,StringBuilder text);
  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr p);
+ [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+ public static long Foreground(){return GetForegroundWindow().ToInt64();}
  public static string Identity(int pid){var p=OpenProcess(0x1000,false,pid);if(p==IntPtr.Zero)return "";try{uint n=0;GetApplicationUserModelId(p,ref n,null);if(n==0||n>1024)return "";var text=new StringBuilder((int)n);return GetApplicationUserModelId(p,ref n,text)==0?text.ToString():"";}finally{CloseHandle(p);}}
 
  public static uint Open(string id) {
@@ -24,9 +26,15 @@ public static class PackagedApp {
  }
 }
 '@
-$appProcessId=[PackagedApp]::Open($AppId)
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
+# Remember which windows of this app already exist, so a multi-window app (Notepad, browsers...) reports the window this
+# activation actually created instead of an older one.
+$known=@{}
+foreach($w in [Windows.Automation.AutomationElement]::RootElement.FindAll([Windows.Automation.TreeScope]::Children,[Windows.Automation.Condition]::TrueCondition)){try{if([PackagedApp]::Identity($w.Current.ProcessId) -ceq $AppId){$known[[long]$w.Current.NativeWindowHandle]=$true}}catch{}}
+$appProcessId=[PackagedApp]::Open($AppId)
+$startedAt=[DateTime]::UtcNow
+$fallback=$null
 $deadline=[DateTime]::UtcNow.AddSeconds(8)
 $window=$null
 $condition=[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ProcessIdProperty,[int]$appProcessId)
@@ -37,11 +45,21 @@ do {
  foreach($w in $windows){
   try {
    if($w.Current.IsOffscreen -or $w.Current.NativeWindowHandle -eq 0){continue}
-   if($w.Current.ProcessId -eq $appProcessId -or [PackagedApp]::Identity($w.Current.ProcessId) -ceq $AppId){$window=$w;$p=Get-Process -Id $w.Current.ProcessId;break}
+   $mine=$w.Current.ProcessId -eq $appProcessId -or [PackagedApp]::Identity($w.Current.ProcessId) -ceq $AppId
+   if($mine){
+    $isNew=-not $known.ContainsKey([long]$w.Current.NativeWindowHandle)
+    $isForeground=$w.Current.NativeWindowHandle -eq [PackagedApp]::Foreground()
+    # A window that did not exist before is the one we opened; an existing one is accepted only when it came to the
+    # front (single-instance apps reuse their window) or when no new window appears within two seconds.
+    if($isNew -or ($isForeground -and ([DateTime]::UtcNow-$startedAt).TotalMilliseconds -gt 800)){$window=$w;$p=Get-Process -Id $w.Current.ProcessId;break}
+    if(!$fallback){$fallback=$w}
+    continue
+   }
    $child=$w.FindFirst([Windows.Automation.TreeScope]::Children,$condition)
    if($child){$window=$w;break}
   }catch{}
  }
+ if(!$window -and $fallback -and ([DateTime]::UtcNow-$startedAt).TotalMilliseconds -gt 2000){$window=$fallback;$p=Get-Process -Id $fallback.Current.ProcessId -ErrorAction SilentlyContinue}
  if(!$window){Start-Sleep -Milliseconds 200}
 }while(!$window -and [DateTime]::UtcNow -lt $deadline)
 if(!$window){throw 'APP_WINDOW_UNVERIFIED'}
