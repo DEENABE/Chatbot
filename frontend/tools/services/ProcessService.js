@@ -1,3 +1,6 @@
+import {helperScriptPath,powerShellPath} from '../DesktopRuntime.js';
+import { resolveDocumentTarget } from '../apps/DocumentTarget.js';
+import { trustedSystemCapability, systemProcessNames, systemLaunchCommand } from '../apps/WindowsSystemCapabilityRegistry.js';
 /**
  * @fileoverview Process Service for listing, inspecting, starting, and
  * terminating OS processes.  Uses PowerShell for queries and `taskkill` /
@@ -6,9 +9,16 @@
  * @module ProcessService
  */
 
-import { execFile, spawn } from 'child_process';
+import { execFile, spawn } from '../ExecutionContext.js';
 import { BaseToolService } from '../BaseToolService.js';
 import { isBlockedCommand } from '../dangerGuard.js';
+import { executionContext } from '../ExecutionContext.js';
+import { checkApplicationReadiness } from '../ApplicationReadiness.js';
+import path from 'node:path';
+import { isAllowedLegacyProcess } from '../repair/contract.js';
+import { validateTarget } from '../apps/AppTargetPolicy.js';
+import { fileURLToPath } from 'node:url';
+import { spawn as spawnApplication } from 'node:child_process';
 
 /**
  * Process names that must never be terminated through this tool — mirrors
@@ -42,6 +52,61 @@ export function isProtectedProcessName(name) {
  * @extends BaseToolService
  */
 export class ProcessService extends BaseToolService {
+  async observeSystemApp(app,waitMs=8000) {
+    const trusted=trustedSystemCapability(app);if(!trusted)throw new Error('APP_UNSAFE_TARGET');
+    const title=trusted.windowTitle.replace(/'/g,"''");
+    const names=systemProcessNames(trusted);
+    return this._runPS(`Add-Type -AssemblyName UIAutomationClient;Add-Type -AssemblyName UIAutomationTypes;$deadline=[DateTime]::UtcNow.AddMilliseconds(${waitMs});do{$windows=[Windows.Automation.AutomationElement]::RootElement.FindAll([Windows.Automation.TreeScope]::Children,[Windows.Automation.Condition]::TrueCondition);foreach($w in $windows){if(${app.id==='file-explorer'?"$w.Current.ClassName -eq 'CabinetWClass' -and $w.Current.Name -ne 'Control Panel'":`$w.Current.Name.IndexOf('${title}',[StringComparison]::OrdinalIgnoreCase) -ge 0`}){$p=Get-Process -Id $w.Current.ProcessId -ErrorAction SilentlyContinue;if($p.ProcessName -in @('${names.join("','")}')){@{Id=$p.Id;MainWindowTitle=$w.Current.Name}|ConvertTo-Json -Compress;exit}}};Start-Sleep -Milliseconds 200}while([DateTime]::UtcNow -lt $deadline)`,waitMs+4000);
+  }
+  /** Internal registry-only launch path; intentionally absent from tool actions. */
+  async launchApp(app, target) {
+    if(target)target=await resolveDocumentTarget(target);
+    validateTarget(app);
+    const signal=executionContext.getStore()?.signal;
+    signal?.throwIfAborted();
+    // An open Settings window carries the same title for every page: always launch the URI so it navigates.
+    const navigatesExisting=/^ms-settings:/.test(trustedSystemCapability(app)?.launchArgs?.[0]||'');
+    if(!target && app.executablePath && !navigatesExisting) {
+      const exe=app.executablePath.replace(/'/g,"''");
+      const label=app.windowTitle?.replace(/'/g,"''");
+      const existing=trustedSystemCapability(app)?await this.observeSystemApp(app,500):await this._runPS(`$p=Get-Process -ErrorAction SilentlyContinue | Where-Object {$_.MainWindowHandle -ne 0 -and $_.Path -eq '${exe}' ${label?`-and $_.MainWindowTitle.IndexOf('${label}',[StringComparison]::OrdinalIgnoreCase) -ge 0`:''}} | Select-Object -First 1 Id,MainWindowTitle;if($p){$null=(New-Object -ComObject WScript.Shell).AppActivate($p.Id);$p|ConvertTo-Json -Compress}`,5000).catch(()=>null);
+      if(existing?.Id) {
+        const observedAt=new Date().toISOString();
+        // A window already observed for a trusted system tool is the same evidence a fresh launch would produce.
+        return {processId:existing.Id,readiness:{status:'ready',criterion:label?'window_title':'executable_process',pid:existing.Id,observedAt},
+          ...(trustedSystemCapability(app)?{verification:{status:'verified',criterion:'window_title',confidence:'medium',windowTitle:existing.MainWindowTitle||'',observedAt}}:{})};
+      }
+    }
+    if(app.launchType==='app_user_model_id') {
+      const evidence=await new Promise((resolve,reject)=>execFile(powerShellPath(),
+        ['-NoProfile','-NonInteractive','-File',helperScriptPath('ActivateApp.ps1'),'-AppId',app.appUserModelId],
+        {windowsHide:true,timeout:15000,maxBuffer:65536},(error,out)=>{if(error)return reject(error);try{resolve(JSON.parse(out));}catch(e){reject(e);}}));
+      if(evidence.appUserModelId!==app.appUserModelId || !Number.isInteger(evidence.pid)||evidence.pid<1)throw new Error('APP_INVALID_EVIDENCE');
+      return {processId:evidence.pid,windowId:evidence.windowId,readiness:{status:'ready',criterion:'activated_process',pid:evidence.pid,windowId:evidence.windowId,observedAt:evidence.observedAt}};
+    }
+    // The application outlives the tool call. Cancellation bounds observation,
+    // but must not kill the user's application when the tool timeout later fires.
+    signal?.throwIfAborted();
+    const launchedAt=new Date().toISOString();
+    const command=target?null:systemLaunchCommand(app);
+    const child=spawnApplication(command?command.executable:app.executablePath,target?[target.path||target.value]:(command?.args||[]),{shell:false,windowsHide:false,detached:true,stdio:'ignore'});
+    await new Promise((resolve,reject)=>{child.once('spawn',resolve);child.once('error',reject);});
+    child.unref();
+    if(target || trustedSystemCapability(app)) {
+      const executable=app.executablePath.replace(/'/g,"''");
+      const label=(target?target.path?path.win32.basename(target.path):new URL(target.value).hostname:app.windowTitle).replace(/'/g,"''");
+      const system=!!trustedSystemCapability(app);
+      const evidence=system?await this.observeSystemApp(app):await this._runPS(`$deadline=[DateTime]::UtcNow.AddSeconds(10);do{$p=Get-Process -ErrorAction SilentlyContinue | Where-Object {$_.MainWindowHandle -ne 0 -and $_.MainWindowTitle.IndexOf('${label}',[StringComparison]::OrdinalIgnoreCase) -ge 0 -and $_.Path -eq '${executable}'}|Select-Object -First 1 Id,MainWindowTitle;if($p){$p|ConvertTo-Json -Compress;break};Start-Sleep -Milliseconds 300}while([DateTime]::UtcNow -lt $deadline)`,15000);
+      const verified=Number.isInteger(evidence?.Id)&&evidence.Id>0;
+      return {processId:evidence?.Id||child.pid,readiness:{status:verified?'ready':'not_ready',criterion:'window_title',pid:evidence?.Id,observedAt:new Date().toISOString()},
+        verification:{status:verified?'verified':'unverified',criterion:'window_title',confidence:verified?'medium':'low',windowTitle:evidence?.MainWindowTitle||'',observedAt:new Date().toISOString()}};
+    }
+    const evidence=await new Promise((resolve,reject)=>execFile(powerShellPath(),
+      ['-NoProfile','-NonInteractive','-File',helperScriptPath('ObserveApp.ps1'),'-ExecutablePath',app.executablePath,'-LaunchProcessId',String(child.pid),'-LaunchedAt',launchedAt],
+      {windowsHide:true,timeout:16000,maxBuffer:65536,encoding:'utf8'},(error,out)=>{if(error)return reject(error);try{resolve(JSON.parse(out));}catch(e){reject(e);}}));
+    if(Number.isInteger(evidence?.pid)&&evidence.pid>0&&evidence.windowId)return {processId:evidence.pid,windowId:evidence.windowId,readiness:{status:'ready',criterion:'executable_process',windowCriterion:evidence.criterion,pid:evidence.pid,windowId:evidence.windowId,observedAt:evidence.observedAt}};
+    return {processId:child.pid,readiness:{status:'not_ready',criterion:'executable_process'}};
+  }
   constructor(confirmationGate) {
     super('process', confirmationGate);
   }
@@ -61,7 +126,7 @@ export class ProcessService extends BaseToolService {
             required: false,
             values: ['cpu', 'memory', 'name', 'pid'],
           },
-          limit: { type: 'number', required: false },
+          limit: { type: 'number', required: false, integer: true, min: 1, max: 10000 },
         },
         destructive: false,
         description: 'List running processes with optional sorting and limit',
@@ -87,8 +152,8 @@ export class ProcessService extends BaseToolService {
       startProcess: {
         handler: this.startProcess.bind(this),
         schema: {
-          command: { type: 'string', required: true },
-          args: { type: 'array', required: false },
+          command: { type: 'string', required: true, minLength: 1, maxLength: 4096, pattern: '\\S' },
+          args: { type: 'array', required: false, maxItems: 128, itemSchema: { type: 'string', maxLength: 4096 } },
           detached: { type: 'boolean', required: false },
         },
         destructive: true,
@@ -125,12 +190,12 @@ export class ProcessService extends BaseToolService {
    * @param {string} command - PowerShell command string.
    * @returns {Promise<*>}
    */
-  _runPS(command) {
+  _runPS(command, timeout = 30000) {
     return new Promise((resolve, reject) => {
       execFile(
-        'powershell.exe',
+        path.join(process.env.SystemRoot || 'C:\\Windows','System32','WindowsPowerShell','v1.0','powershell.exe'),
         ['-NoProfile', '-NonInteractive', '-Command', command],
-        { windowsHide: true, maxBuffer: 10 * 1024 * 1024 },
+        { windowsHide: true, timeout, maxBuffer: 10 * 1024 * 1024 },
         (err, stdout, stderr) => {
           if (err) {
             reject(new Error(`PowerShell error: ${stderr?.trim() || err.message}`));
@@ -348,13 +413,27 @@ export class ProcessService extends BaseToolService {
       stdio: detached ? 'ignore' : 'pipe',
     };
 
-    const child = spawn(command, args, spawnOpts);
+    let executable=command;
+    if(executionContext.getStore()) {
+      if((executionContext.getStore().origin==='model' || !isAllowedLegacyProcess(params)) || process.platform!=='win32' || !path.isAbsolute(process.env.SystemRoot||'')) throw new Error('MODEL_CAPABILITY_DENIED');
+      // Never resolve even an allowlisted GUI name through a user-controlled PATH.
+      executable=path.join(process.env.SystemRoot,'System32',command);
+    }
+    const child = spawn(executable, args, spawnOpts);
+
+    // A PID alone is not proof of a successful spawn. Keep the error listener
+    // installed for cancellation errors emitted after the spawn event as well.
+    await new Promise((resolve, reject) => {
+      child.once('spawn', resolve);
+      child.once('error', reject);
+    });
 
     if (detached) {
       child.unref();
     }
 
-    return { pid: child.pid, command };
+    const readiness = await checkApplicationReadiness({ child, command, signal: executionContext.getStore()?.signal });
+    return { pid: child.pid, command, readiness };
   }
 }
 
