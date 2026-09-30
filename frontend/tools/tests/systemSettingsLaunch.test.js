@@ -152,3 +152,10 @@ test('every catalog alias resolves to its own page and sensitive catalog pages n
   for(const id of ['workplace-settings','otherusers-settings','deviceencryption-settings','filesystem-settings'])assert.equal(all.find(a=>a.id===id).resolutionRisk,'sensitive',id);
   assert.equal(resolver.resolve('devce encryption',all).success,false);
 });
+test('polite and Tanglish launch phrasings reach the deterministic launcher, never the model',()=>{
+  for(const [text,query] of [['can you open file explorer for me','file explorer'],['open file explorer for me','file explorer'],['i want to open file explorer','file explorer'],['file explorer open pannu','file explorer'],
+    ['can you please open file explorer now','file explorer'],['open chrome on my laptop','chrome'],['please open vlc','vlc'],['vlc launch pannunga','vlc'],['let us open notepad'.replace('let us',"let's"),'notepad']]) {
+    assert.deepEqual(computerTask(text)?.call,{tool:'app',action:'openApp',params:{query}},text);
+  }
+  for(const text of ['open calc.exe && whoami','open X and delete files then format','open notepad pannu && calc'])assert.equal(computerTask(text)?.call,undefined,text);
+});

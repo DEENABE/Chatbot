@@ -9,8 +9,9 @@
 import fs from 'fs/promises';
 import { constants as fsConstants } from 'fs';
 import path from 'path';
-import { spawn } from 'child_process';
+import { spawn } from '../ExecutionContext.js';
 import { BaseToolService } from '../BaseToolService.js';
+import { executionContext } from '../ExecutionContext.js';
 
 /** Maximum file size allowed for reading (10 MB). */
 const MAX_READ_SIZE = 10 * 1024 * 1024;
@@ -193,13 +194,21 @@ export class FileService extends BaseToolService {
    */
   get actions() {
     return {
+      createDirectory: {
+        handler: async ({path: target}) => { await fs.mkdir(target, {recursive:false}); return {path:target,created:true}; },
+        schema:{path:{type:'path',required:true}}, destructive:false, description:'Create one folder in an approved document location'
+      },
+      createTextFile: {
+        handler: async ({path: target,content}) => { await fs.writeFile(target,content,{encoding:'utf8',flag:'wx',mode:0o600}); return {path:target,created:true}; },
+        schema:{path:{type:'path',required:true},content:{type:'string',required:true,maxLength:65536}}, destructive:false, description:'Create a new text file without overwriting an existing file'
+      },
       open: {
         handler: this.openTarget.bind(this),
         schema: {
           target: { type: 'string', required: true }
         },
         destructive: false,
-        description: 'Open a file, folder, drive, or application in Windows with its default handler. Examples: target "C:\\\\" opens the C drive in File Explorer, target "notepad" opens Notepad, target of a document path opens it in its default app. Use this whenever the user says "open ...", "launch ...", "show me ... folder", or "run ...".'
+        description: 'Open a file, folder, drive, or application in Windows with its default handler. Examples: target "C:\\\\" opens the C drive in File Explorer, target of a document path opens it in its default app. Use this whenever the user says "open ...", "launch ...", "show me ... folder", or "run ...".'
       },
       readFile: {
         handler: this.readFile.bind(this),
@@ -593,6 +602,8 @@ export class FileService extends BaseToolService {
       const fullPath = path.join(dirPath, dirent.name);
 
       try {
+        executionContext.getStore()?.pathPolicy?.validate(fullPath);
+        if (dirent.isSymbolicLink()) continue;
         const stat = await fs.stat(fullPath);
         entries.push({
           name: dirent.name,
@@ -630,6 +641,9 @@ export class FileService extends BaseToolService {
 
     for (const dirent of dirEntries) {
       const fullPath = path.join(dirPath, dirent.name);
+
+      try { executionContext.getStore()?.pathPolicy?.validate(fullPath); } catch { continue; }
+      if (dirent.isSymbolicLink()) continue;
 
       if (dirent.isDirectory()) {
         await this._searchWalk(fullPath, regex, matches);

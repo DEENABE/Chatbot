@@ -71,10 +71,17 @@ try {
     } catch { $errors.Add('control_panel_entry') }
   }
 } catch { $errors.Add('control_panel') }
+$knownFolders=@{'6D809377-6AF0-444B-8957-A3773F02200E'=$env:ProgramW6432;'7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E'=${env:ProgramFiles(x86)};'1AC14E77-02E7-4E5D-B744-2EB1AE5198B7'="$env:WINDIR\System32";'F38BF404-1D43-42F2-9305-67DE0B28FC23'=$env:WINDIR;'D65231B0-B2F1-4857-A4CE-A8E7C6EA7D27'="$env:LOCALAPPDATA\Programs"}
 try {
   Get-StartApps | ForEach-Object {
     if ($_.AppID -match '^[A-Za-z0-9._-]+![A-Za-z0-9._-]+$') {
       Add-App $_.Name '' 'msix' '' '' $_.AppID ($_.AppID.Split('!')[0])
+    } else {
+      # Desktop entries carry a known-folder path ({GUID}\relative\app.exe) or an absolute path.
+      $target=$null;$id=[string]$_.AppID
+      if($id -match '^\{([0-9A-Fa-f-]{36})\}\\(.+)$' -and $knownFolders.ContainsKey($Matches[1].ToUpperInvariant())){$target=Join-Path $knownFolders[$Matches[1].ToUpperInvariant()] $Matches[2]}
+      elseif($id -match '^[A-Za-z]:\\'){$target=$id}
+      if($target -and [IO.Path]::GetExtension($target) -ieq '.exe' -and (Test-Path -LiteralPath $target)){Add-App $_.Name $target 'shell_apps'}
     }
   }
 } catch { $errors.Add('msix') }
@@ -111,16 +118,18 @@ foreach($directory in @($env:PATH -split ';'|Select-Object -Unique)) {
   }catch{$errors.Add('path')}
   if($pathBudget -le 0){break}
 }
-# Shell AppsFolder includes registered desktop and packaged application identities.
-try {
-  $shellApps=(New-Object -ComObject Shell.Application).NameSpace('shell:AppsFolder')
-  foreach($item in $shellApps.Items()) {
-    $aumid=$item.ExtendedProperty('System.AppUserModel.ID')
-    if($aumid -match '^[A-Za-z0-9._-]+![A-Za-z0-9._-]+$'){Add-App $item.Name '' 'shell_apps' '' '' $aumid ($aumid.Split('!')[0]);continue}
-    $target=$item.ExtendedProperty('System.Link.TargetParsingPath')
-    if($target -and [IO.Path]::GetExtension($target) -ieq '.exe'){Add-App $item.Name $target 'shell_apps'}
-  }
-}catch{$errors.Add('shell_apps')}
+# Shell AppsFolder COM enumeration (ExtendedProperty is ~30ms per item) is only a fallback for when Get-StartApps failed.
+if($errors.Contains('msix')) {
+  try {
+    $shellApps=(New-Object -ComObject Shell.Application).NameSpace('shell:AppsFolder')
+    foreach($item in $shellApps.Items()) {
+      $aumid=$item.ExtendedProperty('System.AppUserModel.ID')
+      if($aumid -match '^[A-Za-z0-9._-]+![A-Za-z0-9._-]+$'){Add-App $item.Name '' 'shell_apps' '' '' $aumid ($aumid.Split('!')[0]);continue}
+      $target=$item.ExtendedProperty('System.Link.TargetParsingPath')
+      if($target -and [IO.Path]::GetExtension($target) -ieq '.exe'){Add-App $item.Name $target 'shell_apps'}
+    }
+  }catch{$errors.Add('shell_apps')}
+}
 # Generic GUI PE discovery. Never recurse through links, WindowsApps, or personal documents.
 function Is-GuiExecutable($file) {
  $stream=$null;$reader=$null
@@ -140,16 +149,18 @@ foreach($root in $installRoots){
  $queue=[Collections.Generic.Queue[object]]::new();$queue.Enqueue(@{path=$root;depth=0})
  while($queue.Count -and $fileBudget -gt 0 -and $scanClock.ElapsedMilliseconds -lt 12000){
   $node=$queue.Dequeue()
-  try{$entries=@(Get-ChildItem -LiteralPath $node.path -ErrorAction Stop)}catch{$errors.Add('install_root_entry');continue}
+  # Raw .NET enumeration: the PowerShell FileSystem provider costs several times more per directory.
+  try{$entries=[IO.DirectoryInfo]::new($node.path).GetFileSystemInfos()}catch{$errors.Add('install_root_entry');continue}
   foreach($entry in $entries){
    if($fileBudget-- -le 0 -or $scanClock.ElapsedMilliseconds -gt 12000){break}
    if($entry.Attributes -band [IO.FileAttributes]::ReparsePoint){continue}
-   if($entry.PSIsContainer){
+   if($entry.Attributes -band [IO.FileAttributes]::Directory){
     if($node.depth -lt 5 -and $entry.Name -notmatch '^(WindowsApps|node_modules|resources|locales|plugins|packages|cache|installer|redist|cef|runtime|runtimes)$'){$queue.Enqueue(@{path=$entry.FullName;depth=$node.depth+1})};continue
    }
-   if($entry.Extension -ine '.exe' -or $known.ContainsKey($entry.FullName) -or $entry.BaseName -match '(?i)unins|setup|install|updat|crash|helper|service|broker|handler|reporter|elevat|repair'){continue}
+   $baseName=[IO.Path]::GetFileNameWithoutExtension($entry.Name)
+   if($entry.Extension -ine '.exe' -or $known.ContainsKey($entry.FullName) -or $baseName -match '(?i)unins|setup|install|updat|crash|helper|service|broker|handler|reporter|elevat|repair'){continue}
    if(!(Is-GuiExecutable $entry.FullName)){continue}
-   try{$info=$entry.VersionInfo;$name=if($info.FileDescription){$info.FileDescription}elseif($info.ProductName){$info.ProductName}else{$entry.BaseName}
+   try{$info=[Diagnostics.FileVersionInfo]::GetVersionInfo($entry.FullName);$name=if($info.FileDescription){$info.FileDescription}elseif($info.ProductName){$info.ProductName}else{$baseName}
     Add-App $name $entry.FullName 'install_roots' $info.ProductVersion $info.CompanyName
     $known[$entry.FullName]=$true
    }catch{$errors.Add('install_executable_entry')}
