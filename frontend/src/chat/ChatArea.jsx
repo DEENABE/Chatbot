@@ -3,6 +3,7 @@ import { useAppStore } from '../stores/useAppStore.js';
 import Welcome from './Welcome.jsx';
 import MessageList from './MessageList.jsx';
 import MemoryPanel from '../memory/MemoryPanel.jsx';
+import AppPermissionsPanel from '../apps/AppPermissionsPanel.jsx';
 import SystemMonitor from '../dashboard/SystemMonitor.jsx';
 import { 
   FileText, 
@@ -138,6 +139,10 @@ export default function ChatArea({ activeTab }) {
 
   if (activeTab === 'memories') {
     return <MemoryPanel />;
+  }
+
+  if (activeTab === 'apps') {
+    return <AppPermissionsPanel />;
   }
 
   if (activeTab === 'diagnostics') {

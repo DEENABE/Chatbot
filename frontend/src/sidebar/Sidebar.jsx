@@ -17,6 +17,7 @@ import {
   Sparkles,
   FileText,
   Brain,
+  ShieldCheck,
   Activity,
   Languages,
   PanelLeftClose,
@@ -178,6 +179,19 @@ export default function Sidebar({ activeTab, setActiveTab }) {
         >
           <Brain size={16} style={{ color: activeTab === 'memories' ? accent : undefined }} />
           {open && <span>AI Memories</span>}
+        </button>
+
+        <button
+          onClick={() => setActiveTab('apps')}
+          className="flex h-10 w-full items-center gap-3 rounded-xl px-3 transition-all text-xs font-semibold"
+          style={{
+            background: activeTab === 'apps' ? `linear-gradient(135deg, ${accent}25, ${accent}05)` : 'transparent',
+            border: activeTab === 'apps' ? `1px solid ${accent}35` : '1px solid transparent',
+            color: activeTab === 'apps' ? '#fff' : '#888'
+          }}
+        >
+          <ShieldCheck size={16} style={{ color: activeTab === 'apps' ? accent : undefined }} />
+          {open && <span>App Permissions</span>}
         </button>
 
         <button

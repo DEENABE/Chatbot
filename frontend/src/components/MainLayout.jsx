@@ -11,7 +11,7 @@ export default function MainLayout() {
   const user = useAppStore((state) => state.user);
   const isAuthLoading = useAppStore((state) => state.isAuthLoading);
   const settings = useAppStore((state) => state.settings);
-  const [activeTab, setActiveTab] = useState('chat'); // 'chat', 'documents', 'memories', 'diagnostics'
+  const [activeTab, setActiveTab] = useState('chat'); // 'chat', 'documents', 'memories', 'apps', 'diagnostics'
   const resizeRef = useRef(null);
 
   if (!user) {

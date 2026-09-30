@@ -149,6 +149,15 @@ export const useAppStore = create((set, get) => ({
     get().removeConfirmation(id);
     
     if (!window.toolEngine) return;
+    // Confirmations raised by a UI panel (not a chat tool loop) just approve or cancel that one request.
+    if (conf.standalone) {
+      try {
+        if (approved) await executeCancellableTool(window.toolEngine, '_system', 'confirm', { confirmationId: id }, crypto.randomUUID(), { requestId: crypto.randomUUID(), idempotencyKey: crypto.randomUUID() });
+        else await window.toolEngine.cancel(id);
+      } catch (error) { console.error('Standalone confirmation failed', error); }
+      finally { conf.onSettled?.(); }
+      return;
+    }
     
     // We update the paused tool message to show it's resuming or cancelled
     const chatMsg = get().activeMessages.find(m => m.id === conf.messageId);

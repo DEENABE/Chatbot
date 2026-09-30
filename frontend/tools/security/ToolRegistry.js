@@ -1,0 +1,56 @@
+export const RISK = Object.freeze({ READ: 'READ', SAFE_WRITE: 'SAFE_WRITE', DANGEROUS: 'DANGEROUS', CRITICAL: 'CRITICAL' });
+export const TRANSPORT = Object.freeze({ MCP: 'MCP', TOOL_ENGINE: 'TOOL_ENGINE', BLOCKED: 'BLOCKED' });
+const freeze = value => { if (value && typeof value === 'object') { Object.values(value).forEach(freeze); Object.freeze(value); } return value; };
+
+/** Application code owns definitions. No registration endpoint is exposed. */
+export class ToolRegistry {
+  #definitions = new Map();
+  constructor(definitions) {
+    for (const definition of definitions) {
+      if (!definition || !/^[A-Za-z][A-Za-z0-9]*\.[A-Za-z][A-Za-z0-9]*$/.test(definition.name) ||
+          !Object.values(RISK).includes(definition.risk) || !Object.values(TRANSPORT).includes(definition.transport) ||
+          !definition.parameterSchema || !Array.isArray(definition.allowedScopes) ||
+          !Number.isInteger(definition.timeout) || definition.timeout < 1 ||
+          typeof definition.description !== 'string' || typeof definition.verificationRequired !== 'boolean') throw new Error('Invalid tool definition');
+      if (this.#definitions.has(definition.name)) throw new Error('Duplicate tool name');
+      this.#definitions.set(definition.name, freeze(structuredClone({ ...definition, requiresApproval: definition.risk === RISK.DANGEROUS })));
+    }
+    Object.freeze(this);
+  }
+  get(name) { return this.#definitions.get(name); }
+  list() { return [...this.#definitions.values()]; }
+}
+
+// Explicit classification: new service methods never inherit permission.
+const groups = {
+  READ: ['inspector.inspect','inspector.resolveControl','browser.readText','browser.getPageTitle','browser.getCurrentUrl','browser.getVisibleElements','browser.waitForElement','browser.waitForNavigation','uiAutomation.findWindow','uiAutomation.waitForWindow','uiAutomation.isWindowOpen','uiAutomation.listControls','uiAutomation.findControl','uiAutomation.waitForControl','uiAutomation.readText','hardware.systemInfo','hardware.cpuUsage','hardware.memoryUsage','hardware.diskInfo','hardware.gpuInfo','hardware.batteryInfo','hardware.networkAdapters',
+    'network.ping','network.traceroute','network.dnsLookup','network.portScan','network.netstat','network.ipConfig','network.speedTest',
+    'process.list','process.getProcess','services.list','services.getStatus','file.readFile','file.listDir','file.fileInfo','file.searchFiles',
+    'app.searchInstalledApps','app.listApps','app.describeApp','app.resolveTarget','app.getCapabilities','app.isAppOpen','app.resolveApp','app.isInstalled','app.getAppInfo','registry.getValue','registry.listKeys','registry.keyExists','powershell.getVersion','windowsRepair.inspectSpooler','windowsRepair.verifySpooler'],
+  SAFE_WRITE: ['inspector.navigate','browser.openBrowser','browser.attachBrowser','browser.newTab','browser.closeTab','browser.switchTab','browser.navigate','browser.search','browser.click','browser.type','browser.scroll','browser.back','browser.forward','browser.downloads','uiAutomation.focusWindow','uiAutomation.navigateControl','uiAutomation.calculate','uiAutomation.typeInNotepad','file.createDirectory','file.createTextFile','app.open','app.openApp','app.openWithTarget','app.focusApp','app.refreshAppRegistry'],
+  DANGEROUS: ['browser.submit','app.closeApp','app.setAppPermission','file.writeFile','file.deleteFile','file.copyFile','file.moveFile','file.open','process.kill','process.startProcess',
+    'services.start','services.stop','services.restart','registry.setValue','registry.deleteValue','windowsRepair.startSpooler'],
+  CRITICAL: ['powershell.execute','powershell.executeScript','cmd.execute','cmd.executeBatch'],
+};
+groups.READ.push('desktop.observe','desktop.verify');
+groups.SAFE_WRITE.push('desktop.open','desktop.act');
+groups.DANGEROUS.push('desktop.actConfirmed');
+const mcpReads = new Set(['hardware.systemInfo','hardware.cpuUsage','hardware.memoryUsage','hardware.diskInfo','hardware.networkAdapters',
+  'process.list','services.list','services.getStatus','network.ipConfig','network.ping','network.netstat','file.readFile','file.listDir','file.fileInfo','file.searchFiles']);
+export function createToolRegistry(services) {
+  const definitions = [];
+  for (const [tool, service] of services) for (const a of service.getActionList()) {
+    const name = `${tool}.${a.action}`;
+    const risk = Object.keys(groups).find(r => groups[r].includes(name));
+    if (!risk) throw new Error(`Missing explicit permission policy: ${name}`);
+    // Legacy free-form content setters would persist potentially secret values
+    // inside replay metadata. Keep them internal until a payload vault exists.
+    definitions.push({ name, description: a.description, risk, transport: risk === 'CRITICAL' || ['file.open','file.writeFile','registry.setValue'].includes(name) ? 'BLOCKED' : 'TOOL_ENGINE',
+      allowedScopes: ['backend','renderer'], parameterSchema: a.schema || {}, timeout: ['windowsRepair','app','uiAutomation','browser'].includes(tool) ? 60000 : 30000,
+      verificationRequired: risk !== 'READ', mcpExposed: mcpReads.has(name) });
+  }
+  for (const name of ['disk.format','boot.modify','security.disableDefender','security.disableFirewall','storage.deletePartition','users.delete','credentials.reset','bitlocker.modify','domain.join','domain.remove']) {
+    definitions.push({name, description:'This critical operation is blocked.', risk:'CRITICAL', transport:'BLOCKED', allowedScopes:[], parameterSchema:{}, timeout:30000, verificationRequired:true});
+  }
+  return new ToolRegistry(definitions);
+}
