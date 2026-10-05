@@ -145,3 +145,23 @@ indictrans-service/models/
 indictrans-service/.env
 Chanakya_Codebase_Complete_Architecture_Guide.docx
 generate_doc_guide.py
+
+# ─── Added by the security review ───────────────────────────────
+# Installer outputs of `npm run electron:release` (electron-builder writes here, see scripts/build-release.cjs).
+frontend/release-security/
+frontend/release-latest/
+# FreeFileSync bookkeeping and local tool state — never part of the project.
+sync.ffs_db
+sync.ffs_lock
+*.ffs_lock
+.claude/settings.local.json
+# Local copies of helper scripts / secrets kept as backups next to the repo.
+*.ps1.bak
+*.pem
+*.pfx
+*.key
+# Any local user data written by the app at runtime.
+backend/data/
+backend/.env
+backend/.env.*
+!backend/.env.example

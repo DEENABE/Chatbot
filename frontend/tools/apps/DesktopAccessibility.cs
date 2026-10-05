@@ -65,6 +65,11 @@ public static class DesktopAccessibility {
  static string Aumid(int pid){var p=OpenProcess(0x1000,false,pid);if(p==IntPtr.Zero)return "";try{uint n=0;GetApplicationUserModelId(p,ref n,null);if(n==0||n>2048)return "";var s=new StringBuilder((int)n);return GetApplicationUserModelId(p,ref n,s)==0?s.ToString():"";}finally{CloseHandle(p);}}
  static bool Identity(AutomationElement w,string exe,string id){try{int pid=w.Current.ProcessId;if(!String.IsNullOrEmpty(id)&&Aumid(pid)==id)return true;return !String.IsNullOrEmpty(exe)&&String.Equals(Process.GetProcessById(pid).MainModule.FileName,exe,StringComparison.OrdinalIgnoreCase);}catch{return false;}}
  static long Handle(AutomationElement w){try{return w.Current.NativeWindowHandle;}catch{return 0;}}
+ // Opt-in diagnostics (CHANAKYA_DEBUG_UI=1) for window selection failures; never includes control text.
+ static void Trace(string why,long requested,int expectedPid,List<AutomationElement> found){
+  if(Environment.GetEnvironmentVariable("CHANAKYA_DEBUG_UI")!="1")return;
+  Console.Error.WriteLine(why+" requested="+requested+" expectedPid="+expectedPid+" foreground="+GetForegroundWindow().ToInt64()+" candidates="+String.Join(",",found.Select(w=>{try{return Handle(w)+"/pid"+w.Current.ProcessId;}catch{return "?";}})));
+ }
  static AutomationElement Window(string exe,string id,long requested,int expectedPid){
   var all=AutomationElement.RootElement.FindAll(TreeScope.Children,Condition.TrueCondition);var matches=new List<AutomationElement>();
   foreach(AutomationElement w in all){try{
@@ -75,13 +80,14 @@ public static class DesktopAccessibility {
    }
   }catch{}
   }
+  var candidates=matches.ToList();
   if(requested!=0){matches=matches.Where(w=>Handle(w)==requested).ToList();}
-  if(matches.Count==0)throw new Exception("WINDOW_NOT_FOUND");
+  if(matches.Count==0){Trace("WINDOW_NOT_FOUND",requested,expectedPid,candidates);throw new Exception("WINDOW_NOT_FOUND");}
   var fg=GetForegroundWindow().ToInt64();var active=matches.Where(w=>Handle(w)==fg).ToList();
   if(active.Count==1)return active[0];
-  if(matches.Count!=1)throw new Exception("AMBIGUOUS_WINDOW");return matches[0];
+  if(matches.Count!=1){Trace("AMBIGUOUS_WINDOW",requested,expectedPid,matches);throw new Exception("AMBIGUOUS_WINDOW");}return matches[0];
  }
- static void Seal(Control c){c.signature=Hash(String.Join("|",new[]{c.provider,c.locator,c.label,c.role,c.automationId,c.parentId,c.shortcut,c.enabled.ToString(),c.selected.ToString(),c.focused.ToString(),c.valueHash,String.Join(",",c.actions)}));}
+ static void Seal(Control c){c.signature=Hash(String.Join("|",new[]{c.provider,c.locator,c.label,c.role,c.automationId,c.parentId,c.shortcut,c.enabled.ToString(),c.selected.ToString(),c.valueHash,String.Join(",",c.actions)}));}
  static void UiaChildren(AutomationElement root,List<Control> controls){
   var queue=new Queue<Tuple<AutomationElement,string,int>>();queue.Enqueue(Tuple.Create(root,"",0));var walker=TreeWalker.ControlViewWalker;int visited=0;
   while(queue.Count>0&&visited<500){var n=queue.Dequeue();if(n.Item3>=12)continue;AutomationElement c=null;try{c=walker.GetFirstChild(n.Item1);}catch{continue;}

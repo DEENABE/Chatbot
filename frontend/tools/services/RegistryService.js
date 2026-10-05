@@ -7,7 +7,7 @@
  * @module RegistryService
  */
 
-import { execFile } from 'child_process';
+import { execFile } from '../ExecutionContext.js';
 import { BaseToolService } from '../BaseToolService.js';
 
 /** Valid short-form and long-form registry hive prefixes. */

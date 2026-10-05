@@ -1,8 +1,10 @@
+import { executionRequestSignal } from '../orchestrator/requestSignal.js';
 import { Router } from 'express';
 import { runRepair } from '../ai/Orchestrator.js';
 import { DEFAULT_MODEL } from '../ai/llmClient.js';
 import { addFeedback, getSessions, exportTrainingData } from '../ai/RepairLogger.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
+import { memoryRequest } from '../memory/runtime.js';
 import { boundedInt } from '../lib/validate.js';
 
 export const repairRouter = Router();
@@ -56,7 +58,7 @@ repairRouter.get('/dataset', requireAdmin, (_request, response) => {
  * Streams the enterprise repair pipeline as NDJSON. Event types:
  *   intent | plan | agent | thought | command | output | blocked | final | error | aborted
  */
-repairRouter.post('/', async (request, response) => {
+repairRouter.post('/', memoryRequest, async (request, response) => {
   const { goal, model = DEFAULT_MODEL, maxSteps } = request.body || {};
 
   if (!goal || !String(goal).trim()) {
@@ -77,6 +79,7 @@ repairRouter.post('/', async (request, response) => {
   response.setHeader('Cache-Control', 'no-cache, no-transform');
   response.setHeader('X-Accel-Buffering', 'no');
 
+  const signal = executionRequestSignal(request, response);
   const send = (event) => response.write(`${JSON.stringify(event)}\n`);
 
   try {
@@ -84,7 +87,7 @@ repairRouter.post('/', async (request, response) => {
       goal: String(goal).trim(),
       model,
       maxSteps: boundedMaxSteps,
-      signal: request.signal,
+      signal,
       userId: request.userId,
       onEvent: send
     });

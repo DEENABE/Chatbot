@@ -9,9 +9,8 @@
  * headless PowerShell runner.
  */
 
-import { decideNextStep, AGENT_DEFAULT_MODEL } from '../agent/agentBrain.js';
-import { classifyCommand } from '../agent/dangerClassifier.js';
-import { runPowerShell } from '../agent/powershellRunner.js';
+import { AGENT_DEFAULT_MODEL } from '../agent/agentBrain.js';
+import { runLegacyExecution } from '../orchestrator/LegacyExecutionAdapter.js';
 
 const REACT_CONTRACT = `You diagnose and fix Windows problems by running PowerShell commands ONE at a time.
 
@@ -72,59 +71,10 @@ export class BaseAgent {
    * @param {(event: Object) => void} [args.onEvent]
    * @returns {Promise<{ answer: string|null, steps: Array }>}
    */
-  async run({ goal, knowledge = '', plan = [], model = AGENT_DEFAULT_MODEL, maxSteps = 8, signal, onEvent = () => {} }) {
-    const systemPrompt = this.buildSystemPrompt(knowledge, plan);
-    const steps = [];
-
-    for (let i = 0; i < maxSteps; i++) {
-      if (signal?.aborted) {
-        onEvent({ type: 'aborted' });
-        return { answer: 'Repair was stopped.', steps };
-      }
-
-      const decision = await decideNextStep({ goal, steps, model, systemPrompt, signal });
-
-      if (decision.thought) {
-        onEvent({ type: 'thought', payload: { agent: this.title, text: decision.thought } });
-      }
-
-      if (decision.done || !decision.command) {
-        return { answer: decision.answer || decision.thought || null, steps };
-      }
-
-      const command = decision.command;
-      const { level, reason } = classifyCommand(command);
-      onEvent({ type: 'command', payload: { agent: this.title, command, level, reason } });
-
-      if (level === 'blocked') {
-        onEvent({ type: 'blocked', payload: { agent: this.title, command, reason } });
-        steps.push({ command, blocked: true, reason });
-        continue;
-      }
-
-      let result;
-      try {
-        result = await runPowerShell(command, { timeout: 60_000 });
-      } catch (error) {
-        onEvent({ type: 'error', payload: { agent: this.title, message: error.message } });
-        steps.push({ command, stdout: '', stderr: error.message, exitCode: null, timedOut: false });
-        continue;
-      }
-
-      onEvent({
-        type: 'output',
-        payload: {
-          agent: this.title,
-          command,
-          exitCode: result.exitCode,
-          timedOut: result.timedOut,
-          stdout: result.stdout,
-          stderr: result.stderr
-        }
-      });
-      steps.push({ command, ...result });
-    }
-
-    return { answer: null, steps };
+  async run({ goal, knowledge = '', plan = [], model = AGENT_DEFAULT_MODEL, maxSteps = 8, maxRetries = 2, signal, userId, onEvent = () => {}, dependencies }) {
+    return runLegacyExecution({
+      goal, model, maxSteps, maxRetries, signal, userId, onEvent, dependencies,
+      mode: 'auto-repair', deferVerification: true, title: this.title, systemPrompt: this.buildSystemPrompt(knowledge, plan),
+    });
   }
 }

@@ -15,6 +15,7 @@ import { memoryRouter } from './routes/memory.js';
 import { statsRouter } from './routes/stats.js';
 import { agentRouter } from './routes/agent.js';
 import { repairRouter } from './routes/repair.js';
+import { orchestrateRouter } from './routes/orchestrate.js';
 import { translateRouter } from './routes/translate.js';
 import { askLimiter } from './middleware/rateLimiter.js';
 
@@ -118,6 +119,7 @@ app.use('/api/memory', memoryRouter);
 app.use('/api/stats', statsRouter);
 app.use('/api/agent', askLimiter, agentRouter);
 app.use('/api/repair', askLimiter, repairRouter);
+app.use('/api/orchestrate', askLimiter, orchestrateRouter);
 app.use('/api/translate', translateRouter);
 
 app.use('/ocr', express.static(config.ocrDir));

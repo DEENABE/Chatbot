@@ -11,13 +11,14 @@
     "build": "vite build",
     "preview": "vite preview",
     "electron": "electron .",
-    "electron:build": "node scripts/prepare-backend.cjs && vite build && electron-builder --win"
+    "electron:build": "node scripts/prepare-backend.cjs && vite build && electron-builder --win",
+    "electron:release": "node scripts/build-release.cjs"
   },
   "build": {
     "appId": "com.chanakya.ai",
     "productName": "Chanakya AI",
     "electronVersion": "37.10.3",
-    "electronDist": "../.electron-dist/37.10.3-win32-x64",
+    "electronDist": "../node_modules/electron/dist",
     "directories": {
       "output": "release-build"
     },
@@ -33,6 +34,10 @@
       {
         "from": "../node_modules/one-time",
         "to": "node_modules/one-time"
+      },
+      {
+        "from": "../node_modules/playwright-core",
+        "to": "node_modules/playwright-core"
       }
     ],
     "afterPack": "scripts/afterPack.cjs",
@@ -47,6 +52,7 @@
       ]
     },
     "nsis": {
+      "perMachine": true,
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "installerSidebar": null,
@@ -54,7 +60,17 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Chanakya AI"
     },
-    "asar": false
+    "asar": false,
+    "extraResources": [
+      {
+        "from": "tools/apps",
+        "to": "desktop-control",
+        "filter": [
+            "*.ps1",
+            "DesktopAccessibility.cs"
+        ]
+      }
+    ]
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",
@@ -64,6 +80,7 @@
     "axios": "^1.9.0",
     "framer-motion": "^12.12.1",
     "lucide-react": "^0.511.0",
+    "playwright-core": "1.63.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-markdown": "^10.1.0",

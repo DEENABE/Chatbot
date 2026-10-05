@@ -23,7 +23,8 @@ function truncate(text) {
  * @param {number} [options.timeout=60000] - Kill the process after this many ms.
  * @returns {Promise<{stdout: string, stderr: string, exitCode: number|null, timedOut: boolean}>}
  */
-export function runPowerShell(command, { timeout = DEFAULT_TIMEOUT } = {}) {
+export function runPowerShell(command, { timeout = DEFAULT_TIMEOUT, signal } = {}) {
+  signal?.throwIfAborted();
   return new Promise((resolve, reject) => {
     let stdout = '';
     let stderr = '';
@@ -33,7 +34,7 @@ export function runPowerShell(command, { timeout = DEFAULT_TIMEOUT } = {}) {
     const proc = spawn(
       'powershell.exe',
       ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', command],
-      { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }
+      { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], signal }
     );
 
     const timer = setTimeout(() => {

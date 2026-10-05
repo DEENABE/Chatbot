@@ -32,9 +32,10 @@ const groups = {
     'services.start','services.stop','services.restart','registry.setValue','registry.deleteValue','windowsRepair.startSpooler'],
   CRITICAL: ['powershell.execute','powershell.executeScript','cmd.execute','cmd.executeBatch'],
 };
-groups.READ.push('desktop.observe','desktop.verify');
+groups.READ.push('desktop.observe','desktop.verify','winget.search','systemSettings.list','systemSettings.get');
+groups.SAFE_WRITE.push('systemSettings.set');
 groups.SAFE_WRITE.push('desktop.open','desktop.act','desktop.input');
-groups.DANGEROUS.push('desktop.actConfirmed','desktop.inputConfirmed');
+groups.DANGEROUS.push('desktop.actConfirmed','desktop.inputConfirmed','winget.install','systemSettings.setConfirmed');
 const mcpReads = new Set(['hardware.systemInfo','hardware.cpuUsage','hardware.memoryUsage','hardware.diskInfo','hardware.networkAdapters',
   'process.list','services.list','services.getStatus','network.ipConfig','network.ping','network.netstat','file.readFile','file.listDir','file.fileInfo','file.searchFiles']);
 export function createToolRegistry(services) {
@@ -46,7 +47,7 @@ export function createToolRegistry(services) {
     // Legacy free-form content setters would persist potentially secret values
     // inside replay metadata. Keep them internal until a payload vault exists.
     definitions.push({ name, description: a.description, risk, transport: risk === 'CRITICAL' || ['file.open','file.writeFile','registry.setValue'].includes(name) ? 'BLOCKED' : 'TOOL_ENGINE',
-      allowedScopes: ['backend','renderer'], parameterSchema: a.schema || {}, timeout: ['windowsRepair','app','uiAutomation','browser'].includes(tool) ? 60000 : 30000,
+      allowedScopes: ['backend','renderer'], parameterSchema: a.schema || {}, timeout: name === 'winget.install' ? 1260000 : ['windowsRepair','app','uiAutomation','browser','winget','systemSettings'].includes(tool) ? 60000 : 30000,
       verificationRequired: risk !== 'READ', mcpExposed: mcpReads.has(name) });
   }
   for (const name of ['disk.format','boot.modify','security.disableDefender','security.disableFirewall','storage.deletePartition','users.delete','credentials.reset','bitlocker.modify','domain.join','domain.remove']) {

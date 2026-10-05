@@ -1,7 +1,9 @@
+import { executionRequestSignal } from '../orchestrator/requestSignal.js';
 import { Router } from 'express';
 import { runAgent } from '../agent/agentLoop.js';
 import { AGENT_DEFAULT_MODEL } from '../agent/agentBrain.js';
 import { requireAuth } from '../middleware/auth.js';
+import { memoryRequest } from '../memory/runtime.js';
 import { boundedInt } from '../lib/validate.js';
 
 export const agentRouter = Router();
@@ -25,7 +27,7 @@ const MAX_STEPS_CEILING = 50;
 // /api/repair) didn't require anything at all, so any process that could
 // reach the port could trigger it. Loopback binding (config.js) now keeps it
 // off the network; this keeps it consistent with the rest of the API anyway.
-agentRouter.post('/', requireAuth, async (request, response) => {
+agentRouter.post('/', requireAuth, memoryRequest, async (request, response) => {
   const { goal, model = AGENT_DEFAULT_MODEL, maxSteps } = request.body || {};
 
   if (!goal || !String(goal).trim()) {
@@ -46,14 +48,16 @@ agentRouter.post('/', requireAuth, async (request, response) => {
   response.setHeader('Cache-Control', 'no-cache, no-transform');
   response.setHeader('X-Accel-Buffering', 'no');
 
+  const signal = executionRequestSignal(request, response);
   const send = (event) => response.write(`${JSON.stringify(event)}\n`);
 
   try {
     await runAgent({
+      userId: request.userId,
       goal: String(goal).trim(),
       model,
       maxSteps: boundedMaxSteps,
-      signal: request.signal,
+      signal,
       onEvent: send,
     });
   } catch (error) {

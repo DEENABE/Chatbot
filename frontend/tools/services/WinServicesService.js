@@ -6,7 +6,7 @@
  * @module tools/services/WinServicesService
  */
 
-import { spawn } from 'child_process';
+import { spawn } from '../ExecutionContext.js';
 import { BaseToolService } from '../BaseToolService.js';
 
 /** Regex pattern for valid Windows service names. */

@@ -5,6 +5,7 @@ import { ShieldAlert, Check, X } from 'lucide-react';
 export default function ConfirmationModal() {
   const pendingConfirmations = useAppStore(state => state.pendingConfirmations);
   const resolveConfirmation = useAppStore(state => state.resolveConfirmation);
+  const renewConfirmation = useAppStore(state => state.renewConfirmation);
 
   if (!pendingConfirmations || pendingConfirmations.length === 0) return null;
 
@@ -19,25 +20,37 @@ export default function ConfirmationModal() {
         </div>
         
         <p className="text-sm text-stone-300 mb-4 leading-relaxed font-medium">
-          Chanakya AI is attempting to execute a potentially destructive system action:
+          Chanakya AI needs your permission to change current system state:
         </p>
         
         <div className="bg-black/50 border border-stone-800 rounded-lg p-4 mb-6 font-mono text-sm text-red-200 shadow-inner break-words">
           {currentConf.message || 'No description provided.'}
         </div>
 
+        {currentConf.approvalDetails && <p className="text-sm text-stone-300 mb-4">
+          Action: {currentConf.approvalDetails.action}<br />
+          Risk: Changes current system state<br />
+          Reason: {currentConf.approvalDetails.reason}
+        </p>}
+
+        {currentConf.renewalError && <p className="text-sm text-red-300 mb-3">{currentConf.renewalError}</p>}
+        <button disabled={currentConf.renewing} onClick={() => renewConfirmation(currentConf.confirmationId)} className="text-sm text-stone-300 underline mb-4 text-left disabled:opacity-50">
+          {currentConf.renewing ? 'Renewing request…' : 'Renew request for a fresh approval'}
+        </button>
         <div className="flex justify-end space-x-3">
           <button
+            disabled={currentConf.renewing}
             onClick={() => resolveConfirmation(currentConf.confirmationId, false)}
             className="flex items-center px-4 py-2 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 font-semibold transition-colors duration-200"
           >
             <X size={16} className="mr-2" /> Cancel
           </button>
           <button
+            disabled={currentConf.renewing}
             onClick={() => resolveConfirmation(currentConf.confirmationId, true)}
             className="flex items-center px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold transition-colors duration-200 shadow-lg shadow-red-600/30 hover:shadow-red-500/50"
           >
-            <Check size={16} className="mr-2" /> Allow Execution
+            <Check size={16} className="mr-2" /> Allow once
           </button>
         </div>
       </div>

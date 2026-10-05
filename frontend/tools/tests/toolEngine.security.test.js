@@ -14,6 +14,7 @@ import { ProcessService, isProtectedProcessName } from '../services/ProcessServi
 import { WinServicesService } from '../services/WinServicesService.js';
 import { RegistryService } from '../services/RegistryService.js';
 import { FileService } from '../services/FileService.js';
+import { ExecutionLedger } from '../ExecutionLedger.js';
 
 // Phase 4 — agent/PowerShell/tool-engine security audit. This tree
 // (frontend/tools/) is a second, independent tool-execution engine from the
@@ -323,14 +324,14 @@ test('ToolEngineRouter rejects a tool name the client invented', async () => {
   const router = new ToolEngineRouter();
   const result = await router.dispatch({ tool: 'adminTool', action: 'doAnything', params: {} });
   assert.equal(result.success, false);
-  assert.equal(result.error.code, 'TOOL_NOT_FOUND');
+  assert.equal(result.error.code, 'UNKNOWN_TOOL');
 });
 
 test('ToolEngineRouter rejects an unregistered action on a real tool', async () => {
   const router = new ToolEngineRouter();
   const result = await router.dispatch({ tool: 'file', action: 'formatDrive', params: {} });
   assert.equal(result.success, false);
-  assert.equal(result.error.code, 'ACTION_NOT_FOUND');
+  assert.equal(result.error.code, 'UNKNOWN_TOOL');
 });
 
 test('BaseToolService rejects invalid parameters before the handler ever runs', async () => {
@@ -347,16 +348,21 @@ test('confirming a fake/unknown confirmationId is rejected, not silently accepte
   const router = new ToolEngineRouter();
   const result = await router.dispatch({ tool: '_system', action: 'confirm', params: { confirmationId: 'not-a-real-id' } });
   assert.equal(result.success, false);
-  assert.equal(result.error.code, 'CONFIRMATION_FAILED');
+  assert.equal(result.error.code, 'APPROVAL_INVALID');
 });
 
 test('the confirmation flow only executes after a matching confirm — cancel never executes', async () => {
   const router = new ToolEngineRouter();
-  const request = await router.dispatch({ tool: 'cmd', action: 'execute', params: { command: 'echo test-cancel-path' } });
+  const ledger=new ExecutionLedger({dispatch:r=>router.dispatch(r)});
+  let sequence=0;
+  const call=r=>ledger.execute('backend:test',{...r,toolCallId:'cancel-test',requestId:`r${++sequence}`,idempotencyKey:`k${sequence}`},null,{origin:'operator',humanApproved:r.action==='confirm'});
+  // Arbitrary shell tools are now blocked. Exercise cancellation with a typed
+  // service proposal; no Windows operation is dispatched in this test.
+  const request = await call({ tool: 'services', action: 'restart', params: { name: 'Spooler' } });
   assert.equal(request.needsConfirmation, true);
-  const cancelled = await router.dispatch({ tool: '_system', action: 'cancel', params: { confirmationId: request.confirmationId } });
+  const cancelled = await call({ tool: '_system', action: 'cancel', params: { confirmationId: request.confirmationId } });
   assert.equal(cancelled.success, true);
   // The same id must not be usable a second time (e.g. to confirm after cancelling).
-  const reused = await router.dispatch({ tool: '_system', action: 'confirm', params: { confirmationId: request.confirmationId } });
+  const reused = await call({ tool: '_system', action: 'confirm', params: { confirmationId: request.confirmationId } });
   assert.equal(reused.success, false);
 });

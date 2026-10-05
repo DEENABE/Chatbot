@@ -7,7 +7,7 @@
  */
 
 import os from 'os';
-import { execFile } from 'child_process';
+import { execFile } from '../ExecutionContext.js';
 import { BaseToolService } from '../BaseToolService.js';
 
 /**

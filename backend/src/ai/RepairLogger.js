@@ -28,6 +28,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { config } from '../config.js';
 import { domainLabel, normalizeSubdomain } from '../knowledge/subdomains.js';
+import { projectTypedRepair } from './TypedRepairProjection.js';
 
 const storageDir = path.dirname(config.dbFile);
 
@@ -46,6 +47,15 @@ function ensureDatasetDir() {
 
 const REPAIR_LOG_FILE = path.join(DATASET_DIR, 'repair-sessions.json');
 const AUTOMATION_LOG_FILE = path.join(DATASET_DIR, 'automation-sessions.json');
+const TYPED_REPAIR_LOG_FILE = path.join(DATASET_DIR, 'typed-repair-sessions.json');
+
+export function logTypedRepair(state) {
+  const sessions=readAll(TYPED_REPAIR_LOG_FILE),record=projectTypedRepair(state);
+  const index=sessions.findIndex(s=>s.id===record.id);
+  if(index>=0){if(sessions[index].revision>record.revision)return;record.feedback=sessions[index].feedback;sessions[index]=record;}
+  else sessions.push(record);
+  writeAll(TYPED_REPAIR_LOG_FILE,sessions);
+}
 // Curated, hand-written examples (tool calling, tool-result interpretation,
 // clarification, safety refusals, verification, plain conversation) — not
 // "sessions" in the repair/automation sense (no domain/steps/PowerShell), so
@@ -157,7 +167,7 @@ export function logSession(session) {
  * @returns {boolean} true if the session was found, owned by the requester (or unowned), and updated.
  */
 export function addFeedback(id, worked, note = '', requesterUserId = null) {
-  for (const file of [REPAIR_LOG_FILE, AUTOMATION_LOG_FILE]) {
+  for (const file of [REPAIR_LOG_FILE, AUTOMATION_LOG_FILE, TYPED_REPAIR_LOG_FILE]) {
     const sessions = readAll(file);
     const session = sessions.find((s) => s.id === id);
     if (session) {
@@ -178,7 +188,7 @@ export function addFeedback(id, worked, note = '', requesterUserId = null) {
  * regardless of which file a session actually lives in.
  */
 export function getSessions() {
-  const all = [...readAll(REPAIR_LOG_FILE), ...readAll(AUTOMATION_LOG_FILE)];
+  const all = [...readAll(REPAIR_LOG_FILE), ...readAll(AUTOMATION_LOG_FILE), ...readAll(TYPED_REPAIR_LOG_FILE)];
   return all.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
 }
 
@@ -210,6 +220,7 @@ const MIN_SUMMARY_LENGTH = 40;
  */
 function isGoodSession(s) {
   if (!s || !s.goal || typeof s.summary !== 'string') return false;
+  if(s.type==='typed_repair') return s.phase==='done' && s.machineVerification?.status==='passed' && s.steps?.some(x=>x.verificationStatus==='passed');
 
   // Quality floor: a session with no evidence and no explanation teaches
   // nothing regardless of how it ended.
@@ -265,6 +276,7 @@ function formatStep(step) {
  * @returns {{messages: Array<{role: string, content: string}>}}
  */
 function buildExample(s) {
+  if(s.type==='typed_repair') return {messages:[{role:'user',content:s.goal},{role:'assistant',content:'Print Spooler is running; printing has not been verified. The only supported mutation requires explicit human approval. User feedback does not replace machine verification.'}]};
   const steps = Array.isArray(s.steps) ? s.steps.filter((step) => step && step.command) : [];
   const commandList = steps.map(formatStep).join('\n');
   const label = domainLabel(s.domain, s.subdomain);
@@ -326,6 +338,7 @@ function buildExample(s) {
 export function exportTrainingData() {
   return [
     ...readAll(REPAIR_LOG_FILE).filter(isGoodSession).map(buildExample),
+    ...readAll(TYPED_REPAIR_LOG_FILE).filter(isGoodSession).map(buildExample),
     ...readAll(AUTOMATION_LOG_FILE).filter(isGoodSession).map(buildExample)
   ];
 }
@@ -353,7 +366,7 @@ function readGeneralExamples() {
  */
 export function exportTrainingDataSplit() {
   return {
-    repair: readAll(REPAIR_LOG_FILE).filter(isGoodSession).map(buildExample),
+    repair: [...readAll(REPAIR_LOG_FILE),...readAll(TYPED_REPAIR_LOG_FILE)].filter(isGoodSession).map(buildExample),
     automation: readAll(AUTOMATION_LOG_FILE).filter(isGoodSession).map(buildExample),
     general: readGeneralExamples()
   };

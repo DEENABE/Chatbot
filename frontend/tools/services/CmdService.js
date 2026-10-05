@@ -6,7 +6,7 @@
  * @module tools/services/CmdService
  */
 
-import { spawn } from 'child_process';
+import { spawn } from '../ExecutionContext.js';
 import { readFile } from 'fs/promises';
 import path from 'path';
 import { BaseToolService } from '../BaseToolService.js';

@@ -1,0 +1,13 @@
+{
+  "services": ["Spooler", "WSearch"],
+  "lgpo": { "path": null, "sha256": null },
+  "groupPolicy": {
+    "disable-toast-notifications": { "scope": "User", "key": "Software\\Policies\\Microsoft\\Windows\\CurrentVersion\\PushNotifications", "name": "NoToastApplicationNotification" }
+  },
+  "registry": {
+    "apps-light-theme": { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize", "name": "AppsUseLightTheme", "type": "DWord", "min": 0, "max": 1, "writable": true },
+    "system-light-theme": { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize", "name": "SystemUsesLightTheme", "type": "DWord", "min": 0, "max": 1, "writable": true },
+    "machine-build": { "path": "HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion", "name": "CurrentBuildNumber", "type": "String", "writable": false },
+    "long-paths-enabled": { "path": "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\FileSystem", "name": "LongPathsEnabled", "type": "DWord", "min": 0, "max": 1, "writable": true }
+  }
+}

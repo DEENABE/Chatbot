@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { validateTarget } from './AppTargetPolicy.js';
 import { normalize, aliasesFor } from './AppResolverService.js';
 import { systemCapabilities } from './WindowsSystemCapabilityRegistry.js';
+import {validAppQuery} from './AppQueryNormalizer.js';
 // Control Panel items that can change security posture: never opened by a fuzzy match.
 const SENSITIVE_CONTROL_PANEL = new Set(['Microsoft.AdministrativeTools','Microsoft.UserAccounts','Microsoft.CredentialManager','Microsoft.BitLockerDriveEncryption','Microsoft.WindowsFirewall']);
 const CANONICAL = /^Microsoft\.[A-Za-z]+$/;
@@ -61,12 +62,13 @@ export function mergeSystemCapabilities(discovered) {
 export class AppDiscoveryService {
   // Merging happens here rather than in AppRegistryService.refresh(): the merged list is what gets cached, and
   // every consumer of discover() (registry, integration tests) sees the same code-owned capabilities.
-  async discover() {
+  async discover({query}={}) {
     if (process.platform !== 'win32') throw new Error('APP_PLATFORM_UNSUPPORTED');
+    if(query!==undefined&&!validAppQuery(query))throw new Error('APP_INVALID_QUERY');
     let raw;
     try {
       raw = await new Promise((resolve,reject) => execFile(powerShellPath(),
-        ['-NoProfile','-NonInteractive','-File',helperScriptPath('DiscoverApps.ps1')],
+        ['-NoProfile','-NonInteractive','-File',helperScriptPath('DiscoverApps.ps1'),...(query?['-Query',query]:[])],
         {windowsHide:true,timeout:40000,maxBuffer:8*1024*1024,encoding:'utf8'}, (error,out)=>{if(error)return reject(error);try{resolve(JSON.parse(out.replace(/^\uFEFF/,'')));}catch(e){reject(e);}}));
     } catch {
       // Code-owned capabilities do not depend on the script; `degraded` lets the registry keep a richer prior cache.

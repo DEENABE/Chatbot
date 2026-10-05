@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { promisify } from 'node:util';
 import fs from 'node:fs';
 import path from 'node:path';
 import { db } from './db.js';
@@ -16,9 +17,13 @@ import { config } from '../config.js';
 // this class only needs to mark "message is safe", not carry a status.
 export class AuthError extends Error {}
 
-function hashPassword(password, salt) {
+// scrypt runs on libuv's thread pool here, not on the event loop: the synchronous variant froze the whole server for ~40 ms per
+// hash, and login is reachable without authentication, so a trickle of bad logins could starve every other request.
+// Same parameters as before (Node defaults, 64-byte key), so every stored hash still verifies.
+const scrypt = promisify(crypto.scrypt);
+async function hashPassword(password, salt) {
   if (!salt) salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  const hash = (await scrypt(password, salt, 64)).toString('hex');
   return { hash, salt };
 }
 
@@ -82,7 +87,7 @@ export async function registerUser(username, displayName, password) {
     throw new AuthError('Username already taken.');
   }
 
-  const { hash, salt } = hashPassword(password);
+  const { hash, salt } = await hashPassword(password);
   const user = {
     id: crypto.randomUUID(),
     username: lowerName,
@@ -129,7 +134,7 @@ export async function loginUser(username, password) {
     throw new AuthError('Invalid username or password.');
   }
 
-  const { hash } = hashPassword(password, user.salt);
+  const { hash } = await hashPassword(password, user.salt);
   if (!hashesMatch(hash, user.passwordHash)) {
     throw new AuthError('Invalid username or password.');
   }
@@ -169,12 +174,12 @@ export async function changePassword(userId, currentPassword, newPassword) {
   if (!isNonEmptyString(currentPassword)) {
     throw new AuthError('Current password is incorrect.');
   }
-  const { hash } = hashPassword(currentPassword, user.salt);
+  const { hash } = await hashPassword(currentPassword, user.salt);
   if (!hashesMatch(hash, user.passwordHash)) {
     throw new AuthError('Current password is incorrect.');
   }
   assertValidPassword(newPassword, 'New password');
-  const { hash: newHash, salt: newSalt } = hashPassword(newPassword);
+  const { hash: newHash, salt: newSalt } = await hashPassword(newPassword);
   db.prepare('UPDATE users SET passwordHash = ?, salt = ? WHERE id = ?').run(newHash, newSalt, userId);
   // A leaked/stale session token must stop working the moment the password
   // it was issued under changes (AUTH-01/AUTH-02) — the caller re-issues a
@@ -304,7 +309,7 @@ export async function resetPasswordWithToken(token, newPassword) {
   // the update below somehow throws, the token stays permanently unusable
   // rather than staying valid for a retry — a stuck reset request is a far
   // smaller problem than reopening the single-use guarantee.
-  const { hash, salt } = hashPassword(newPassword);
+  const { hash, salt } = await hashPassword(newPassword);
   const applyReset = db.transaction(() => {
     db.prepare('UPDATE users SET passwordHash = ?, salt = ? WHERE id = ?').run(hash, salt, user.id);
     // Same reasoning as changePassword: kill every existing session for the
@@ -334,7 +339,7 @@ export async function deleteAccount(userId, password) {
   if (!isNonEmptyString(password)) {
     throw new AuthError('Password is incorrect.');
   }
-  const { hash } = hashPassword(password, user.salt);
+  const { hash } = await hashPassword(password, user.salt);
   if (!hashesMatch(hash, user.passwordHash)) {
     throw new AuthError('Password is incorrect.');
   }

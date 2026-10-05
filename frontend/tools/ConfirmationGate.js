@@ -1,145 +1,96 @@
-/**
- * @module ConfirmationGate
- * @description Manages pending confirmations for destructive tool actions.
- * Each confirmation request generates a unique ID, stores the associated
- * metadata, and auto-expires after a configurable timeout (default 60s).
- */
-
 import crypto from 'node:crypto';
+import { DurableConfirmationStore } from './DurableConfirmationStore.js';
+import { executionContext } from './ExecutionContext.js';
+import { parameterHash } from './security/ToolRequestValidator.js';
 
-/** Default confirmation timeout in milliseconds (60 seconds). */
-const DEFAULT_TIMEOUT_MS = 60_000;
-
-/**
- * @typedef {Object} PendingEntry
- * @property {Object} metadata - Arbitrary metadata associated with the confirmation.
- * @property {Function} resolve - Promise resolve callback.
- * @property {Function} reject - Promise reject callback.
- * @property {ReturnType<typeof setTimeout>} timeout - The expiry timer handle.
- */
-
-/**
- * @typedef {Object} ConfirmResult
- * @property {boolean} success - Whether the confirmation was found and processed.
- * @property {Object} [metadata] - The stored metadata (on success).
- * @property {string} [error] - Error message (on failure).
- */
-
+/** Tokens persist as a lineage; renewal never executes or implicitly approves. */
 export class ConfirmationGate {
-  /**
-   * Create a new ConfirmationGate instance.
-   */
-  constructor() {
-    /** @type {Map<string, PendingEntry>} */
+  constructor({ directory, now = Date.now, ttlMs = 60000 } = {}) {
+    this.store = new DurableConfirmationStore(directory);
+    this.records = this.store.load();
     this.pending = new Map();
+    this.now = now;
+    this.ttlMs = ttlMs;
   }
-
-  /**
-   * Request confirmation for a destructive action.
-   *
-   * Generates a unique confirmation ID, stores the metadata alongside
-   * resolve/reject callbacks, and sets a 60-second auto-expiry timer.
-   *
-   * @param {Object} metadata - Contextual data about the action requiring confirmation
-   *   (e.g., `{ tool, action, params, message }`).
-   * @returns {{ confirmationId: string, promise: Promise<Object> }}
-   *   The confirmation ID (to send to the user) and a Promise that resolves
-   *   when the user confirms or rejects on timeout/cancel.
-   *
-   * @example
-   * const { confirmationId, promise } = gate.request({
-   *   tool: 'file',
-   *   action: 'delete',
-   *   params: { path: 'C:\\temp\\data.log' },
-   *   message: 'Delete file C:\\temp\\data.log?'
-   * });
-   */
+  commit(records) {
+    const previous=this.records; this.records = this.store.update(previous,records); records=this.records;
+    for(const [id,record] of Object.entries(records)) if(previous[id]!==record && record.metadata?.tool==='windowsRepair') this.observeRepairRecord?.(record);
+  }
+  getRecord(id) { return typeof id === 'string' && Object.hasOwn(this.records, id) ? this.records[id] : undefined; }
   request(metadata) {
+    const context=executionContext.getStore();
+    if(context?.authenticated) metadata={...metadata, authorization:{userId:context.scope,taskId:context.taskId,tool:metadata.tool,action:metadata.action,paramsHash:parameterHash(metadata.params),createdAt:this.now()}};
     const confirmationId = crypto.randomUUID();
-
-    let resolve;
-    let reject;
-
-    const promise = new Promise((res, rej) => {
-      resolve = res;
-      reject = rej;
-    });
-    // The current callers (BaseToolService/ToolEngineRouter) drive
-    // confirm/cancel through this gate's own confirm()/cancel() return
-    // values, not by awaiting this promise — so nothing was ever attached
-    // to it. An unawaited promise that later rejects (every cancel, every
-    // 60s timeout) is an unhandled rejection, which under Node's default
-    // --unhandled-rejections=throw crashes the process. The promise is
-    // still returned for any future caller that does want to await it;
-    // this only stops the *unused* case from being fatal.
+    const record = { confirmationId, rootId: confirmationId, generation: 0,
+      metadata: structuredClone(metadata), expiresAt: Math.min(this.now() + this.ttlMs, metadata.validUntil ?? Infinity), status: 'pending' };
+    this.commit({ ...this.records, [confirmationId]: record });
+    let resolve, reject;
+    const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
     promise.catch(() => {});
-
-    const timeout = setTimeout(() => {
-      this.pending.delete(confirmationId);
-      reject(new Error('Confirmation expired'));
-    }, DEFAULT_TIMEOUT_MS);
-
-    this.pending.set(confirmationId, {
-      metadata,
-      resolve,
-      reject,
-      timeout,
-    });
-
-    return { confirmationId, promise };
+    const timeout = setTimeout(() => { this.pending.delete(confirmationId); reject(new Error('Confirmation expired')); }, this.ttlMs);
+    timeout.unref?.();
+    this.pending.set(confirmationId, { resolve, reject, timeout });
+    return { confirmationId, expiresAt: record.expiresAt, promise };
   }
-
-  /**
-   * Confirm a pending action by its confirmation ID.
-   *
-   * Clears the expiry timer, resolves the stored promise with the metadata,
-   * and removes the entry from the pending map.
-   *
-   * @param {string} confirmationId - The ID returned from {@link request}.
-   * @returns {ConfirmResult} Success with metadata, or failure with error message.
-   */
-  confirm(confirmationId) {
-    const entry = this.pending.get(confirmationId);
-
-    if (!entry) {
-      return { success: false, error: 'Confirmation expired or invalid' };
+  settle(id, accepted) {
+    const pending = this.pending.get(id);
+    if (pending) {
+      clearTimeout(pending.timeout);
+      if (accepted) pending.resolve(this.records[id].metadata); else pending.reject(new Error('Confirmation closed'));
+      this.pending.delete(id);
     }
-
-    clearTimeout(entry.timeout);
-    entry.resolve(entry.metadata);
-    this.pending.delete(confirmationId);
-
-    return { success: true, metadata: entry.metadata };
   }
-
-  /**
-   * Cancel a pending confirmation, rejecting its promise.
-   *
-   * @param {string} confirmationId - The ID returned from {@link request}.
-   * @returns {ConfirmResult} Success with metadata, or failure with error message.
-   */
-  cancel(confirmationId) {
-    const entry = this.pending.get(confirmationId);
-
-    if (!entry) {
+  confirm(id) {
+    const record = this.getRecord(id);
+    if (!record || record.status !== 'pending' || this.now() >= record.expiresAt)
       return { success: false, error: 'Confirmation expired or invalid' };
-    }
-
-    clearTimeout(entry.timeout);
-    entry.reject(new Error('cancelled'));
-    this.pending.delete(confirmationId);
-
-    return { success: true, metadata: entry.metadata };
+    this.commit({ ...this.records, [id]: { ...record, status: 'consumed', consumedAt: this.now() } });
+    this.settle(id, true);
+    return { success: true, metadata: structuredClone(record.metadata) };
   }
-
-  /**
-   * Retrieve the metadata for a pending confirmation without altering its state.
-   *
-   * @param {string} confirmationId - The ID returned from {@link request}.
-   * @returns {Object|undefined} The metadata if the confirmation is still pending, otherwise undefined.
-   */
-  getPending(confirmationId) {
-    const entry = this.pending.get(confirmationId);
-    return entry ? entry.metadata : undefined;
+  validateApproval(id, request, context) {
+    const record=this.getRecord(id), binding=record?.metadata?.authorization;
+    if(!record || !binding || context?.humanApproved!==true) return 'APPROVAL_INVALID';
+    if(record.status!=='pending') return 'APPROVAL_ALREADY_USED';
+    if(this.now()>=record.expiresAt || this.now()<binding.createdAt) return 'APPROVAL_EXPIRED';
+    if(binding.userId!==context.scope || binding.taskId!==context.taskId) return 'APPROVAL_INVALID';
+    if(binding.tool!==request.tool || binding.action!==request.action || binding.paramsHash!==parameterHash(request.params??{})) return 'APPROVAL_PARAMETER_MISMATCH';
+    return null;
+  }
+  cancel(id) {
+    const record = this.getRecord(id);
+    if (!record || record.status !== 'pending') return { success: false, error: 'Confirmation expired or invalid' };
+    this.commit({ ...this.records, [id]: { ...record, status: 'cancelled' } });
+    this.settle(id, false);
+    return { success: true, metadata: structuredClone(record.metadata) };
+  }
+  getPending(id) {
+    const record = this.getRecord(id);
+    return record?.status === 'pending' ? structuredClone(record.metadata) : undefined;
+  }
+  renew(id, renewalId, scope) {
+    if (typeof renewalId !== 'string' || !/^[A-Za-z0-9:._-]{1,120}$/.test(renewalId)) throw Object.assign(new Error('Invalid renewalId'), { status: 400 });
+    const record = this.getRecord(id);
+    if (!record || record.metadata.scope !== scope) throw Object.assign(new Error('Confirmation not found'), { status: 404 });
+    if (record.status === 'superseded' && record.renewalId === renewalId) {
+      const next = this.records[record.replacementId];
+      return this.response(next);
+    }
+    if (record.status !== 'pending') throw Object.assign(new Error('Consumed, cancelled or superseded confirmation cannot be renewed'), { status: 409 });
+    if (record.metadata.validUntil != null && this.now() >= record.metadata.validUntil) throw Object.assign(new Error('REQUIRES_REDIAGNOSIS'), { status: 409 });
+    if (record.metadata.maxRenewals != null && record.generation >= record.metadata.maxRenewals) throw Object.assign(new Error('Renewal budget exhausted'), { status: 409 });
+    const confirmationId = crypto.randomUUID();
+    const next = { ...record, confirmationId, previousId: id, generation: record.generation + 1,
+      expiresAt: Math.min(this.now() + this.ttlMs, record.metadata.validUntil ?? Infinity), status: 'pending' };
+    this.commit({ ...this.records,
+      [id]: { ...record, status: 'superseded', renewalId, replacementId: confirmationId },
+      [confirmationId]: next });
+    this.settle(id, false);
+    return this.response(next);
+  }
+  response(record) {
+    return { confirmationId: record.confirmationId, previousId: record.previousId,
+      rootId: record.rootId, generation: record.generation, expiresAt: record.expiresAt,
+      message: record.metadata.message || 'Review the original action and approve again.' };
   }
 }

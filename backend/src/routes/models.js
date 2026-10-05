@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { supportedModels } from '../config.js';
 import { listInstalledModels, listLoadedModels, unloadAllModels } from '../services/ollamaService.js';
 import { requireAuth } from '../middleware/auth.js';
+import {memoryManager} from '../memory/runtime.js';
 
 export const modelsRouter = Router();
 
@@ -31,6 +32,7 @@ modelsRouter.post('/unload', requireAuth, async (_request, response) => {
 modelsRouter.get('/', async (_request, response) => {
   try {
     const installed = await listInstalledModels();
+    try {memoryManager.system.setSystemMemory('ollama.models',installed.map(m=>m.name).slice(0,30).join(', ').slice(0,1900)||'No installed models','SEMI_STATIC',{source:'ollama_local'});} catch { /* Cache failure does not alter model discovery. */ }
     response.json({
       connected: true,
       models: supportedModels.map((model) => ({

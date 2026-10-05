@@ -1,0 +1,162 @@
+{
+  "kind": "agent-checkpoint",
+  "recovery": "manual-resume-only",
+  "revision": 7,
+  "schemaVersion": 1,
+  "state": {
+    "attempts": [
+      {
+        "attemptId": "46046061-42ad-443a-a359-6ba4ce44894c:1",
+        "observation": {
+          "confirmationId": null,
+          "data": {
+            "free": 15986597888,
+            "total": 25625632768,
+            "usagePercent": 37.61,
+            "used": 9639034880
+          },
+          "error": null,
+          "idempotencyKey": "46046061-42ad-443a-a359-6ba4ce44894c:call:1",
+          "needsConfirmation": false,
+          "requestId": "46046061-42ad-443a-a359-6ba4ce44894c:request:1",
+          "stepIndex": 0,
+          "success": true,
+          "timestamp": "2026-09-19T14:55:44.175Z",
+          "toolCallId": "memory-call"
+        },
+        "request": {
+          "action": "memoryUsage",
+          "idempotencyKey": "46046061-42ad-443a-a359-6ba4ce44894c:call:1",
+          "index": 0,
+          "observation": null,
+          "params": {},
+          "requestId": "46046061-42ad-443a-a359-6ba4ce44894c:request:1",
+          "status": "pending",
+          "tool": "hardware",
+          "toolCallId": "memory-call"
+        }
+      }
+    ],
+    "createdAt": "2026-09-19T14:55:44.022Z",
+    "currentStepIndex": 0,
+    "errors": [],
+    "events": [
+      {
+        "from": "idle",
+        "sequence": 1,
+        "timestamp": "2026-09-19T14:55:44.025Z",
+        "to": "plan",
+        "type": "transition"
+      },
+      {
+        "from": "plan",
+        "sequence": 2,
+        "timestamp": "2026-09-19T14:55:44.155Z",
+        "to": "act",
+        "type": "transition"
+      },
+      {
+        "from": "act",
+        "sequence": 3,
+        "timestamp": "2026-09-19T14:55:44.170Z",
+        "to": "observe",
+        "type": "transition"
+      },
+      {
+        "from": "observe",
+        "sequence": 4,
+        "timestamp": "2026-09-19T14:55:44.175Z",
+        "to": "observe",
+        "type": "observation"
+      },
+      {
+        "from": "observe",
+        "sequence": 5,
+        "timestamp": "2026-09-19T14:55:44.178Z",
+        "to": "decide",
+        "type": "transition"
+      },
+      {
+        "from": "decide",
+        "sequence": 6,
+        "timestamp": "2026-09-19T14:55:44.182Z",
+        "to": "verify",
+        "type": "transition"
+      },
+      {
+        "from": "verify",
+        "sequence": 7,
+        "timestamp": "2026-09-19T14:55:44.185Z",
+        "to": "done",
+        "type": "transition"
+      }
+    ],
+    "maxRetries": 2,
+    "maxSteps": 10,
+    "mode": "orchestrator",
+    "observations": [
+      {
+        "confirmationId": null,
+        "data": {
+          "free": 15986597888,
+          "total": 25625632768,
+          "usagePercent": 37.61,
+          "used": 9639034880
+        },
+        "error": null,
+        "idempotencyKey": "46046061-42ad-443a-a359-6ba4ce44894c:call:1",
+        "needsConfirmation": false,
+        "requestId": "46046061-42ad-443a-a359-6ba4ce44894c:request:1",
+        "stepIndex": 0,
+        "success": true,
+        "timestamp": "2026-09-19T14:55:44.175Z",
+        "toolCallId": "memory-call"
+      }
+    ],
+    "ownerId": "f8ec4f8e-9aef-436c-982f-c3637ff9365a",
+    "phase": "done",
+    "plan": [
+      {
+        "action": "memoryUsage",
+        "idempotencyKey": "46046061-42ad-443a-a359-6ba4ce44894c:call:1",
+        "index": 0,
+        "observation": {
+          "confirmationId": null,
+          "data": {
+            "free": 15986597888,
+            "total": 25625632768,
+            "usagePercent": 37.61,
+            "used": 9639034880
+          },
+          "error": null,
+          "idempotencyKey": "46046061-42ad-443a-a359-6ba4ce44894c:call:1",
+          "needsConfirmation": false,
+          "requestId": "46046061-42ad-443a-a359-6ba4ce44894c:request:1",
+          "stepIndex": 0,
+          "success": true,
+          "timestamp": "2026-09-19T14:55:44.175Z",
+          "toolCallId": "memory-call"
+        },
+        "params": {},
+        "requestId": "46046061-42ad-443a-a359-6ba4ce44894c:request:1",
+        "status": "done",
+        "tool": "hardware",
+        "toolCallId": "memory-call"
+      }
+    ],
+    "retryCount": 0,
+    "revision": 7,
+    "schemaVersion": 1,
+    "sessionId": "46046061-42ad-443a-a359-6ba4ce44894c",
+    "stepCount": 1,
+    "task": "Read current memory usage",
+    "taskType": "unknown",
+    "updatedAt": "2026-09-19T14:55:44.185Z",
+    "verdict": {
+      "recommendation": "",
+      "scope": "capability_result",
+      "success": true,
+      "summary": "Supported capability results passed deterministic checks."
+    }
+  }
+}

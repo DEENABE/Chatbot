@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { db } from './db.js';
+import { memoryManager } from '../memory/runtime.js';
 
 export async function getConversations(userId) {
   if (!userId) return [];
@@ -69,6 +70,8 @@ export async function appendHistory(entry, userId) {
     INSERT INTO messages (id, chatId, role, content, sources, createdAt)
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(messageId, conversationId, role, content, sourcesStr, now);
+  try { memoryManager.observeConversation({userId,conversationId,messageId,role,content}); }
+  catch { console.warn('[memory] CONVERSATION_PROJECTION_FAILED'); }
 
   // If this was the first user message, update title
   if (role === 'user') {

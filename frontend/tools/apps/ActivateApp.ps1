@@ -35,6 +35,7 @@ foreach($w in [Windows.Automation.AutomationElement]::RootElement.FindAll([Windo
 $appProcessId=[PackagedApp]::Open($AppId)
 $startedAt=[DateTime]::UtcNow
 $fallback=$null
+$stable=[long]0
 $deadline=[DateTime]::UtcNow.AddSeconds(8)
 $window=$null
 $condition=[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ProcessIdProperty,[int]$appProcessId)
@@ -51,7 +52,12 @@ do {
     $isForeground=$w.Current.NativeWindowHandle -eq [PackagedApp]::Foreground()
     # A window that did not exist before is the one we opened; an existing one is accepted only when it came to the
     # front (single-instance apps reuse their window) or when no new window appears within two seconds.
-    if($isNew -or ($isForeground -and ([DateTime]::UtcNow-$startedAt).TotalMilliseconds -gt 800)){$window=$w;$p=Get-Process -Id $w.Current.ProcessId;break}
+    if($isNew -or ($isForeground -and ([DateTime]::UtcNow-$startedAt).TotalMilliseconds -gt 800)){
+     # Some apps create a short-lived window first. Only accept a handle seen on two consecutive polls.
+     $handle=[long]$w.Current.NativeWindowHandle
+     if($stable -eq $handle){$window=$w;$p=Get-Process -Id $w.Current.ProcessId;break}
+     $stable=$handle;continue
+    }
     if(!$fallback){$fallback=$w}
     continue
    }

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { getMemories, addMemory, deleteMemory, clearMemories } from '../services/memoryService.js';
 import { requireAuth } from '../middleware/auth.js';
+import { typedMemoryRouter } from '../memory/routes.js';
 import { requireString, requireEnum, requireUuidParam, scalar } from '../lib/validate.js';
 
 export const memoryRouter = Router();
@@ -8,6 +9,7 @@ export const memoryRouter = Router();
 const MEMORY_TYPES = ['session', 'pinned', 'project'];
 
 memoryRouter.use(requireAuth);
+memoryRouter.use(typedMemoryRouter);
 
 // Get memories. `type` is collapsed to a single value (Step 11: a repeated
 // ?type=a&type=b would otherwise reach the DB layer as an array, which

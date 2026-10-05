@@ -12,7 +12,7 @@ import { logger } from './utils/logger.js';
 import { registerWindowIPCHandlers } from './ipc/window.ipc.js';
 import { registerSystemIPCHandlers } from './ipc/system.ipc.js';
 import { registerCaptureIPCHandlers } from './ipc/capture.ipc.js';
-import { registerToolIPCHandlers } from './ipc/tool.ipc.js';
+import { registerToolIPCHandlers, startInternalToolServer } from './ipc/tool.ipc.js';
 import { registerAuthIPCHandlers } from './ipc/auth.ipc.js';
 
 // Without this, launching the app a second time (double-clicking the icon
@@ -54,6 +54,13 @@ if (!gotSingleInstanceLock) {
     registerToolIPCHandlers();
     registerAuthIPCHandlers();
 
+    // Start the internal loopback HTTP server so the backend Orchestrator can
+    // call ToolEngine actions directly without going through the renderer.
+    // The loopback URL and per-launch secret are passed only to the backend child.
+    const toolBridge = await startInternalToolServer(app).catch((err) => {
+      logger.warn('Internal tool server failed to start:', err.message);
+    });
+
     // Previously: probe the health endpoint and, if anything answered,
     // silently reuse it instead of spawning our own backend. That let an
     // orphaned backend from a killed/crashed previous launch keep serving
@@ -66,7 +73,7 @@ if (!gotSingleInstanceLock) {
     // above, there's no legitimate reason for anything else to be on this
     // port by the time we get here — reclaim it and always start fresh.
     BackendManager.ensurePortFree(BACKEND_PORT);
-    BackendManager.startBackend(app);
+    BackendManager.startBackend(app, toolBridge);
 
     try {
       await waitForBackend(HEALTH_CHECK_URL, 15000);

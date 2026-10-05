@@ -60,10 +60,14 @@ export class InputValidator {
    */
   static validate(schema, params) {
     const errors = [];
-    const safeParams = params != null && typeof params === 'object' ? params : {};
+    if (!params || typeof params !== 'object' || Array.isArray(params) || ![Object.prototype, null].includes(Object.getPrototypeOf(params))) return { valid: false, errors: [{ field: 'params', message: 'Parameters must be a plain object' }] };
+    const safeParams = params;
+    for (const field of Object.keys(safeParams)) {
+      if (!Object.hasOwn(schema, field) || ['__proto__', 'constructor', 'prototype'].includes(field)) errors.push({ field, message: 'Unknown parameter' });
+    }
 
     for (const [field, rules] of Object.entries(schema)) {
-      const value = safeParams[field];
+      const value = Object.hasOwn(safeParams, field) ? safeParams[field] : undefined;
 
       // --- Required check ---
       if (rules.required && (value === undefined || value === null)) {
@@ -152,7 +156,7 @@ export class InputValidator {
       case 'array':
         return InputValidator._validateArray(field, value, rules);
       case 'object':
-        return InputValidator._validateObject(field, value);
+        return InputValidator._validateObject(field, value, rules);
       default:
         return [{ field, message: `Unknown schema type: ${rules.type}` }];
     }
@@ -193,7 +197,7 @@ export class InputValidator {
   static _validateNumber(field, value, rules) {
     const errors = [];
 
-    if (typeof value !== 'number' || Number.isNaN(value)) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
       errors.push({ field, message: `${field} must be a number` });
       return errors;
     }
@@ -283,10 +287,11 @@ export class InputValidator {
   /**
    * @private
    */
-  static _validateObject(field, value) {
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+  static _validateObject(field, value, rules = {}) {
+    if (typeof value !== 'object' || value === null || Array.isArray(value) || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) {
       return [{ field, message: `${field} must be a plain object` }];
     }
+    if (rules.properties) return (InputValidator.validate(rules.properties, value).errors || []).map(e => ({ ...e, field: `${field}.${e.field}` }));
     return [];
   }
 }

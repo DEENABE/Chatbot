@@ -1,209 +1,34 @@
-import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Brain, Trash2, Plus, Search, HelpCircle, ShieldCheck, X, LoaderCircle } from 'lucide-react';
-import { useAppStore } from '../stores/useAppStore.js';
-import { presets } from '../animations/presets.js';
+import React, {useEffect,useState} from 'react';
+import {memories as api} from '../services/api.js';
 
 export default function MemoryPanel() {
-  const memories = useAppStore((state) => state.memories);
-  const isMemoriesLoading = useAppStore((state) => state.isMemoriesLoading);
-  const fetchMemories = useAppStore((state) => state.fetchMemories);
-  const addMemory = useAppStore((state) => state.addMemory);
-  const deleteMemory = useAppStore((state) => state.deleteMemory);
-  const clearMemories = useAppStore((state) => state.clearMemories);
-  const settings = useAppStore((state) => state.settings);
-
-  const [searchQuery, setSearchQuery] = useState('');
-  const [newMemoryText, setNewMemoryText] = useState('');
-  const [memoryType, setMemoryType] = useState('project'); // 'project' or 'general'
-  const [isAdding, setIsAdding] = useState(false);
-
-  const accent = settings.accentColor || '#3b82f6';
-
-  // Fetch memories on mount
-  useEffect(() => {
-    fetchMemories();
-  }, [fetchMemories]);
-
-  const handleAddMemory = async (e) => {
-    e.preventDefault();
-    if (!newMemoryText.trim()) return;
-    try {
-      await addMemory(newMemoryText.trim(), memoryType);
-      setNewMemoryText('');
-      setIsAdding(false);
-    } catch (err) {
-      console.error('Failed to add memory:', err);
-    }
-  };
-
-  const filteredMemories = memories.filter((m) =>
-    (m.content || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  return (
-    <div className="flex flex-col h-full bg-[#0c0c0e]/95 text-stone-200 select-none font-sans overflow-hidden">
-      {/* Title Header */}
-      <div className="flex items-center justify-between border-b border-white/5 p-4 shrink-0">
-        <div className="flex items-center gap-2">
-          <Brain size={16} style={{ color: accent }} />
-          <span className="text-xs font-bold uppercase tracking-wider text-stone-300">Chanakya SQLite Memory</span>
-        </div>
-        <div className="text-[10px] bg-white/5 text-stone-400 px-2 py-0.5 rounded-full border border-white/5">
-          {memories.length} rules
-        </div>
-      </div>
-
-      {/* Main Content Area */}
-      <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-4 min-h-0">
-        {/* Memory Explainer / Notice */}
-        <div className="bg-[#141416]/40 border border-white/5 rounded-2xl p-3.5 flex items-start gap-3">
-          <ShieldCheck size={16} className="text-emerald-500 shrink-0 mt-0.5" />
-          <div className="text-[11px] text-stone-400 leading-4">
-            <span className="font-bold text-stone-300 block mb-0.5">Offline-first Memory RAG</span>
-            Chanakya stores facts and custom instructions in SQLite. These are automatically searched during chat sessions to inject user-specific context.
-          </div>
-        </div>
-
-        {/* Action Controls */}
-        <div className="flex gap-2 shrink-0">
-          {/* Search bar */}
-          <div className="flex-1 relative flex items-center">
-            <Search size={12} className="absolute left-3 text-stone-500" />
-            <input
-              type="text"
-              placeholder="Search facts..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-[#141416]/80 border border-white/5 rounded-xl pl-8 pr-3 py-1.5 text-xs text-stone-300 outline-none focus:border-white/10"
-            />
-          </div>
-          <button
-            onClick={() => setIsAdding(!isAdding)}
-            className="flex items-center gap-1 rounded-xl px-3 py-1.5 text-xs font-bold text-black transition-all shadow-md shrink-0"
-            style={{ backgroundColor: accent }}
-          >
-            <Plus size={13} />
-            Teach Rule
-          </button>
-        </div>
-
-        {/* Add Memory Form Panel */}
-        <AnimatePresence>
-          {isAdding && (
-            <motion.form
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              onSubmit={handleAddMemory}
-              className="bg-[#141416]/60 border border-white/5 rounded-2xl p-3 flex flex-col gap-2.5 overflow-hidden shrink-0"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] uppercase font-bold text-stone-400">Add New Fact / Instruction</span>
-                <button
-                  type="button"
-                  onClick={() => setIsAdding(false)}
-                  className="text-stone-500 hover:text-stone-300"
-                >
-                  <X size={13} />
-                </button>
-              </div>
-
-              <textarea
-                placeholder="Example: 'I prefer building web apps in React and standard JavaScript' or 'My local document directory is E:/docs'"
-                value={newMemoryText}
-                onChange={(e) => setNewMemoryText(e.target.value)}
-                rows={3}
-                required
-                className="w-full bg-black/40 border border-white/5 rounded-xl p-2 text-xs text-stone-200 resize-none outline-none focus:border-white/10"
-              />
-
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-1.5">
-                  <select
-                    value={memoryType}
-                    onChange={(e) => setMemoryType(e.target.value)}
-                    className="bg-zinc-800 border border-white/10 rounded-lg text-[10px] text-stone-300 px-2 py-1 outline-none cursor-pointer"
-                  >
-                    <option value="project">Project Scope</option>
-                    <option value="general">General Scope</option>
-                  </select>
-                </div>
-
-                <button
-                  type="submit"
-                  className="rounded-lg px-3 py-1 text-[11px] font-bold text-black shadow-md hover:scale-105 transition-all"
-                  style={{ backgroundColor: accent }}
-                >
-                  Save Fact
-                </button>
-              </div>
-            </motion.form>
-          )}
-        </AnimatePresence>
-
-        {/* Memories List */}
-        <div className="flex-grow overflow-y-auto pr-1">
-          {isMemoriesLoading ? (
-            <div className="text-center py-10 flex items-center justify-center">
-              <LoaderCircle size={20} className="animate-spin text-stone-600" />
-            </div>
-          ) : filteredMemories.length === 0 ? (
-            <div className="text-center text-xs text-stone-500 py-10">No local rules found. Add one above.</div>
-          ) : (
-            <div className="flex flex-col gap-2.5 pb-2">
-              <AnimatePresence>
-                {filteredMemories.map((m) => (
-                  <motion.div
-                    key={m.id}
-                    className="group flex items-start justify-between gap-3 border border-white/5 bg-[#141416]/50 hover:bg-[#141416]/80 rounded-xl p-3 transition-colors"
-                    exit={{ scale: 0.9, opacity: 0 }}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-[8px] uppercase tracking-wider font-extrabold px-1.5 py-0.5 rounded bg-zinc-800 text-stone-400">
-                          {m.type || 'general'}
-                        </span>
-                        <span className="text-[9px] text-stone-600 font-mono">
-                          {m.createdAt ? new Date(m.createdAt).toLocaleDateString() : 'core'}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-stone-300 leading-4 select-text">
-                        {m.content}
-                      </p>
-                    </div>
-
-                    <button
-                      onClick={() => deleteMemory(m.id)}
-                      className="p-1 rounded hover:bg-red-500/10 text-stone-500 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 shrink-0 self-center"
-                      title="Forget this fact"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Sticky footer wipe action */}
-      {memories.length > 0 && (
-        <div className="border-t border-white/5 p-3 shrink-0 flex justify-end">
-          <button
-            onClick={() => {
-              if (confirm('Wipe all SQLite memories permanently?')) {
-                clearMemories();
-              }
-            }}
-            className="flex items-center gap-1 text-[10px] text-stone-500 hover:text-red-400 transition-colors font-bold uppercase tracking-wider"
-          >
-            <Trash2 size={10} />
-            Wipe Memory Store
-          </button>
-        </div>
-      )}
-    </div>
-  );
+ const [tab,setTab]=useState('long'),[rows,setRows]=useState([]),[error,setError]=useState(''),[busy,setBusy]=useState(false);
+ const [editing,setEditing]=useState(null),[key,setKey]=useState(''),[value,setValue]=useState(''),[category,setCategory]=useState('preference');
+ const [query,setQuery]=useState('');
+ const load=async()=>{const {data}=await (tab==='long'?api.longTerm():api.get());setRows(data.memories||[]);};
+ useEffect(()=>{let active=true;setRows([]);setEditing(null);setError('');setBusy(true);(tab==='long'?api.longTerm():api.get()).then(r=>{if(active)setRows(r.data.memories||[]);}).catch(()=>{if(active)setError('Unable to load memory.');}).finally(()=>{if(active)setBusy(false);});return ()=>{active=false;};},[tab]);
+ const act=async operation=>{setBusy(true);setError('');try{await operation();await load();}catch(e){setError(e.response?.data?.error||'Memory was not saved. Credentials, unsafe instructions and execution permissions are not accepted.');}finally{setBusy(false);}};
+ const save=event=>{event.preventDefault();act(async()=>{const response=editing?await api.updateLongTerm(editing,{value,category}):await api.saveLongTerm({key,value,category});if(!response.data.memory)throw new Error('Not saved');setEditing(null);setKey('');setValue('');});};
+ const input='w-full rounded-lg bg-zinc-900 border border-white/10 p-2 text-sm';
+ return <section className="h-full overflow-y-auto p-5 bg-[#0c0c0e] text-stone-200 space-y-4">
+  <h2 className="text-lg font-semibold">Memory</h2>
+  <p className="text-sm text-stone-400">Saved facts stay on this computer. Relevant context can help future conversations, but never grants permission to run tools or repairs.</p>
+  <div className="flex gap-3" role="tablist"><button role="tab" aria-selected={tab==='long'} onClick={()=>setTab('long')}>Long-term memory</button><button role="tab" aria-selected={tab==='legacy'} onClick={()=>setTab('legacy')}>Previous saved entries</button></div>
+  {error&&<p role="alert" className="text-red-400">{error}</p>}
+  {tab==='long'?<form onSubmit={save} className="space-y-2">
+   <label className="block">Fact name<input className={input} value={key} disabled={!!editing||busy} onChange={e=>setKey(e.target.value)} placeholder="preferred_language" maxLength={100} required pattern="[a-z][a-z0-9_.-]*" /></label>
+   <label className="block">Value<textarea className={input} value={value} onChange={e=>setValue(e.target.value)} placeholder="Tamil" maxLength={2000} required disabled={busy}/></label>
+   <label className="block">Category<select className={input} value={category} onChange={e=>setCategory(e.target.value)} disabled={busy}>{['preference','fact','project','workflow'].map(c=><option key={c}>{c}</option>)}</select></label>
+   <button className="rounded bg-blue-600 px-3 py-2" disabled={busy} type="submit">{editing?'Save changes':'Save memory'}</button>
+   {editing&&<button type="button" onClick={()=>{setEditing(null);setKey('');setValue('');}}>Cancel edit</button>}
+  </form>:<p className="text-sm text-stone-400">These older entries remain available for review. They are not automatically used as long-term memory. Save a fact explicitly in the Long-term memory tab to use it.</p>}
+  <label className="block">Search<input className={input} value={query} onChange={e=>setQuery(e.target.value)}/></label>
+  {busy&&<p role="status">Loading...</p>}
+  <ul className="space-y-3">{rows.filter(r=>`${r.key||''} ${r.value||r.content}`.toLowerCase().includes(query.toLowerCase())).map(r=><li key={r.id} className="rounded border border-white/10 p-3">
+   <strong>{r.key||r.type}</strong><p className="whitespace-pre-wrap break-words">{r.value||r.content}</p>
+   {tab==='long'&&<button disabled={busy} className="mr-4" onClick={()=>{setEditing(r.id);setKey(r.key);setValue(r.value);setCategory(r.category);}}>Edit</button>}
+   <button disabled={busy} className="text-red-400" onClick={()=>act(()=>tab==='long'?api.deleteLongTerm(r.id):api.delete(r.id))}>Delete</button>
+  </li>)}</ul>
+  {!busy&&!rows.length&&<p>No saved memories.</p>}
+ </section>;
 }

@@ -10,6 +10,14 @@ const integer = (min, max) => v => Number.isInteger(v) && v >= min && v <= max;
 
 const oneOf = values => v => values.includes(v);
 
+// Mirrors frontend/tools/apps/SystemSettingsCatalog.js (a test in the frontend suite fails if they drift).
+export const SETTING_IDS = ['dark-mode', 'brightness', 'volume', 'mute', 'mic-mute', 'transparency', 'file-extensions', 'hidden-files', 'notifications', 'clipboard-history', 'screen-timeout', 'sleep-timeout', 'mouse-speed', 'hibernate-timeout', 'disk-timeout', 'lock-screen-timeout', 'pointer-trails', 'keyboard-repeat-delay', 'menu-show-delay', 'mic-volume', 'pointer-precision', 'scroll-lines', 'double-click-speed', 'keyboard-repeat-rate', 'power-mode', 'airplane-mode', 'lid-close-action', 'power-button-action', 'mouse-primary-button', 'cursor-blink-rate', 'clock-24-hour', 'animations', 'drag-window-contents', 'snap-to-default-button', 'hide-pointer-while-typing', 'pointer-location-on-ctrl', 'usb-selective-suspend', 'dim-timeout', 'max-processor-state', 'battery-saver-threshold', 'wake-timers', 'cooling-policy', 'wifi', 'bluetooth'];
+export const SETTING_LIMITS = {brightness: [10, 100], volume: [0, 100], 'mic-volume': [0, 100], 'screen-timeout': [0, 720], 'sleep-timeout': [0, 720], 'mouse-speed': [1, 20], 'scroll-lines': [1, 100], 'double-click-speed': [200, 900], 'keyboard-repeat-rate': [0, 31], 'cursor-blink-rate': [200, 1200], 'hibernate-timeout': [0, 1440], 'disk-timeout': [0, 1440], 'lock-screen-timeout': [0, 60], 'pointer-trails': [0, 20], 'keyboard-repeat-delay': [0, 3], 'menu-show-delay': [0, 4000], 'dim-timeout': [0, 1440], 'max-processor-state': [20, 100], 'battery-saver-threshold': [0, 100]};
+export const SETTING_FORBIDDEN = {'pointer-trails': [1]};
+// Power-plan settings Windows keeps separately for plugged-in and on-battery; only these accept `source`.
+export const SETTING_PER_SOURCE = ['screen-timeout', 'sleep-timeout', 'hibernate-timeout', 'disk-timeout', 'lock-screen-timeout', 'lid-close-action', 'power-button-action', 'usb-selective-suspend', 'dim-timeout', 'max-processor-state', 'wake-timers', 'cooling-policy'];
+export const SETTING_OPTIONS = {'power-mode': ['best-power-efficiency', 'balanced', 'best-performance'], 'lid-close-action': ['do-nothing', 'sleep', 'hibernate', 'shut-down'], 'power-button-action': ['do-nothing', 'sleep', 'hibernate', 'shut-down'], 'mouse-primary-button': ['left', 'right'], 'wake-timers': ['disabled', 'enabled', 'important-only'], 'cooling-policy': ['passive', 'active']};
+
 export const capabilitySchemas = {
   'desktop.open':{query:string},'desktop.observe':{query:string},
   'desktop.act':{snapshotId:string,elementId:string,operation:oneOf(['invoke','expand','collapse','select','toggle','setValue','focus','scrollDown','scrollUp']),value:string},
@@ -30,6 +38,18 @@ export const capabilitySchemas = {
   'app.openWithTarget': {app:string,targetFromStep:string,target:v=>v && typeof v==='object' && ['FILE','FOLDER','URL','MEDIA','DOCUMENT','WORKSPACE'].includes(v.type) && Object.keys(v).every(k=>['type','path','value'].includes(k)) && string(v.path||v.value)},
 
   'app.openApp': {query: v => string(v) && v.length <= 200},
+
+  'systemSettings.list': {},
+
+  'systemSettings.get': {id: oneOf(SETTING_IDS)},
+
+  'systemSettings.set': {id: oneOf(SETTING_IDS), enabled: v => typeof v === 'boolean', level: integer(0,4000), option: v => typeof v === 'string' && Object.values(SETTING_OPTIONS).some(o => o.includes(v)), source: oneOf(['both', 'plugged-in', 'battery'])},
+
+  'systemSettings.setConfirmed': {id: oneOf(SETTING_IDS), enabled: v => typeof v === 'boolean', level: integer(0,4000), option: v => typeof v === 'string' && Object.values(SETTING_OPTIONS).some(o => o.includes(v)), source: oneOf(['both', 'plugged-in', 'battery'])},
+
+  'winget.search': {query: v => string(v) && v.length <= 100 && !/[\x00-\x1f"'`$;&|<>^%*?\[\]{}\\!]/.test(v)},
+
+  'winget.install': {packageId: v => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9._+-]{1,127}$/.test(v)},
 
   'hardware.systemInfo': {}, 'hardware.cpuUsage': {}, 'hardware.memoryUsage': {},
 
@@ -53,6 +73,16 @@ export function validateCapability(tool, action, params) {
   if(tool==='browser' && browserSchemas[action] && Object.entries(browserSchemas[action]).some(([key,type])=>type==='required'&&!params?.[key]))return 'Missing browser parameter.';
   if(tool==='windowsRepair') return validateRepair(action,params);
 
+  // Per-setting typing: numeric settings take an in-range level, on/off settings take enabled (a drift test ties this to the catalog).
+  if(tool==='systemSettings'&&(action==='set'||action==='setConfirmed')&&params&&typeof params==='object'&&SETTING_IDS.includes(params.id)){
+    if(params.source!==undefined&&!SETTING_PER_SOURCE.includes(params.id))return `Invalid parameter: ${params.id} has no separate plugged-in / on-battery value`;
+    const range=SETTING_LIMITS[params.id],options=SETTING_OPTIONS[params.id];
+    if(options)return typeof params.option==='string'&&options.includes(params.option)&&params.enabled===undefined&&params.level===undefined?null:`Invalid parameter: ${params.id} takes option (${options.join(', ')})`;
+    if(range&&SETTING_FORBIDDEN[params.id]?.includes(params.level))return `Invalid parameter: ${params.id} cannot be ${params.level}`;
+    if(range&&(!Number.isInteger(params.level)||params.level<range[0]||params.level>range[1]||params.enabled!==undefined||params.option!==undefined))return `Invalid parameter: level must be ${range[0]}-${range[1]} for ${params.id}`;
+    if(!range&&(typeof params.enabled!=='boolean'||params.level!==undefined||params.option!==undefined))return `Invalid parameter: ${params.id} takes enabled (true/false)`;
+  }
+
   if(tool==='app'&&action==='openWithTarget'&&(!params?.app || (!!params.target === !!params.targetFromStep)))return 'Supply app and exactly one target or targetFromStep.';
 
   const key = `${tool}.${action}`, schema = capabilitySchemas[key];
@@ -63,7 +93,7 @@ export function validateCapability(tool, action, params) {
 
   for (const [name,value] of Object.entries(params)) if (!Object.hasOwn(schema,name) || !schema[name](value)) return `Invalid parameter: ${name}`;
 
-  for (const name of key === 'uiAutomation.calculate' ? ['expression'] : key === 'uiAutomation.typeInNotepad' ? ['text'] : ['app.openApp','app.resolveTarget'].includes(key) ? ['query'] : key === 'process.startProcess' ? ['command'] : key === 'network.ping' ? ['host'] : []) if (!Object.hasOwn(params,name)) return `Missing required parameter: ${name}`;
+  for (const name of key === 'uiAutomation.calculate' ? ['expression'] : key === 'uiAutomation.typeInNotepad' ? ['text'] : ['app.openApp','app.resolveTarget','winget.search'].includes(key) ? ['query'] : key === 'winget.install' ? ['packageId'] : ['systemSettings.get','systemSettings.set','systemSettings.setConfirmed'].includes(key) ? ['id'] : key === 'process.startProcess' ? ['command'] : key === 'network.ping' ? ['host'] : []) if (!Object.hasOwn(params,name)) return `Missing required parameter: ${name}`;
 
   return null;
 
@@ -87,6 +117,20 @@ export const verificationPredicates = {
   'uiAutomation.calculate': (d,p)=>d.success===true && d.status==='UI_ACTION_COMPLETED' && d.expression===p.expression && string(d.displayText) && integer(1,Number.MAX_SAFE_INTEGER)(d.processId) && d.verification?.status==='verified' && d.verification.criterion==='calculator_display' && Number.isFinite(Date.parse(d.verification.observedAt)),
 
   'uiAutomation.typeInNotepad': d=>d.success===true && d.status==='UI_ACTION_COMPLETED' && integer(1,Number.MAX_SAFE_INTEGER)(d.processId) && d.verification?.status==='verified' && d.verification.criterion==='notepad_text' && Number.isFinite(Date.parse(d.verification.observedAt)),
+
+  'systemSettings.list': d=>d.success===true && Array.isArray(d.settings) && d.settings.length>0 && d.settings.every(s=>string(s.id)&&typeof s.available==='boolean'),
+
+  'systemSettings.get': (d,p)=>d.success===true && d.id===p.id && d.value!==undefined,
+
+  // A change counts only when the value read back from Windows matches; a bare "applied" is not evidence.
+  'systemSettings.set': (d,p)=>d.success===true && ['SETTING_APPLIED','SETTING_UNCHANGED'].includes(d.status) && d.id===p.id && d.verification?.status==='verified' && d.verification.criterion==='readback' && Number.isFinite(Date.parse(d.verification.observedAt)),
+
+  'systemSettings.setConfirmed': (d,p)=>d.success===true && ['SETTING_APPLIED','SETTING_UNCHANGED'].includes(d.status) && d.id===p.id && d.verification?.status==='verified' && d.verification.criterion==='readback' && Number.isFinite(Date.parse(d.verification.observedAt)),
+
+  'winget.search': (d,p)=>d.success===true && d.query===p.query && Array.isArray(d.results) && d.results.every(r=>string(r.id)&&string(r.name)),
+
+  // Only a package the package manager itself lists as installed counts; a bare exit code is not enough.
+  'winget.install': (d,p)=>d.success===true && ['INSTALLED','ALREADY_INSTALLED'].includes(d.status) && d.packageId===p.packageId && d.verification?.status==='verified' && d.verification.criterion==='winget_list' && Number.isFinite(Date.parse(d.verification.observedAt)),
 
   'app.resolveTarget': d=>d.success===true && d.status==='TARGET_RESOLVED' && !!d.target && string(d.target.path||d.target.value),
 

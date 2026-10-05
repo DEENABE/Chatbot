@@ -1,0 +1,4 @@
+{
+  "profiles": [],
+  "documentation": "Profiles are trusted deployment configuration, never model output. Each profile requires exact OS build, culture, operation, URI, automationId and controlType. Optional name adds an exact-match condition. Supported patterns: toggle, range, selection, value. Consult README for calibration; no untested selectors ship as universal defaults."
+}

@@ -80,7 +80,7 @@ export class AppService extends BaseToolService {
     let result=this.resolver.resolve(query,this.registry.apps,this.registry.aliases);
     let refreshed=this.registry.scannedAt!==scannedBefore;
     if(!result.success && refreshOnMiss && !refreshed) {
-      try {const refresh=await this.registry.refresh();if(refresh.retained)return refreshFailure();refreshed=true;}catch(error){checkCancellation();return refreshFailure();}
+      try {const refresh=await this.registry.refresh({query});if(refresh.retained)return refreshFailure();refreshed=true;}catch(error){checkCancellation();return refreshFailure();}
       result=this.resolver.resolve(query,this.registry.apps,this.registry.aliases);
     }
     if(result.success&&refreshed)return {...result,matchCode:result.code,code:'REGISTRY_REFRESHED_AND_MATCHED',registryRefreshed:true};

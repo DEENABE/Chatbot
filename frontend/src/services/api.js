@@ -65,7 +65,7 @@ api.interceptors.response.use(
   }
 );
 
-export async function streamChat(payload, { onToken, onSources, onDone, onToolCall, signal }) {
+export async function streamChat(payload, { onToken, onSources, onDone, onToolCall, onMemory, signal }) {
   const token = await getToken();
   const headers = { 'Content-Type': 'application/json' };
   if (token) {
@@ -114,6 +114,7 @@ export async function streamChat(payload, { onToken, onSources, onDone, onToolCa
       }
       if (event.type === 'token') onToken(event.text);
       if (event.type === 'sources') onSources(event.sources);
+      if (event.type === 'memory') onMemory?.(event.decision);
       if (event.type === 'tool_call' && onToolCall) onToolCall(event.toolCall);
       if (event.type === 'done') onDone(event.message, event.conversationId);
       if (event.type === 'error') throw new Error(event.error);
@@ -230,6 +231,10 @@ export const models = {
 
 // Memory API
 export const memories = {
+  longTerm: () => api.get('/memory/long-term'),
+  saveLongTerm: (value) => api.post('/memory/long-term',value),
+  updateLongTerm: (id,value) => api.patch(`/memory/long-term/${encodeURIComponent(id)}`,value),
+  deleteLongTerm: (id) => api.delete(`/memory/long-term/${encodeURIComponent(id)}`),
   get: (type) =>
     api.get(`/memory${type ? `?type=${type}` : ''}`),
   create: (content, type) =>
@@ -264,6 +269,10 @@ export const translate = {
 
 // Repair feedback / dataset API
 export const repair = {
+  inspect: id => api.get(`/orchestrate/checkpoints/${encodeURIComponent(id)}`),
+  resume: (id,body,signal) => api.post(`/orchestrate/checkpoints/${encodeURIComponent(id)}/resume`,body,{signal}),
+  renew: (id,body) => api.post(`/orchestrate/checkpoints/${encodeURIComponent(id)}/confirmation/renew`,body),
+  cancel: (id,requestId) => api.post(`/orchestrate/checkpoints/${encodeURIComponent(id)}/cancel`,{requestId}),
   feedback: (sessionId, worked, note = '') =>
     api.post('/repair/feedback', { sessionId, worked, note }),
   sessions: () => api.get('/repair/sessions'),

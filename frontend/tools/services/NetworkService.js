@@ -7,7 +7,7 @@
  * @module NetworkService
  */
 
-import { execFile } from 'child_process';
+import { execFile } from '../ExecutionContext.js';
 import dns from 'dns';
 import net from 'net';
 import http from 'http';
@@ -63,8 +63,8 @@ export class NetworkService extends BaseToolService {
         handler: this.ping.bind(this),
         schema: {
           host: { type: 'string', required: true },
-          count: { type: 'number', required: false, min: 1, max: 20 },
-          timeout: { type: 'number', required: false },
+          count: { type: 'number', required: false, integer: true, min: 1, max: 20 },
+          timeout: { type: 'number', required: false, integer: true, min: 1, max: 30000 },
         },
         destructive: false,
         description: 'Ping a host and report round-trip statistics',

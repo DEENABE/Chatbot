@@ -6,6 +6,8 @@ import {assertDesktopApplication} from '../apps/Phase2ApplicationPolicy.js';
 import {AppPermissionStore,levelAllows,levelSummary} from '../apps/AppPermissionStore.js';
 import {parseChord,chordRisk,validTypedText,TEXT_ROLES,KEY_GUIDE} from '../apps/InputPolicy.js';
 const failure=(code,message=code)=>Object.assign(new Error(message),{code});
+// Why a snapshot was judged stale is otherwise invisible; CHANAKYA_DEBUG_DESKTOP=1 logs it.
+const stale=(why,detail={})=>{if(process.env.CHANAKYA_DEBUG_DESKTOP==='1')console.warn('[desktop stale]',why,JSON.stringify(detail));return failure('STALE_SNAPSHOT');};
 export class GenericDesktopService extends BaseToolService {
   constructor(gate,appService,ui,{reader,knowledge=new AppKnowledgeRegistry(),permissions}={}){
     super('desktop',gate);this.appService=appService;this.ui=ui;this.permissions=permissions||appService?.permissions||new AppPermissionStore({});this.reader=reader||((input)=>ui.run(input,'DesktopUI.ps1'));
@@ -64,7 +66,11 @@ export class GenericDesktopService extends BaseToolService {
     if(open){launch=await this.appService.openApp({query});if(!launch.success)throw failure(launch.status,launch.message);}
     const app=resolved.app;
     // After the first read the exact window is pinned, so an app with several windows never becomes ambiguous mid-task.
-    const raw=await this.reader({action:'observe',executablePath:app.executablePath,appUserModelId:app.appUserModelId,processId:session?.processId||launch?.processId,windowId:open?(launch?.windowId||0):(session?.windowId||0),focus:open});
+    const read=windowId=>this.reader({action:'observe',executablePath:app.executablePath,appUserModelId:app.appUserModelId,processId:session?.processId||launch?.processId,windowId,focus:open});
+    let raw;
+    try{raw=await read(open?(launch?.windowId||0):(session?.windowId||0));}
+    // A window reported by the launcher may have been replaced already; fall back to choosing the app's foreground window.
+    catch(error){if(open&&launch?.windowId&&error?.code==='WINDOW_NOT_FOUND')raw=await read(0);else throw error;}
     if(!raw.success||!Number.isInteger(raw.processId)||!raw.windowId)throw failure('UI_INSPECTION_FAILED');
     if(session&&raw.processId!==session.processId)throw failure('TARGET_PROCESS_CHANGED');
     this.sessions.set(scope,{appId:app.id,processId:raw.processId,windowId:raw.windowId});
@@ -131,15 +137,16 @@ export class GenericDesktopService extends BaseToolService {
   }
   async verify(params){
     const r=this.record(params);
-    if(r.used||Date.now()-r.createdAt>SNAPSHOT_TTL_MS||!Array.isArray(params.evidenceIds)||!params.evidenceIds.length||params.evidenceIds.length>10)throw failure('STALE_SNAPSHOT');
+    if(r.used||Date.now()-r.createdAt>SNAPSHOT_TTL_MS||!Array.isArray(params.evidenceIds)||!params.evidenceIds.length||params.evidenceIds.length>10)throw stale('record',{used:r.used,ageMs:Date.now()-r.createdAt,ids:params.evidenceIds?.length});
     const evidence=params.evidenceIds.map(id=>r.snapshot.elements.find(e=>e.elementId===id));
     if(evidence.some(e=>!e))throw failure('UNGROUNDED_ACTION');
     const raw=await this.reader({action:'observe',executablePath:r.app.executablePath,appUserModelId:r.app.appUserModelId,windowId:r.raw.windowId,processId:r.raw.processId,focus:false});
-    if(!raw.success||raw.processId!==r.raw.processId||raw.windowId!==r.raw.windowId)throw failure('STALE_SNAPSHOT');
+    if(!raw.success||raw.processId!==r.raw.processId||raw.windowId!==r.raw.windowId)throw stale('window',{ok:raw.success,pid:[raw.processId,r.raw.processId],win:[raw.windowId,r.raw.windowId],code:raw.code});
     // Background clocks and status bars may change. Every cited control must
     // still have the same native identity and complete observed-state signature.
     for(const item of evidence){const binding=r.bindings.get(item.elementId);
-      if(!(raw.controls||[]).some(c=>c.locator===binding.locator&&c.provider===binding.provider&&c.signature===binding.signature))throw failure('STALE_SNAPSHOT');
+      const now=(raw.controls||[]).find(c=>c.locator===binding.locator&&c.provider===binding.provider);
+      if(!now||now.signature!==binding.signature)throw stale('control',{label:item.label,role:item.role,found:!!now,changed:now?Object.keys(binding).filter(k=>!['uia','acc','child','signature'].includes(k)&&JSON.stringify(binding[k])!==JSON.stringify(now[k])):[]});
     }
     return {success:true,status:'UI_GOAL_EVIDENCE_VERIFIED',snapshotId:params.snapshotId,goal:params.goal,evidence:evidence.map(e=>({elementId:e.elementId,label:e.label,selected:e.selected,role:e.role})),
       verification:{status:'verified',criterion:'fresh_goal_evidence',observedAt:new Date().toISOString()},message:'The requested application outcome was checked against the current visible UI.'};

@@ -35,8 +35,13 @@ function withRetry(label, fn, attempts = 6, delayMs = 500) {
 }
 
 exports.default = async function afterPack(context) {
+  require('./validate-repair-package.cjs').validateRepairPackage(path.join(context.appOutDir,'resources','app'));
   const src = path.join(__dirname, '..', 'backend-runtime');
   const dest = path.join(context.appOutDir, 'resources', 'backend');
+  const relative=path.relative(path.resolve(context.appOutDir),path.resolve(dest));
+  if(!relative || relative.startsWith('..') || path.isAbsolute(relative))throw new Error('Unsafe backend output path');
+  const cleanPackage=process.env.CHANAKYA_CLEAN_PACKAGE==='1';
+  if(cleanPackage && fs.existsSync(path.join(src,'storage')))throw new Error('Refusing to package user storage');
 
   withRetry('delete old backend', () => fs.rmSync(dest, { recursive: true, force: true }));
   withRetry('copy fresh backend', () => fs.cpSync(src, dest, { recursive: true }));
@@ -47,7 +52,7 @@ exports.default = async function afterPack(context) {
   // never overwrites anything real, only restores it.
   const stashRoot = path.join(__dirname, '..', '.storage-preserve-tmp');
   const preservedStorageStash = path.join(stashRoot, 'storage');
-  if (fs.existsSync(preservedStorageStash)) {
+  if (!cleanPackage && fs.existsSync(preservedStorageStash)) {
     withRetry('restore preserved storage', () => fs.cpSync(preservedStorageStash, path.join(dest, 'storage'), { recursive: true }));
     try {
       withRetry('clean up stash', () => fs.rmSync(stashRoot, { recursive: true, force: true }));

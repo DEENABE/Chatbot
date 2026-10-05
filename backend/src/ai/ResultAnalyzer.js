@@ -43,7 +43,7 @@ export async function analyzeOutcome({ goal, steps = [], agentAnswer = '', model
       signal
     });
     return {
-      resolved: Boolean(result.resolved),
+      resolved: result.resolved === true,
       summary: result.summary || agentAnswer || 'Diagnosis complete.',
       recommendation: result.recommendation || ''
     };

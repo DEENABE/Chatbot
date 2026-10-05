@@ -57,9 +57,15 @@ export function ensurePortFree(port) {
   }
 }
 
-export function startBackend(app) {
+export function startBackend(app, toolBridge) {
   const serverPath = getBackendPath();
   const env = { ...process.env };
+  delete env.TOOL_ENGINE_INTERNAL_URL;
+  delete env.TOOL_ENGINE_SESSION_SECRET;
+  if (toolBridge) {
+    env.TOOL_ENGINE_INTERNAL_URL = toolBridge.url;
+    env.TOOL_ENGINE_SESSION_SECRET = toolBridge.secret;
+  }
 
   if (isPacked) {
     env.NODE_ENV = 'production';

@@ -50,9 +50,12 @@ contextBridge.exposeInMainWorld('sessionAPI', {
 
 // Tool Engine IPC Bridge
 contextBridge.exposeInMainWorld('toolEngine', {
-  execute: (tool, action, params) => ipcRenderer.invoke('tool:execute', { tool, action, params }),
-  confirm: (confirmationId) => ipcRenderer.invoke('tool:execute', { tool: '_system', action: 'confirm', params: { confirmationId } }),
+  renewConfirmation: (confirmationId, renewalId) => ipcRenderer.invoke('tool:renew-confirmation', { confirmationId, renewalId }),
+  execute: (tool, action, params, toolCallId, identity = {}) => ipcRenderer.invoke('tool:execute', { tool, action, params, toolCallId, requestId: identity.requestId, idempotencyKey: identity.idempotencyKey }),
+  confirm: (confirmationId, identity = {}) => ipcRenderer.invoke('tool:approve', { params: { confirmationId }, toolCallId: identity.toolCallId, requestId: identity.requestId, idempotencyKey: identity.idempotencyKey }),
+  cancelRequest: requestId => ipcRenderer.invoke('tool:cancel-request', requestId),
   cancel: (confirmationId) => ipcRenderer.invoke('tool:execute', { tool: '_system', action: 'cancel', params: { confirmationId } }),
+  getDesktopStatus: () => ipcRenderer.invoke('tool:desktop-status'),
   getTools: () => ipcRenderer.invoke('tool:execute', { tool: '_system', action: 'getTools', params: {} }),
   onConfirmationRequired: (callback) => {
     const subscription = (_event, data) => callback(data);
