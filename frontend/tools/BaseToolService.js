@@ -131,7 +131,9 @@ export class BaseToolService {
     const validation = InputValidator.validate(config.schema || {}, params);
     if (!validation.valid) {
       const error = new Error('Confirmed parameters no longer satisfy the schema.');
-      error.code = 'VALIDATION_ERROR'; error.errors = validation.errors; throw error;
+      error.code = 'VALIDATION_ERROR';
+      error.errors = validation.errors;
+      throw error;
     }
     const data = await config.handler(params);
     return { success: true, data };
@@ -147,7 +149,7 @@ export class BaseToolService {
       action,
       description: config.description,
       destructive: !!config.destructive,
-      schema: config.schema || {}
+      schema: config.schema || {},
     }));
   }
 
@@ -182,13 +184,21 @@ export class BaseToolService {
       action,
       params,
       scope: executionContext.getStore()?.scope,
+      ...(typeof this.getActionRisk === 'function'
+        ? { risk: this.getActionRisk(action, params) }
+        : {}),
     };
 
-    const specific = typeof this.getConfirmationMessage === 'function'
-      ? this.getConfirmationMessage(action, params)
-      : null;
-    const message = specific || `Action '${action}' on '${this.name}' requires confirmation: ${description}`;
-    const { confirmationId, expiresAt } = this.confirmationGate.request({ ...metadata, message });
+    const specific =
+      typeof this.getConfirmationMessage === 'function'
+        ? this.getConfirmationMessage(action, params)
+        : null;
+    const message =
+      specific || `Action '${action}' on '${this.name}' requires confirmation: ${description}`;
+    const { confirmationId, expiresAt } = this.confirmationGate.request({
+      ...metadata,
+      message,
+    });
 
     return {
       success: true,

@@ -1,13 +1,5 @@
 import React, { useRef, useState } from 'react';
-import {
-  Languages,
-  ArrowLeftRight,
-  Copy,
-  Check,
-  Eraser,
-  AlertCircle,
-  Loader2
-} from 'lucide-react';
+import { Languages, ArrowLeftRight, Copy, Check, Eraser, AlertCircle, Loader2 } from 'lucide-react';
 import { useAppStore } from '../stores/useAppStore.js';
 import { translate as translateApi } from '../services/api.js';
 
@@ -20,7 +12,7 @@ const LANGUAGES = [
   { code: 'tam_Taml', label: 'Tamil', native: 'தமிழ்' },
   { code: 'kan_Knda', label: 'Kannada', native: 'ಕನ್ನಡ' },
   { code: 'tel_Telu', label: 'Telugu', native: 'తెలుగు' },
-  { code: 'mal_Mlym', label: 'Malayalam', native: 'മലയാളം' }
+  { code: 'mal_Mlym', label: 'Malayalam', native: 'മലയാളം' },
 ];
 
 // Only ever valid as a *source* — there is no such thing as an
@@ -61,13 +53,21 @@ export default function TranslatorPanel() {
     setError('');
     setCopied(false);
     try {
-      const response = await translateApi.text({ text, sourceLanguage, targetLanguage });
+      const response = await translateApi.text({
+        text,
+        sourceLanguage,
+        targetLanguage,
+      });
       setTranslation(response.data?.translation ?? '');
     } catch (err) {
       // The backend only ever returns deliberately-authored safe messages in
       // `error`; anything else (network down, etc.) gets a generic line.
       const serverMessage = err?.response?.data?.error;
-      setError(typeof serverMessage === 'string' ? serverMessage : 'Translation failed. Check that the local server is running and try again.');
+      setError(
+        typeof serverMessage === 'string'
+          ? serverMessage
+          : 'Translation failed. Check that the local server is running and try again.',
+      );
       setTranslation('');
     } finally {
       inFlightRef.current = false;
@@ -127,20 +127,27 @@ export default function TranslatorPanel() {
             Translator
           </h2>
           <p className="text-[10px] text-stone-500 mt-0.5">
-            Translate between English, Hindi, Tamil, Kannada, Telugu, and Malayalam — processed entirely on this machine.
+            Translate between English, Hindi, Tamil, Kannada, Telugu, and Malayalam — processed
+            entirely on this machine.
           </p>
         </div>
 
         {/* Language selectors + swap */}
         <div className="flex items-end gap-2">
           <div className="flex-1">
-            <label htmlFor="translator-source" className="block text-[10px] font-bold uppercase tracking-wider text-stone-600 mb-1">
+            <label
+              htmlFor="translator-source"
+              className="block text-[10px] font-bold uppercase tracking-wider text-stone-600 mb-1"
+            >
               From
             </label>
             <select
               id="translator-source"
               value={sourceLanguage}
-              onChange={(event) => { setSourceLanguage(event.target.value); setError(''); }}
+              onChange={(event) => {
+                setSourceLanguage(event.target.value);
+                setError('');
+              }}
               disabled={isLoading}
               className={selectClasses}
               style={{ '--tw-ring-color': accent }}
@@ -158,7 +165,11 @@ export default function TranslatorPanel() {
             onClick={handleSwap}
             disabled={isLoading || sourceLanguage === 'auto'}
             aria-label="Swap source and target languages"
-            title={sourceLanguage === 'auto' ? 'Pick a specific source language to swap' : 'Swap languages'}
+            title={
+              sourceLanguage === 'auto'
+                ? 'Pick a specific source language to swap'
+                : 'Swap languages'
+            }
             className="shrink-0 rounded-xl border border-white/10 bg-white/[0.02] p-2.5 text-stone-400 transition-all hover:bg-white/[0.06] hover:text-white focus-visible:ring-2 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
             style={{ '--tw-ring-color': accent }}
           >
@@ -166,13 +177,19 @@ export default function TranslatorPanel() {
           </button>
 
           <div className="flex-1">
-            <label htmlFor="translator-target" className="block text-[10px] font-bold uppercase tracking-wider text-stone-600 mb-1">
+            <label
+              htmlFor="translator-target"
+              className="block text-[10px] font-bold uppercase tracking-wider text-stone-600 mb-1"
+            >
               To
             </label>
             <select
               id="translator-target"
               value={targetLanguage}
-              onChange={(event) => { setTargetLanguage(event.target.value); setError(''); }}
+              onChange={(event) => {
+                setTargetLanguage(event.target.value);
+                setError('');
+              }}
               disabled={isLoading}
               className={selectClasses}
               style={{ '--tw-ring-color': accent }}
@@ -188,13 +205,19 @@ export default function TranslatorPanel() {
 
         {/* Input */}
         <div className="space-y-1">
-          <label htmlFor="translator-input" className="block text-[10px] font-bold uppercase tracking-wider text-stone-600">
+          <label
+            htmlFor="translator-input"
+            className="block text-[10px] font-bold uppercase tracking-wider text-stone-600"
+          >
             Text to translate
           </label>
           <textarea
             id="translator-input"
             value={text}
-            onChange={(event) => { setText(event.target.value); setError(''); }}
+            onChange={(event) => {
+              setText(event.target.value);
+              setError('');
+            }}
             onKeyDown={handleKeyDown}
             rows={5}
             maxLength={MAX_CHARS + 1000}
@@ -229,7 +252,10 @@ export default function TranslatorPanel() {
                 disabled={!canTranslate}
                 aria-busy={isLoading}
                 className="flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[10px] font-bold text-white transition-all focus-visible:ring-2 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                style={{ background: `linear-gradient(135deg, ${accent}, ${accent}b0)`, '--tw-ring-color': accent }}
+                style={{
+                  background: `linear-gradient(135deg, ${accent}, ${accent}b0)`,
+                  '--tw-ring-color': accent,
+                }}
               >
                 {isLoading ? (
                   <>
@@ -261,7 +287,9 @@ export default function TranslatorPanel() {
         {/* Output */}
         <div className="flex-1 flex flex-col min-h-0 space-y-1">
           <div className="flex items-center justify-between">
-            <h3 className="text-[10px] font-bold uppercase tracking-wider text-stone-600">Translation</h3>
+            <h3 className="text-[10px] font-bold uppercase tracking-wider text-stone-600">
+              Translation
+            </h3>
             {translation && (
               <button
                 type="button"
@@ -290,7 +318,9 @@ export default function TranslatorPanel() {
           <div aria-live="polite" className="flex-1 min-h-[120px]">
             {isLoading ? (
               <div className="h-full min-h-[120px] rounded-2xl border border-white/[0.06] shimmer-bg flex items-center justify-center">
-                <span className="text-[10px] uppercase tracking-widest text-stone-500">Translating…</span>
+                <span className="text-[10px] uppercase tracking-widest text-stone-500">
+                  Translating…
+                </span>
               </div>
             ) : translation ? (
               <div className="h-full rounded-2xl border border-white/[0.08] bg-white/[0.02] p-3 text-xs leading-relaxed text-stone-200 whitespace-pre-wrap select-text overflow-y-auto">

@@ -30,34 +30,52 @@ export function runPowerShell(command, { timeout = DEFAULT_TIMEOUT, signal } = {
     let stderr = '';
     let timedOut = false;
     let settled = false;
+    let killTimer;
 
     const proc = spawn(
       'powershell.exe',
       ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', command],
-      { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], signal }
+      { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], signal },
     );
 
     const timer = setTimeout(() => {
       timedOut = true;
-      try { proc.kill('SIGTERM'); } catch { /* already gone */ }
-      setTimeout(() => {
-        try { proc.kill('SIGKILL'); } catch { /* already gone */ }
+      try {
+        proc.kill('SIGTERM');
+      } catch {
+        /* already gone */
+      }
+      killTimer = setTimeout(() => {
+        try {
+          proc.kill('SIGKILL');
+        } catch {
+          /* already gone */
+        }
       }, 2000);
+      killTimer.unref?.();
     }, timeout);
 
-    proc.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
-    proc.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+    proc.stdout.on('data', (chunk) => {
+      stdout = (stdout + chunk.toString()).slice(0, MAX_OUTPUT_CHARS + 1);
+    });
+    proc.stderr.on('data', (chunk) => {
+      stderr = (stderr + chunk.toString()).slice(0, MAX_OUTPUT_CHARS + 1);
+    });
 
     proc.on('error', (err) => {
       clearTimeout(timer);
+      clearTimeout(killTimer);
       if (!settled) {
         settled = true;
-        reject(new Error(`Failed to spawn PowerShell: ${err.message}`));
+        reject(
+          signal?.aborted ? signal.reason : new Error(`Failed to spawn PowerShell: ${err.message}`),
+        );
       }
     });
 
     proc.on('close', (exitCode) => {
       clearTimeout(timer);
+      clearTimeout(killTimer);
       if (!settled) {
         settled = true;
         resolve({

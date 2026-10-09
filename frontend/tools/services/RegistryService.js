@@ -12,9 +12,15 @@ import { BaseToolService } from '../BaseToolService.js';
 
 /** Valid short-form and long-form registry hive prefixes. */
 const VALID_HIVES = [
-  'HKLM', 'HKCU', 'HKCR', 'HKU', 'HKCC',
-  'HKEY_LOCAL_MACHINE', 'HKEY_CURRENT_USER',
-  'HKEY_CLASSES_ROOT', 'HKEY_USERS',
+  'HKLM',
+  'HKCU',
+  'HKCR',
+  'HKU',
+  'HKCC',
+  'HKEY_LOCAL_MACHINE',
+  'HKEY_CURRENT_USER',
+  'HKEY_CLASSES_ROOT',
+  'HKEY_USERS',
   'HKEY_CURRENT_CONFIG',
 ];
 
@@ -42,7 +48,9 @@ const PROTECTED_KEY_PATTERNS = [
 
 function assertNotProtectedKey(keyPath) {
   if (PROTECTED_KEY_PATTERNS.some((pattern) => pattern.test(keyPath))) {
-    const error = new Error(`Refusing to modify '${keyPath}' — this key controls startup persistence, security software, or authentication and is protected regardless of confirmation.`);
+    const error = new Error(
+      `Refusing to modify '${keyPath}' — this key controls startup persistence, security software, or authentication and is protected regardless of confirmation.`,
+    );
     error.code = 'PROTECTED_REGISTRY_KEY';
     throw error;
   }
@@ -59,9 +67,7 @@ function validateKeyPath(keyPath) {
     throw new Error('keyPath must be a non-empty string');
   }
   const upper = keyPath.toUpperCase();
-  const valid = VALID_HIVES.some(
-    (h) => upper.startsWith(h + '\\') || upper === h,
-  );
+  const valid = VALID_HIVES.some((h) => upper.startsWith(h + '\\') || upper === h);
   if (!valid) {
     throw new Error(
       `Invalid registry hive. keyPath must start with one of: ${VALID_HIVES.join(', ')}`,
@@ -240,13 +246,7 @@ export class RegistryService extends BaseToolService {
     sanitize(valueName, 'valueName');
     sanitize(data, 'data');
 
-    await this._runReg([
-      'add', keyPath,
-      '/v', valueName,
-      '/t', valueType,
-      '/d', data,
-      '/f',
-    ]);
+    await this._runReg(['add', keyPath, '/v', valueName, '/t', valueType, '/d', data, '/f']);
 
     return { keyPath, valueName, valueType, data, success: true };
   }
@@ -312,7 +312,10 @@ export class RegistryService extends BaseToolService {
    * @returns {{ keyPath: string, valueName: string, type: string, data: string }}
    */
   _parseSingleValue(stdout, keyPath, valueName) {
-    const lines = stdout.split('\n').map((l) => l.trim()).filter(Boolean);
+    const lines = stdout
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
 
     for (const line of lines) {
       // Typical format: "    ValueName    REG_SZ    Data"
@@ -327,9 +330,7 @@ export class RegistryService extends BaseToolService {
       }
     }
 
-    throw new Error(
-      `Could not parse registry value "${valueName}" at "${keyPath}"`,
-    );
+    throw new Error(`Could not parse registry value "${valueName}" at "${keyPath}"`);
   }
 
   /**
@@ -375,4 +376,3 @@ export class RegistryService extends BaseToolService {
 }
 
 export default RegistryService;
-

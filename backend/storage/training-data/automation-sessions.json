@@ -13,9 +13,7 @@
       "time": "22:00",
       "frequency": "daily"
     },
-    "missingParameters": [
-      "retention"
-    ],
+    "missingParameters": ["retention"],
     "clarification": "How many days of backups should I keep before old ones are removed? I will not delete anything until you tell me.",
     "riskLevel": "medium",
     "requiresConfirmation": true,
@@ -151,9 +149,7 @@
       "remote": "\\\\fileserver\\projects",
       "frequency": "hourly"
     },
-    "missingParameters": [
-      "direction"
-    ],
+    "missingParameters": ["direction"],
     "clarification": "Should this be one-way (local overwrites the share), one-way (share overwrites local), or two-way? One-way mirroring can delete files on the losing side, so I need this before proceeding.",
     "riskLevel": "high",
     "requiresConfirmation": true,
@@ -355,10 +351,7 @@
     "domain": "automation",
     "subdomain": "Task Scheduler",
     "parameters": {
-      "targets": [
-        "%TEMP%",
-        "C:\\Windows\\Temp"
-      ],
+      "targets": ["%TEMP%", "C:\\Windows\\Temp"],
       "frequency": "weekly Sunday",
       "time": "23:00"
     },
@@ -647,9 +640,7 @@
     "parameters": {
       "scope": "all"
     },
-    "missingParameters": [
-      "confirmedScope"
-    ],
+    "missingParameters": ["confirmedScope"],
     "clarification": "I will not delete all scheduled tasks - most belong to Windows itself and removing them breaks updates, maintenance and defragmentation. I can show only the non-Microsoft tasks and you can pick which to remove. Shall I list those?",
     "riskLevel": "high",
     "requiresConfirmation": true,
@@ -700,10 +691,7 @@
     "domain": "automation",
     "subdomain": "startup",
     "parameters": {
-      "applications": [
-        "Spotify",
-        "Teams"
-      ]
+      "applications": ["Spotify", "Teams"]
     },
     "missingParameters": [],
     "clarification": null,
@@ -900,9 +888,7 @@
     "domain": "automation",
     "subdomain": "Event Viewer",
     "parameters": {
-      "logs": [
-        "System"
-      ],
+      "logs": ["System"],
       "level": "Error",
       "frequency": "daily",
       "output": "C:\\EventArchive"
@@ -1394,10 +1380,7 @@
       "target": "C:\\Users\\jdoe\\Downloads",
       "frequency": "weekly"
     },
-    "missingParameters": [
-      "ageThreshold",
-      "confirmedScope"
-    ],
+    "missingParameters": ["ageThreshold", "confirmedScope"],
     "clarification": "Downloads usually contains files people still need, and this would delete them permanently on a schedule with no warning. Before I build anything: should it delete everything, or only files older than a set number of days? And should items go to the Recycle Bin so they are recoverable?",
     "riskLevel": "high",
     "requiresConfirmation": true,
@@ -1866,9 +1849,7 @@
       "source": "D:\\Projects\\2023-client-work",
       "destination": "D:\\Archive"
     },
-    "missingParameters": [
-      "deleteAfter"
-    ],
+    "missingParameters": ["deleteAfter"],
     "clarification": "Once the archive is created and verified, should I delete the original folder or leave it in place? I will not remove anything unless you say so.",
     "riskLevel": "medium",
     "requiresConfirmation": true,
@@ -2066,11 +2047,7 @@
     "subdomain": "backup/restore",
     "parameters": {
       "trigger": "before feature update",
-      "targets": [
-        "Documents",
-        "Desktop",
-        "Pictures"
-      ]
+      "targets": ["Documents", "Desktop", "Pictures"]
     },
     "missingParameters": [],
     "clarification": null,
@@ -2961,9 +2938,7 @@
       "source": "C:\\Users\\jdoe\\Pictures",
       "destination": "E:\\Photos"
     },
-    "missingParameters": [
-      "verifyBeforeDelete"
-    ],
+    "missingParameters": ["verifyBeforeDelete"],
     "clarification": "After copying, should I delete the originals from the laptop automatically, or leave them until you have checked the external drive? I recommend checking first.",
     "riskLevel": "high",
     "requiresConfirmation": true,
@@ -3369,9 +3344,7 @@
       "source": "C:",
       "destination": "D:\\SSD-Copy"
     },
-    "missingParameters": [
-      "scope"
-    ],
+    "missingParameters": ["scope"],
     "clarification": "Do you want everything on C: including Windows and installed programs, or just your personal files? A full copy is 380 GB and cannot be used to restore a bootable system - for that you need an image, not a file copy. Your personal files are 62 GB and are what actually matters.",
     "riskLevel": "medium",
     "requiresConfirmation": true,
@@ -3431,10 +3404,7 @@
     "subdomain": "backup/restore",
     "parameters": {
       "application": "NoteMaster",
-      "dataLocations": [
-        "AppData\\Roaming",
-        "Documents"
-      ]
+      "dataLocations": ["AppData\\Roaming", "Documents"]
     },
     "missingParameters": [],
     "clarification": null,
@@ -3512,15 +3482,8 @@
     "domain": "automation",
     "subdomain": "backup/restore",
     "parameters": {
-      "browsers": [
-        "Chrome",
-        "Edge"
-      ],
-      "items": [
-        "bookmarks",
-        "passwords",
-        "profiles"
-      ]
+      "browsers": ["Chrome", "Edge"],
+      "items": ["bookmarks", "passwords", "profiles"]
     },
     "missingParameters": [],
     "clarification": null,
@@ -3736,13 +3699,7 @@
     "domain": "automation",
     "subdomain": "backup/restore",
     "parameters": {
-      "targets": [
-        "SSH keys",
-        "Git config",
-        "VS Code settings",
-        "PowerShell profile",
-        "hosts file"
-      ]
+      "targets": ["SSH keys", "Git config", "VS Code settings", "PowerShell profile", "hosts file"]
     },
     "missingParameters": [],
     "clarification": null,
@@ -4190,11 +4147,7 @@
     "domain": "automation",
     "subdomain": "cleanup",
     "parameters": {
-      "browsers": [
-        "Chrome",
-        "Edge",
-        "Firefox"
-      ]
+      "browsers": ["Chrome", "Edge", "Firefox"]
     },
     "missingParameters": [],
     "clarification": null,
@@ -4273,11 +4226,7 @@
     "subdomain": "cleanup",
     "parameters": {
       "age": "90 days",
-      "scope": [
-        "C:\\ProgramData",
-        "C:\\Windows\\Logs",
-        "user AppData"
-      ]
+      "scope": ["C:\\ProgramData", "C:\\Windows\\Logs", "user AppData"]
     },
     "missingParameters": [],
     "clarification": null,
@@ -4474,10 +4423,7 @@
       "folder": "D:\\Photos",
       "target": "reduce size"
     },
-    "missingParameters": [
-      "quality",
-      "keepOriginals"
-    ],
+    "missingParameters": ["quality", "keepOriginals"],
     "clarification": "Two things I need before touching anything. First, how much quality loss is acceptable - 85% JPEG quality is visually near-identical and typically halves the size, 70% is noticeably softer on close inspection. Second, should I keep the originals? Re-compressing is irreversible, so I would default to keeping them unless you say otherwise.",
     "riskLevel": "high",
     "requiresConfirmation": true,
@@ -4582,13 +4528,7 @@
     "domain": "automation",
     "subdomain": "office automation",
     "parameters": {
-      "checks": [
-        "VPN",
-        "mapped drives",
-        "printer",
-        "disk space",
-        "updates"
-      ],
+      "checks": ["VPN", "mapped drives", "printer", "disk space", "updates"],
       "time": "08:30"
     },
     "missingParameters": [],
@@ -4735,11 +4675,7 @@
     "domain": "automation",
     "subdomain": "office automation",
     "parameters": {
-      "targets": [
-        "Office temp",
-        "print spool leftovers",
-        "app temp"
-      ],
+      "targets": ["Office temp", "print spool leftovers", "app temp"],
       "age": "7 days"
     },
     "missingParameters": [],
@@ -4822,9 +4758,7 @@
       "destination": "\\\\nas\\backups\\projects",
       "time": "18:30"
     },
-    "missingParameters": [
-      "retention"
-    ],
+    "missingParameters": ["retention"],
     "clarification": "How many days of versions should I keep? Unlike a mirror, keeping several days means you can go back if a file was corrupted rather than deleted - which matters more for active work.",
     "riskLevel": "medium",
     "requiresConfirmation": true,
@@ -4883,17 +4817,12 @@
     "domain": "automation",
     "subdomain": "disk cleanup",
     "parameters": {
-      "paths": [
-        "%TEMP%",
-        "C:\\Windows\\Temp"
-      ],
+      "paths": ["%TEMP%", "C:\\Windows\\Temp"],
       "frequency": "weekly",
       "day": "Sunday",
       "time": "03:00"
     },
-    "missingParameters": [
-      "ageThreshold"
-    ],
+    "missingParameters": ["ageThreshold"],
     "clarification": "How old should a file be before I delete it? I would suggest 7 days so anything still in use is left alone - I will not delete anything until you confirm.",
     "riskLevel": "medium",
     "requiresConfirmation": true,
@@ -5069,9 +4998,7 @@
     "parameters": {
       "username": "tsmith"
     },
-    "missingParameters": [
-      "profileDisposition"
-    ],
+    "missingParameters": ["profileDisposition"],
     "clarification": "Do you want the profile data at C:\\Users\\tsmith kept or removed? It is 24 GB. I have not deleted anything yet - deleting the account and deleting the profile are two separate actions and I would rather you choose explicitly.",
     "riskLevel": "high",
     "requiresConfirmation": true,
@@ -5190,9 +5117,7 @@
       "threshold": "20GB",
       "action": "notify"
     },
-    "missingParameters": [
-      "checkFrequency"
-    ],
+    "missingParameters": ["checkFrequency"],
     "clarification": "How often should I check? Hourly is usually enough for a warning like this and costs nothing measurable.",
     "riskLevel": "low",
     "requiresConfirmation": true,
@@ -5356,9 +5281,7 @@
       "path": "%USERPROFILE%\\Downloads",
       "groupBy": "extension"
     },
-    "missingParameters": [
-      "existingFileHandling"
-    ],
+    "missingParameters": ["existingFileHandling"],
     "clarification": "If a file with the same name already exists in the destination subfolder, should I skip it, rename the new one, or overwrite? I will not move anything until you say - overwriting is the only one of those that loses data.",
     "riskLevel": "medium",
     "requiresConfirmation": true,
@@ -5410,10 +5333,7 @@
     "domain": "automation",
     "subdomain": "startup",
     "parameters": {
-      "apps": [
-        "Teams",
-        "Spotify"
-      ]
+      "apps": ["Teams", "Spotify"]
     },
     "missingParameters": [],
     "clarification": null,
@@ -5583,9 +5503,7 @@
       "prefix": 24,
       "gateway": "10.4.2.1"
     },
-    "missingParameters": [
-      "dnsServers"
-    ],
+    "missingParameters": ["dnsServers"],
     "clarification": "Which DNS servers should I set? If I apply a static address without them, name resolution will stop working the moment the DHCP-supplied ones expire - so I would rather have them before making the change.",
     "riskLevel": "medium",
     "requiresConfirmation": true,
@@ -5648,9 +5566,7 @@
       "drive": "C",
       "method": "TPM"
     },
-    "missingParameters": [
-      "recoveryKeyDestination"
-    ],
+    "missingParameters": ["recoveryKeyDestination"],
     "clarification": "Where should the recovery key be saved? Options are your Microsoft account, a file on a separate drive, or printed. I will not start encryption until this is decided - without the key, a firmware update or hardware fault can lock you out of the drive permanently.",
     "riskLevel": "high",
     "requiresConfirmation": true,
@@ -5713,9 +5629,7 @@
       "time": "02:00",
       "reboot": "if required"
     },
-    "missingParameters": [
-      "rebootConsent"
-    ],
+    "missingParameters": ["rebootConsent"],
     "clarification": "Some of these updates need a restart. Should the machine restart automatically at 2am, or wait until you approve it in the morning? Anything unsaved will be lost if it restarts on its own.",
     "riskLevel": "medium",
     "requiresConfirmation": true,
@@ -5773,9 +5687,7 @@
     "parameters": {
       "drive": "C"
     },
-    "missingParameters": [
-      "approvalPerCategory"
-    ],
+    "missingParameters": ["approvalPerCategory"],
     "clarification": "I can see 62 GB of reclaimable space across four categories. Rather than deleting all of it, let me show you what each is and you can pick - two of these are recoverable and two are not.",
     "riskLevel": "medium",
     "requiresConfirmation": true,
@@ -5833,9 +5745,7 @@
     "parameters": {
       "scope": "unused"
     },
-    "missingParameters": [
-      "printerList"
-    ],
+    "missingParameters": ["printerList"],
     "clarification": "I found 7 printers. I can tell which have not been used recently but not which are genuinely gone - tell me which to remove, or say 'the offline ones' and I will list those for you to confirm first.",
     "riskLevel": "medium",
     "requiresConfirmation": true,
@@ -6091,9 +6001,7 @@
       "file": "D:\\Finance\\budget.xlsx",
       "date": "2026-08-11"
     },
-    "missingParameters": [
-      "overwriteOrCopy"
-    ],
+    "missingParameters": ["overwriteOrCopy"],
     "clarification": "Should I restore over the current file, or save the old version alongside it? Restoring over it replaces what is there now - if today's edits matter, a copy is safer.",
     "riskLevel": "medium",
     "requiresConfirmation": true,
@@ -6315,10 +6223,7 @@
       "service": "Spooler",
       "action": "email"
     },
-    "missingParameters": [
-      "smtpDetails",
-      "recipient"
-    ],
+    "missingParameters": ["smtpDetails", "recipient"],
     "clarification": "I have no email tool - my capabilities are local to this PC, so I cannot send mail. I can instead show a Windows notification, write to the event log, or create a file marker that your monitoring system picks up. Which would work for you?",
     "riskLevel": "low",
     "requiresConfirmation": true,
@@ -6363,10 +6268,7 @@
     "parameters": {
       "scope": "all drives"
     },
-    "missingParameters": [
-      "matchCriteria",
-      "reviewBeforeDelete"
-    ],
+    "missingParameters": ["matchCriteria", "reviewBeforeDelete"],
     "clarification": "Two things I need before touching anything. First, should files match by content hash or just by name and size? Hashing is accurate but slow. Second, do you want to review the list before deletion, or should I pick which copy to keep? I would strongly suggest reviewing.",
     "riskLevel": "high",
     "requiresConfirmation": true,
@@ -6411,9 +6313,7 @@
     "parameters": {
       "scope": "all missing versions"
     },
-    "missingParameters": [
-      "downloadApproval"
-    ],
+    "missingParameters": ["downloadApproval"],
     "clarification": "I have no download capability - I cannot fetch installers from the internet. I can tell you exactly which versions are missing and give you the official Microsoft links, then install from files you have downloaded. Which would you like?",
     "riskLevel": "medium",
     "requiresConfirmation": true,
@@ -6506,9 +6406,7 @@
       "frequency": "daily",
       "time": "01:00"
     },
-    "missingParameters": [
-      "interpreterChoice"
-    ],
+    "missingParameters": ["interpreterChoice"],
     "clarification": "There is a virtual environment at C:\\Scripts\\.venv and a global Python 3.12. The script imports pandas, which is only in the venv - so I would use the venv interpreter. Confirm that is right before I create the task.",
     "riskLevel": "low",
     "requiresConfirmation": true,
@@ -6691,9 +6589,7 @@
     "parameters": {
       "goal": "reduce thermal throttling"
     },
-    "missingParameters": [
-      "approach"
-    ],
+    "missingParameters": ["approach"],
     "clarification": "I can cap the maximum processor state, which lowers heat at the cost of peak speed. I cannot control fans or undervolt - those are firmware and vendor-utility functions. Do you want the CPU cap, or would you rather look at the cooling first?",
     "riskLevel": "medium",
     "requiresConfirmation": true,
@@ -6804,9 +6700,7 @@
       "day": "Monday",
       "time": "08:00"
     },
-    "missingParameters": [
-      "reportMethod"
-    ],
+    "missingParameters": ["reportMethod"],
     "clarification": "How should I report the result? A Windows notification, an entry in the event log for your monitoring to pick up, or a text file in a folder you check? I have no email capability.",
     "riskLevel": "low",
     "requiresConfirmation": true,
@@ -7091,10 +6985,7 @@
     "domain": "automation",
     "subdomain": "printing",
     "parameters": {
-      "servers": [
-        "printsrv01.corp.local",
-        "printsrv02.corp.local"
-      ],
+      "servers": ["printsrv01.corp.local", "printsrv02.corp.local"],
       "scope": "machine"
     },
     "missingParameters": [],
@@ -7217,9 +7108,7 @@
     "parameters": {
       "path": "C:\\Program Files\\AcctSuite"
     },
-    "missingParameters": [
-      "scopeChoice"
-    ],
+    "missingParameters": ["scopeChoice"],
     "clarification": "There are two different exclusions here and they do different things. An antivirus exclusion stops file scanning; an ASR exclusion stops the behavioural rules. The block event is 1121, so this is ASR - and not every ASR rule honours antivirus exclusions. Do you want the ASR exclusion for the specific rule, a global ASR exclusion, or both?",
     "riskLevel": "high",
     "requiresConfirmation": true,
@@ -7342,10 +7231,7 @@
       "ageDays": 365,
       "action": "move"
     },
-    "missingParameters": [
-      "destination",
-      "deleteAfter"
-    ],
+    "missingParameters": ["destination", "deleteAfter"],
     "clarification": "Two things before I touch anything. Where should the archive go - a subfolder, another drive, or a network share? And should the originals be moved or copied? Moving frees space now; copying is safer if the archive destination is not itself backed up.",
     "riskLevel": "medium",
     "requiresConfirmation": true,
@@ -7520,9 +7406,7 @@
       "source": "%USERPROFILE%",
       "destination": "E:\\Backup"
     },
-    "missingParameters": [
-      "includeAppData"
-    ],
+    "missingParameters": ["includeAppData"],
     "clarification": "Your profile is 284 GB, and 61 GB of that is AppData - browser caches, application state, temporary files. Do you want AppData included? Excluding it makes the copy much faster and smaller, but some applications keep real settings and data in there.",
     "riskLevel": "medium",
     "requiresConfirmation": true,
@@ -7584,9 +7468,7 @@
     "parameters": {
       "username": "asmith"
     },
-    "missingParameters": [
-      "deliveryMethod"
-    ],
+    "missingParameters": ["deliveryMethod"],
     "clarification": "How should the new password reach them? I can set one you specify, or generate one - but I have no way to deliver it securely, so you will need to hand it over in person or through whatever channel you normally use. I would rather ask than put a password somewhere it should not be.",
     "riskLevel": "high",
     "requiresConfirmation": true,
@@ -7826,9 +7708,7 @@
       "drive": "C",
       "threshold": "15%"
     },
-    "missingParameters": [
-      "notificationMethod"
-    ],
+    "missingParameters": ["notificationMethod"],
     "clarification": "I have no email or messaging capability, so I cannot notify you outside this machine. Options are a Windows toast notification, a custom event in the Application log for your monitoring to pick up, or a file written to a folder you watch. Which fits how you actually work?",
     "riskLevel": "low",
     "requiresConfirmation": true,
@@ -7891,9 +7771,7 @@
       "path": "D:\\Reports\\Q3",
       "output": "D:\\Reports\\Q3-combined.pdf"
     },
-    "missingParameters": [
-      "order"
-    ],
+    "missingParameters": ["order"],
     "clarification": "There are 14 PDFs. What order should they go in - filename, date modified, or a specific sequence you give me? Filename order puts 'Section10' before 'Section2', which is rarely what people mean.",
     "riskLevel": "low",
     "requiresConfirmation": true,

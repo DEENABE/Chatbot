@@ -29,13 +29,13 @@ export function createSession(userId) {
   const expiresAt = now + SESSION_TTL_MS;
 
   db.prepare(
-    'INSERT INTO sessions (id, userId, tokenHash, createdAt, expiresAt) VALUES (@id, @userId, @tokenHash, @createdAt, @expiresAt)'
+    'INSERT INTO sessions (id, userId, tokenHash, createdAt, expiresAt) VALUES (@id, @userId, @tokenHash, @createdAt, @expiresAt)',
   ).run({
     id: crypto.randomUUID(),
     userId,
     tokenHash: hashToken(token),
     createdAt: now,
-    expiresAt
+    expiresAt,
   });
 
   return { token, expiresAt };
@@ -58,7 +58,10 @@ export function verifySession(token) {
   // untouched/stolen token still expires on schedule rather than living
   // forever — the exact permanence problem AUTH-01 flagged.
   if (row.expiresAt - now < REFRESH_THRESHOLD_MS) {
-    db.prepare('UPDATE sessions SET expiresAt = ? WHERE tokenHash = ?').run(now + SESSION_TTL_MS, tokenHash);
+    db.prepare('UPDATE sessions SET expiresAt = ? WHERE tokenHash = ?').run(
+      now + SESSION_TTL_MS,
+      tokenHash,
+    );
   }
 
   return { userId: row.userId };

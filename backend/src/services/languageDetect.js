@@ -17,7 +17,7 @@ const SCRIPT_RANGES = [
   ['tel_Telu', /[ఀ-౿]/],
   ['kan_Knda', /[ಀ-೿]/],
   ['mal_Mlym', /[ഀ-ൿ]/],
-  [ENGLISH, /[A-Za-z]/]
+  [ENGLISH, /[A-Za-z]/],
 ];
 
 // Below this fraction of "winning script's letters / all recognized

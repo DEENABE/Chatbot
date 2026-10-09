@@ -266,10 +266,7 @@
     "goal": "Microphone is connected but no apps can hear my voice",
     "domain": "audio",
     "subdomain": "registry",
-    "plan": [
-      "Check microphone privacy settings",
-      "Enable app access to microphone"
-    ],
+    "plan": ["Check microphone privacy settings", "Enable app access to microphone"],
     "steps": [
       {
         "command": "Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\microphone' -Name Value",
@@ -303,10 +300,7 @@
     "goal": "USB flash drive plugged in but not showing in File Explorer",
     "domain": "storage",
     "subdomain": "USB",
-    "plan": [
-      "Check disk status in DiskPart/CIM",
-      "Assign a drive letter to the unassigned volume"
-    ],
+    "plan": ["Check disk status in DiskPart/CIM", "Assign a drive letter to the unassigned volume"],
     "steps": [
       {
         "command": "Get-Volume | Where-Object DriveLetter -eq $null",
@@ -377,10 +371,7 @@
     "goal": "Task Scheduler error prevents automated backup task from running",
     "domain": "system",
     "subdomain": "services",
-    "plan": [
-      "Query task status",
-      "Start the Task Scheduler service if stopped"
-    ],
+    "plan": ["Query task status", "Start the Task Scheduler service if stopped"],
     "steps": [
       {
         "command": "Get-Service Schedule | Select-Object Status, StartType",
@@ -414,10 +405,7 @@
     "goal": "Cannot connect to local development server on port 8080",
     "domain": "network",
     "subdomain": "firewall",
-    "plan": [
-      "Check local listening ports",
-      "Open port 8080 in Windows Firewall"
-    ],
+    "plan": ["Check local listening ports", "Open port 8080 in Windows Firewall"],
     "steps": [
       {
         "command": "Get-NetTCPConnection -LocalPort 8080 -ErrorAction SilentlyContinue",
@@ -45254,11 +45242,7 @@
     "goal": "Explorer keeps restarting every few minutes on its own",
     "domain": "windows",
     "subdomain": "File Explorer",
-    "plan": [
-      "Check what faults each time",
-      "Identify the module named",
-      "Address the component"
-    ],
+    "plan": ["Check what faults each time", "Identify the module named", "Address the component"],
     "steps": [
       {
         "command": "Get-WinEvent -FilterHashtable @{LogName='Application'; Id=1000} -MaxEvents 3 | Select-Object -ExpandProperty Message",
@@ -47952,11 +47936,7 @@
     "goal": "npm install fails with EPERM operation not permitted on Windows",
     "domain": "node",
     "subdomain": "Node.js",
-    "plan": [
-      "Check what holds the files",
-      "Look at the path length",
-      "Identify the blocker"
-    ],
+    "plan": ["Check what holds the files", "Look at the path length", "Identify the blocker"],
     "steps": [
       {
         "command": "Get-Process node -EA SilentlyContinue | Select-Object Id, StartTime",
@@ -49202,11 +49182,7 @@
     "goal": "Blue screen CRITICAL_PROCESS_DIED with no recent changes",
     "domain": "bluescreen",
     "subdomain": "stop codes",
-    "plan": [
-      "Identify which process died",
-      "Check system file integrity",
-      "Determine the cause"
-    ],
+    "plan": ["Identify which process died", "Check system file integrity", "Determine the cause"],
     "steps": [
       {
         "command": "Get-WinEvent -FilterHashtable @{LogName='System'; Id=1001} -MaxEvents 2 | Select-Object -ExpandProperty Message",
@@ -49800,11 +49776,7 @@
     "goal": "Windows was activated and now says the product key is invalid",
     "domain": "activation",
     "subdomain": "activation",
-    "plan": [
-      "Check the current licence state",
-      "Look at what changed",
-      "Identify the reason"
-    ],
+    "plan": ["Check the current licence state", "Look at what changed", "Identify the reason"],
     "steps": [
       {
         "command": "Get-CimInstance SoftwareLicensingProduct -Filter \"PartialProductKey IS NOT NULL\" | Select-Object Name, LicenseStatus, GracePeriodRemaining",
@@ -50214,11 +50186,7 @@
     "goal": "Node reports a different version than the one I installed",
     "domain": "node",
     "subdomain": "Node.js",
-    "plan": [
-      "Check which node binaries exist",
-      "Look at PATH order",
-      "Identify which one wins"
-    ],
+    "plan": ["Check which node binaries exist", "Look at PATH order", "Identify which one wins"],
     "steps": [
       {
         "command": "Get-Command node -All | Select-Object Source",
@@ -52603,11 +52571,7 @@
     "goal": "We set RestrictDriverInstallationToAdministrators to 0 but users still cannot install printers",
     "domain": "printer",
     "subdomain": "Point and Print",
-    "plan": [
-      "Check both policy layers",
-      "Look at which one is winning",
-      "Explain the interaction"
-    ],
+    "plan": ["Check both policy layers", "Look at which one is winning", "Explain the interaction"],
     "steps": [
       {
         "command": "Get-ItemProperty 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows NT\\Printers\\PointAndPrint' -Name RestrictDriverInstallationToAdministrators, Restricted, NoWarningNoElevationOnInstall -EA SilentlyContinue",
@@ -54477,11 +54441,7 @@
     "goal": "How do I actually find which driver caused a blue screen",
     "domain": "bluescreen",
     "subdomain": "stop code analysis",
-    "plan": [
-      "Confirm a dump was written",
-      "Check the dump is usable",
-      "Analyse it"
-    ],
+    "plan": ["Confirm a dump was written", "Check the dump is usable", "Analyse it"],
     "source": "microsoft-docs",
     "steps": [
       {
@@ -55707,11 +55667,7 @@
     "goal": "How do I work out what an unfamiliar 0x8007xxxx error actually means",
     "domain": "errorcode",
     "subdomain": "error interpretation",
-    "plan": [
-      "Decode the structure of the code",
-      "Convert the useful part",
-      "Look it up"
-    ],
+    "plan": ["Decode the structure of the code", "Convert the useful part", "Look it up"],
     "source": "microsoft-docs",
     "steps": [
       {
@@ -56506,11 +56462,7 @@
     "goal": "Update fails with 0x80070422",
     "domain": "errorcode",
     "subdomain": "Windows Update",
-    "plan": [
-      "Check the update service state",
-      "Look for what disabled it",
-      "Restore the service"
-    ],
+    "plan": ["Check the update service state", "Look for what disabled it", "Restore the service"],
     "source": "microsoft-docs",
     "steps": [
       {
@@ -56553,11 +56505,7 @@
     "goal": "Update fails with 0x8024A10A",
     "domain": "errorcode",
     "subdomain": "Windows Update",
-    "plan": [
-      "Interpret the code",
-      "Check when the failure occurs",
-      "Explain the timing"
-    ],
+    "plan": ["Interpret the code", "Check when the failure occurs", "Explain the timing"],
     "source": "microsoft-docs",
     "steps": [
       {
@@ -56647,11 +56595,7 @@
     "goal": "Update fails with 0x80240020",
     "domain": "errorcode",
     "subdomain": "Windows Update",
-    "plan": [
-      "Interpret the code",
-      "Check the session state",
-      "Explain the requirement"
-    ],
+    "plan": ["Interpret the code", "Check the session state", "Explain the requirement"],
     "source": "microsoft-docs",
     "steps": [
       {
@@ -56694,11 +56638,7 @@
     "goal": "Update fails with 0x80242014",
     "domain": "errorcode",
     "subdomain": "Windows Update",
-    "plan": [
-      "Check whether a restart is outstanding",
-      "Confirm the pending state",
-      "Complete it"
-    ],
+    "plan": ["Check whether a restart is outstanding", "Confirm the pending state", "Complete it"],
     "source": "microsoft-docs",
     "steps": [
       {
@@ -56741,11 +56681,7 @@
     "goal": "Update scan fails with 0x80244022",
     "domain": "errorcode",
     "subdomain": "Windows Update",
-    "plan": [
-      "Interpret the HTTP status",
-      "Check the configured source",
-      "Test reachability"
-    ],
+    "plan": ["Interpret the HTTP status", "Check the configured source", "Test reachability"],
     "source": "microsoft-docs",
     "steps": [
       {
@@ -57070,11 +57006,7 @@
     "goal": "Update fails with 0x800f0825 - the package cannot be uninstalled",
     "domain": "errorcode",
     "subdomain": "Windows Update",
-    "plan": [
-      "Interpret the code",
-      "Check the component store state",
-      "Repair before retrying"
-    ],
+    "plan": ["Interpret the code", "Check the component store state", "Repair before retrying"],
     "source": "microsoft-docs",
     "steps": [
       {
@@ -57305,11 +57237,7 @@
     "goal": "Upgrade fails with 0xC1900101 - 0x3000D",
     "domain": "errorcode",
     "subdomain": "Windows setup",
-    "plan": [
-      "Identify the phase and operation",
-      "Check the display driver",
-      "Address it"
-    ],
+    "plan": ["Identify the phase and operation", "Check the display driver", "Address it"],
     "source": "microsoft-docs",
     "steps": [
       {
@@ -57634,11 +57562,7 @@
     "goal": "Upgrade fails with 0xC1800118",
     "domain": "errorcode",
     "subdomain": "Windows setup",
-    "plan": [
-      "Interpret the code",
-      "Check the update source",
-      "Identify the WSUS content problem"
-    ],
+    "plan": ["Interpret the code", "Check the update source", "Identify the WSUS content problem"],
     "source": "microsoft-docs",
     "steps": [
       {
@@ -57822,11 +57746,7 @@
     "goal": "How do I find out why an upgrade rolled back without reading the logs by hand",
     "domain": "errorcode",
     "subdomain": "Windows setup",
-    "plan": [
-      "Run the diagnostic tool",
-      "Check what it reports",
-      "Act on the named component"
-    ],
+    "plan": ["Run the diagnostic tool", "Check what it reports", "Act on the named component"],
     "source": "microsoft-docs",
     "steps": [
       {
@@ -57963,11 +57883,7 @@
     "goal": "Upgrade fails with 0x80246007 or 0x80190001",
     "domain": "errorcode",
     "subdomain": "Windows setup",
-    "plan": [
-      "Interpret both codes",
-      "Check the download path",
-      "Choose an alternative method"
-    ],
+    "plan": ["Interpret both codes", "Check the download path", "Choose an alternative method"],
     "source": "microsoft-docs",
     "steps": [
       {
@@ -58664,11 +58580,7 @@
     "goal": "Should I look at the source or the destination when a connection fails",
     "domain": "network",
     "subdomain": "TCP/IP",
-    "plan": [
-      "Understand what each side can tell you",
-      "Take both captures",
-      "Compare them"
-    ],
+    "plan": ["Understand what each side can tell you", "Take both captures", "Compare them"],
     "source": "microsoft-docs",
     "steps": [
       {
@@ -59134,11 +59046,7 @@
     "goal": "CPU spikes only for a few seconds at a time and I keep missing it",
     "domain": "performance",
     "subdomain": "high CPU",
-    "plan": [
-      "Set up capture that is already running",
-      "Bound the file size",
-      "Catch the window"
-    ],
+    "plan": ["Set up capture that is already running", "Bound the file size", "Catch the window"],
     "source": "microsoft-docs",
     "steps": [
       {
@@ -60568,11 +60476,7 @@
     "goal": "Converting a DHCP lease to a reservation removed the client's DNS records",
     "domain": "dns",
     "subdomain": "DNS server",
-    "plan": [
-      "Confirm what happened",
-      "Check whether it is expected",
-      "Decide whether to act"
-    ],
+    "plan": ["Confirm what happened", "Check whether it is expected", "Decide whether to act"],
     "source": "microsoft-docs",
     "steps": [
       {
@@ -61905,11 +61809,7 @@
     "goal": "Settings opens then closes immediately but Control Panel works",
     "domain": "settings",
     "subdomain": "Windows Settings",
-    "plan": [
-      "Look for the crash record",
-      "Repair or reset the Settings app",
-      "Re-register it"
-    ],
+    "plan": ["Look for the crash record", "Repair or reset the Settings app", "Re-register it"],
     "steps": [
       {
         "command": "Get-WinEvent -FilterHashtable @{LogName='Application';Id=1000} -MaxEvents 1 | Select-Object -ExpandProperty Message",

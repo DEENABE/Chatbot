@@ -2,8 +2,8 @@ import path from 'node:path';
 import { app } from './app.js';
 import { config } from './config.js';
 import { getDb } from './db/connection.js';
-import { reclaimStalePort, recordOwnPid, clearOwnPid } from './lib/portGuard.js';
-import { ensureIndicTransRunning } from './services/indictransProcess.js';
+import { recordOwnPid, clearOwnPid } from './lib/portGuard.js';
+import { ensureIndicTransRunning, stopOwnedIndicTrans } from './services/indictransProcess.js';
 import { logStartupDiagnostics, logDatabaseInitialized } from './lib/storageDiagnostics.js';
 
 // Printed before the database is even opened, so the path is on record
@@ -23,12 +23,16 @@ const port = config.port;
 // on the port. See lib/portGuard.js for why this is safe to do
 // unconditionally (it never touches a process it can't verify is ours).
 const pidFilePath = path.join(path.dirname(config.dbFile), '.dev-server.pid');
-reclaimStalePort(pidFilePath, port);
 
 const server = app.listen(port, config.host, () => {
   recordOwnPid(pidFilePath);
-  console.log(`Local AI assistant server running on http://${config.host}:${port}`);
-  console.log(`Default model: ${config.defaultModel} | Embed model: ${config.embeddingModel}`);
+  const actualPort = server.address().port;
+  if (process.env.CHANAKYA_DESKTOP_CHILD === '1')
+    console.log(`CHANAKYA_BACKEND_READY ${JSON.stringify({ port: actualPort, pid: process.pid })}`);
+  console.log(`Local AI assistant server running on http://${config.host}:${actualPort}`);
+  console.log(
+    `Chat models: discovered from local Ollama at run time${config.defaultModel ? ` (DEFAULT_MODEL=${config.defaultModel})` : ''} | Embed model: ${config.embeddingModel}`,
+  );
   checkIndicTransHealth();
 });
 
@@ -43,15 +47,9 @@ server.on('error', (error) => {
   if (error.code === 'EADDRINUSE') {
     console.error(
       `\nPort ${port} is already in use on ${config.host} — this backend cannot start.\n\n` +
-        `reclaimStalePort() already checked for (and would have closed) a leftover instance of\n` +
-        `this app's own dev server, so this is something else — most likely the packaged\n` +
-        `Chanakya AI.exe is currently running, or another program is using this port.\n` +
-        `To find out what and stop it on Windows:\n\n` +
-        `  netstat -ano | findstr :${port}          (last column is the PID)\n` +
-        `  tasklist /FI "PID eq <that PID>"          (confirm what it actually is first)\n` +
-        `  taskkill /PID <that PID> /F\n\n` +
-        `Then re-run "npm run dev". If you intentionally want a different port, set PORT in\n` +
-        `backend/.env (or the PORT environment variable) and restart.\n`
+        `No existing process was terminated. Select a different port or close your own previous server.\n` +
+        `If you intentionally want a different port, set PORT in\n` +
+        `backend/.env (or the PORT environment variable) and restart.\n`,
     );
     process.exitCode = 1;
     return;
@@ -83,6 +81,7 @@ function shutdown(signal) {
   }, 5000);
   forceExitTimer.unref();
   clearOwnPid(pidFilePath);
+  stopOwnedIndicTrans();
   server.close((err) => {
     clearTimeout(forceExitTimer);
     if (err) {
@@ -94,6 +93,10 @@ function shutdown(signal) {
 }
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
+if (process.env.CHANAKYA_DESKTOP_CHILD === '1') {
+  process.stdin.resume();
+  process.stdin.once('end', () => shutdown('desktop parent disconnected'));
+}
 
 // Last-resort safety net: log the real cause instead of the process dying
 // silently (or hanging) with no trace of why the port never got released.
@@ -122,6 +125,7 @@ process.on('unhandledRejection', (reason) => {
 // while still giving up (and logging plainly) if the service genuinely
 // isn't running.
 async function checkIndicTransHealth() {
+  if (process.env.INDICTRANS_AUTOSTART === '0') return;
   await ensureIndicTransRunning();
 
   const pollIntervalMs = 5000;
@@ -133,18 +137,20 @@ async function checkIndicTransHealth() {
     attempt += 1;
     try {
       const response = await fetch(`${config.translate.serviceUrl}/health`, {
-        signal: AbortSignal.timeout(3000)
+        signal: AbortSignal.timeout(3000),
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const body = await response.json();
-      console.log(`[translate] IndicTrans2 service reachable (device=${body.device}, models=${JSON.stringify(body.models_loaded)})`);
+      console.log(
+        `[translate] IndicTrans2 service reachable (device=${body.device}, models=${JSON.stringify(body.models_loaded)})`,
+      );
       return;
     } catch (error) {
       if (Date.now() + pollIntervalMs >= deadline) {
         console.warn(
           `[translate] IndicTrans2 service not reachable at ${config.translate.serviceUrl} after ` +
             `${Math.round(maxWaitMs / 1000)}s (${attempt} attempts) — translation requests will fail ` +
-            `until it is started. See indictrans-service/README.md. (${error.message})`
+            `until it is started. See indictrans-service/README.md. (${error.message})`,
         );
         return;
       }
@@ -153,7 +159,9 @@ async function checkIndicTransHealth() {
       // its models load; logging that as a warning every 5s would just be
       // noise for the normal case.
       if (attempt === 1) {
-        console.log('[translate] Waiting for IndicTrans2 service to become reachable (loading models)...');
+        console.log(
+          '[translate] Waiting for IndicTrans2 service to become reachable (loading models)...',
+        );
       }
       await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
     }

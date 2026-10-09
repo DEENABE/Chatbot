@@ -1,7 +1,7 @@
 /** Additive migration. Legacy memories are retained and are not silently promoted. */
 export function migrateMemory(db) {
- db.transaction(()=>{
-  db.exec(`CREATE TABLE IF NOT EXISTS memory_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+  db.transaction(() => {
+    db.exec(`CREATE TABLE IF NOT EXISTS memory_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
    CREATE UNIQUE INDEX IF NOT EXISTS chats_memory_owner ON chats(id,userId);
    CREATE TABLE IF NOT EXISTS short_term_memories(
     id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -36,6 +36,6 @@ export function migrateMemory(db) {
     event TEXT NOT NULL,memory_type TEXT NOT NULL,request_id TEXT,conversation_id TEXT,task_id TEXT,
     created_at INTEGER NOT NULL);
    CREATE INDEX IF NOT EXISTS memory_audit_owner ON memory_audit(user_id,created_at);`);
-  db.prepare('INSERT OR IGNORE INTO memory_migrations VALUES(1,?)').run(new Date().toISOString());
- })();
+    db.prepare('INSERT OR IGNORE INTO memory_migrations VALUES(1,?)').run(new Date().toISOString());
+  })();
 }

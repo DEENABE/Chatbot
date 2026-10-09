@@ -1,5 +1,15 @@
 import { Router } from 'express';
-import { registerUser, loginUser, getUserById, updateUserProfile, changePassword, deleteAccount, requestPasswordReset, resetPasswordWithToken, AuthError } from '../services/authService.js';
+import {
+  registerUser,
+  loginUser,
+  getUserById,
+  updateUserProfile,
+  changePassword,
+  deleteAccount,
+  requestPasswordReset,
+  resetPasswordWithToken,
+  AuthError,
+} from '../services/authService.js';
 import { createSession, revokeSession } from '../services/sessionService.js';
 import {
   ipAuthLimiter,
@@ -7,7 +17,7 @@ import {
   progressiveLoginDelay,
   resetRequestLimiter,
   resetConfirmLimiter,
-  registerLimiter
+  registerLimiter,
 } from '../middleware/rateLimiter.js';
 import { requireAuth } from '../middleware/auth.js';
 import { optionalString } from '../lib/validate.js';
@@ -49,8 +59,14 @@ function respondToAuthError(request, response, error, expectedStatus) {
 authRouter.post('/register', ipAuthLimiter, registerLimiter, async (request, response) => {
   try {
     const { password } = request.body || {};
-    const username = optionalString(request.body?.username, 'Username', { min: 0, max: MAX_USERNAME });
-    const displayName = optionalString(request.body?.displayName, 'Display name', { min: 0, max: MAX_DISPLAY_NAME });
+    const username = optionalString(request.body?.username, 'Username', {
+      min: 0,
+      max: MAX_USERNAME,
+    });
+    const displayName = optionalString(request.body?.displayName, 'Display name', {
+      min: 0,
+      max: MAX_DISPLAY_NAME,
+    });
     const user = await registerUser(username, displayName, password);
     const { token, expiresAt } = createSession(user.id);
     response.status(201).json({ user, token, expiresAt });
@@ -64,17 +80,26 @@ authRouter.post('/register', ipAuthLimiter, registerLimiter, async (request, res
 // only counts failures, then a progressive delay once failures start
 // piling up within the window. scryptSync's own cost is no longer the only
 // thing slowing a guessing script down.
-authRouter.post('/login', ipAuthLimiter, loginLimiter, progressiveLoginDelay, async (request, response) => {
-  try {
-    const { password } = request.body || {};
-    const username = optionalString(request.body?.username, 'Username', { min: 0, max: MAX_USERNAME });
-    const user = await loginUser(username, password);
-    const { token, expiresAt } = createSession(user.id);
-    response.json({ user, token, expiresAt });
-  } catch (error) {
-    respondToAuthError(request, response, error, 401);
-  }
-});
+authRouter.post(
+  '/login',
+  ipAuthLimiter,
+  loginLimiter,
+  progressiveLoginDelay,
+  async (request, response) => {
+    try {
+      const { password } = request.body || {};
+      const username = optionalString(request.body?.username, 'Username', {
+        min: 0,
+        max: MAX_USERNAME,
+      });
+      const user = await loginUser(username, password);
+      const { token, expiresAt } = createSession(user.id);
+      response.json({ user, token, expiresAt });
+    } catch (error) {
+      respondToAuthError(request, response, error, 401);
+    }
+  },
+);
 
 // Log out — revokes only the session making this call, not every device.
 authRouter.post('/logout', requireAuth, (request, response) => {
@@ -128,30 +153,43 @@ authRouter.delete('/account', requireAuth, async (request, response) => {
 // regardless of whether the account exists, so this endpoint can't be used
 // to enumerate accounts by content or (see authService.js) by making the
 // dominant CPU-bound cost differ between the two cases.
-authRouter.post('/forgot-password', ipAuthLimiter, resetRequestLimiter, async (request, response) => {
-  try {
-    const { username } = request.body || {};
-    await requestPasswordReset(username);
-  } catch (error) {
-    // Never let an internal failure here distinguish itself in the
-    // response — log server-side (no sensitive values), respond the same.
-    console.error('[auth] forgot-password request failed:', error.message);
-  }
-  response.json({ ok: true, message: 'If that account exists, a reset code has been generated on this device.' });
-});
+authRouter.post(
+  '/forgot-password',
+  ipAuthLimiter,
+  resetRequestLimiter,
+  async (request, response) => {
+    try {
+      const { username } = request.body || {};
+      await requestPasswordReset(username);
+    } catch (error) {
+      // Never let an internal failure here distinguish itself in the
+      // response — log server-side (no sensitive values), respond the same.
+      console.error('[auth] forgot-password request failed:', error.message);
+    }
+    response.json({
+      ok: true,
+      message: 'If that account exists, a reset code has been generated on this device.',
+    });
+  },
+);
 
 // Reset password using a reset code from /forgot-password. No auth
 // required (the caller is, by definition, logged out) — identity comes
 // entirely from the token itself, never from a client-supplied username.
-authRouter.post('/reset-password', ipAuthLimiter, resetConfirmLimiter, async (request, response) => {
-  try {
-    const { token, newPassword } = request.body || {};
-    await resetPasswordWithToken(token, newPassword);
-    response.json({ ok: true });
-  } catch (error) {
-    respondToAuthError(request, response, error, 400);
-  }
-});
+authRouter.post(
+  '/reset-password',
+  ipAuthLimiter,
+  resetConfirmLimiter,
+  async (request, response) => {
+    try {
+      const { token, newPassword } = request.body || {};
+      await resetPasswordWithToken(token, newPassword);
+      response.json({ ok: true });
+    } catch (error) {
+      respondToAuthError(request, response, error, 400);
+    }
+  },
+);
 
 // Update profile settings. `role` (and any other privileged field) is
 // deliberately never read from the request body here — a self-service
@@ -160,10 +198,32 @@ authRouter.post('/reset-password', ipAuthLimiter, resetConfirmLimiter, async (re
 // matching allowlist enforced again at the DB-write layer.
 authRouter.patch('/profile', requireAuth, async (request, response, next) => {
   try {
-    const displayName = optionalString(request.body?.displayName, 'Display name', { min: 0, max: MAX_DISPLAY_NAME });
-    const email = optionalString(request.body?.email, 'Email', { min: 0, max: MAX_EMAIL });
-    const department = optionalString(request.body?.department, 'Department', { min: 0, max: MAX_DEPARTMENT });
-    const user = await updateUserProfile(request.userId, { displayName, email, department });
+    const displayName =
+      request.body?.displayName === ''
+        ? ''
+        : optionalString(request.body?.displayName, 'Display name', {
+            min: 0,
+            max: MAX_DISPLAY_NAME,
+          });
+    const email =
+      request.body?.email === ''
+        ? ''
+        : optionalString(request.body?.email, 'Email', {
+            min: 0,
+            max: MAX_EMAIL,
+          });
+    const department =
+      request.body?.department === ''
+        ? ''
+        : optionalString(request.body?.department, 'Department', {
+            min: 0,
+            max: MAX_DEPARTMENT,
+          });
+    const user = await updateUserProfile(request.userId, {
+      displayName,
+      email,
+      department,
+    });
     response.json({ user });
   } catch (error) {
     next(error);

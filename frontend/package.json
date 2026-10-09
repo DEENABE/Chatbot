@@ -11,8 +11,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "electron": "electron .",
-    "electron:build": "node scripts/prepare-backend.cjs && vite build && electron-builder --win",
-    "electron:release": "node scripts/build-release.cjs"
+    "electron:build": "node scripts/build-release.cjs",
+    "electron:release": "node scripts/build-release.cjs",
+    "settings:admin-digest": "node scripts/update-settings-admin-digest.cjs"
   },
   "build": {
     "appId": "com.chanakya.ai",
@@ -27,6 +28,11 @@
       "electron/**/*",
       "package.json",
       "tools/**/*",
+      "!**/app-registry{,.*}/**/*",
+      "!**/app-registry{,.*}",
+      "!**/app-aliases{,.*}",
+      "!**/app-permissions{,.*}",
+      "!**/app-targets{,.*}",
       {
         "from": "../node_modules/say",
         "to": "node_modules/say"
@@ -38,7 +44,16 @@
       {
         "from": "../node_modules/playwright-core",
         "to": "node_modules/playwright-core"
-      }
+      },
+      "!electron/tests/**/*",
+      "!tools/tests/**/*",
+      "!**/*.test.*",
+      "!**/*.spec.*",
+      "!**/*.bak",
+      "!**/.env*",
+      "!**/*.pem",
+      "!**/*.pfx",
+      "!**/*.key"
     ],
     "afterPack": "scripts/afterPack.cjs",
     "win": {
@@ -66,8 +81,8 @@
         "from": "tools/apps",
         "to": "desktop-control",
         "filter": [
-            "*.ps1",
-            "DesktopAccessibility.cs"
+          "*.ps1",
+          "DesktopAccessibility.cs"
         ]
       }
     ]

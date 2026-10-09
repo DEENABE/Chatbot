@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Crop, LoaderCircle, Pencil, Square, Type, RotateCcw, Send, Check } from 'lucide-react';
 import { useAppStore } from '../stores/useAppStore.js';
 import { presets } from '../animations/presets.js';
+import { API_BASE } from '../services/api.js';
 
 export default function OcrCropModal({ onSuccess }) {
   const ocrScreenshot = useAppStore((state) => state.ocrScreenshot);
@@ -21,11 +22,16 @@ export default function OcrCropModal({ onSuccess }) {
   const [selection, setSelection] = useState(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
-  
+
   // Canvas Annotation States
   const [markups, setMarkups] = useState([]); // Array of { type, points, x, y, w, h, text, color }
   const [currentPath, setCurrentPath] = useState(null);
-  const [textInput, setTextInput] = useState({ visible: false, x: 0, y: 0, val: '' });
+  const [textInput, setTextInput] = useState({
+    visible: false,
+    x: 0,
+    y: 0,
+    val: '',
+  });
 
   const containerRef = useRef(null);
   const imageRef = useRef(null);
@@ -118,7 +124,16 @@ export default function OcrCropModal({ onSuccess }) {
       setCurrentPath({ type: 'draw', points: [{ x, y }], color });
       setIsDrawing(true);
     } else if (tool === 'rect') {
-      setCurrentPath({ type: 'rect', startX: x, startY: y, x, y, w: 0, h: 0, color });
+      setCurrentPath({
+        type: 'rect',
+        startX: x,
+        startY: y,
+        x,
+        y,
+        w: 0,
+        h: 0,
+        color,
+      });
       setIsDrawing(true);
     } else if (tool === 'text') {
       if (textInput.visible) {
@@ -140,7 +155,7 @@ export default function OcrCropModal({ onSuccess }) {
     } else if (tool === 'draw' && currentPath) {
       setCurrentPath((prev) => ({
         ...prev,
-        points: [...prev.points, { x, y }]
+        points: [...prev.points, { x, y }],
       }));
     } else if (tool === 'rect' && currentPath) {
       const startX = currentPath.startX;
@@ -152,7 +167,7 @@ export default function OcrCropModal({ onSuccess }) {
         x: w < 0 ? x : startX,
         y: h < 0 ? y : startY,
         w: Math.abs(w),
-        h: Math.abs(h)
+        h: Math.abs(h),
       }));
     }
   };
@@ -179,8 +194,8 @@ export default function OcrCropModal({ onSuccess }) {
           x: textInput.x,
           y: textInput.y,
           text: textInput.val,
-          color
-        }
+          color,
+        },
       ]);
     }
     setTextInput({ visible: false, x: 0, y: 0, val: '' });
@@ -240,19 +255,15 @@ export default function OcrCropModal({ onSuccess }) {
 
         const croppedDataUrl = canvas.toDataURL('image/png');
         setStatusMessage('Extracting text offline...');
-        
-        const result = await Tesseract.recognize(
-          croppedDataUrl,
-          'eng',
-          {
-            langPath: 'http://127.0.0.1:3001/ocr',
-            logger: (m) => {
-              if (m.status === 'recognizing text') {
-                setStatusMessage(`Recognizing: ${Math.round(m.progress * 100)}%`);
-              }
+
+        const result = await Tesseract.recognize(croppedDataUrl, 'eng', {
+          langPath: `${API_BASE.replace(/\/api$/, '')}/ocr`,
+          logger: (m) => {
+            if (m.status === 'recognizing text') {
+              setStatusMessage(`Recognizing: ${Math.round(m.progress * 100)}%`);
             }
-          }
-        );
+          },
+        });
 
         const parsedText = result.data.text?.trim();
         if (parsedText) {
@@ -324,7 +335,7 @@ export default function OcrCropModal({ onSuccess }) {
         // 3. Compile base64
         const dataUrl = canvas.toDataURL('image/png');
         setPendingScreenCapture({ image: dataUrl, windows: [] });
-        
+
         // 4. Close and expand
         setOcrScreenshot(null);
         if (!isExpanded) {
@@ -360,28 +371,40 @@ export default function OcrCropModal({ onSuccess }) {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5 border-r border-white/10 pr-3">
             <button
-              onClick={() => { setTool('crop'); setSelection(null); }}
+              onClick={() => {
+                setTool('crop');
+                setSelection(null);
+              }}
               className={`flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[11px] font-bold transition-all ${tool === 'crop' ? 'bg-white/10 text-white' : 'text-stone-400 hover:text-stone-200'}`}
             >
               <Crop size={14} style={{ color: tool === 'crop' ? accent : undefined }} />
               OCR Crop
             </button>
             <button
-              onClick={() => { setTool('draw'); setSelection(null); }}
+              onClick={() => {
+                setTool('draw');
+                setSelection(null);
+              }}
               className={`flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[11px] font-bold transition-all ${tool === 'draw' ? 'bg-white/10 text-white' : 'text-stone-400 hover:text-stone-200'}`}
             >
               <Pencil size={14} style={{ color: tool === 'draw' ? accent : undefined }} />
               Draw Pencil
             </button>
             <button
-              onClick={() => { setTool('rect'); setSelection(null); }}
+              onClick={() => {
+                setTool('rect');
+                setSelection(null);
+              }}
               className={`flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[11px] font-bold transition-all ${tool === 'rect' ? 'bg-white/10 text-white' : 'text-stone-400 hover:text-stone-200'}`}
             >
               <Square size={14} style={{ color: tool === 'rect' ? accent : undefined }} />
               Box outline
             </button>
             <button
-              onClick={() => { setTool('text'); setSelection(null); }}
+              onClick={() => {
+                setTool('text');
+                setSelection(null);
+              }}
               className={`flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[11px] font-bold transition-all ${tool === 'text' ? 'bg-white/10 text-white' : 'text-stone-400 hover:text-stone-200'}`}
             >
               <Type size={14} style={{ color: tool === 'text' ? accent : undefined }} />
@@ -448,27 +471,39 @@ export default function OcrCropModal({ onSuccess }) {
       </div>
 
       {/* Main capture overlay container */}
-      <div 
+      <div
         ref={containerRef}
         className="relative max-w-[92vw] max-h-[82vh] border border-white/10 rounded-xl overflow-hidden shadow-2xl select-none"
       >
-        <img 
+        <img
           ref={imageRef}
-          src={ocrScreenshot} 
-          alt="Screenshot Capture" 
+          src={ocrScreenshot}
+          alt="Screenshot Capture"
           onLoad={syncCanvasSize}
-          className="max-w-full max-h-[80vh] object-contain pointer-events-none" 
+          className="max-w-full max-h-[80vh] object-contain pointer-events-none"
         />
 
         {/* Backdrop overlay except selection area (for crop mode) */}
         {tool === 'crop' && selection && (
           <div className="absolute inset-0 pointer-events-none">
-            <div className="absolute bg-black/50" style={{ top: 0, left: 0, right: 0, height: boxY }} />
-            <div className="absolute bg-black/50" style={{ top: boxY, left: 0, width: boxX, height: boxH }} />
-            <div className="absolute bg-black/50" style={{ top: boxY, right: 0, left: boxX + boxW, height: boxH }} />
-            <div className="absolute bg-black/50" style={{ top: boxY + boxH, left: 0, right: 0, bottom: 0 }} />
+            <div
+              className="absolute bg-black/50"
+              style={{ top: 0, left: 0, right: 0, height: boxY }}
+            />
+            <div
+              className="absolute bg-black/50"
+              style={{ top: boxY, left: 0, width: boxX, height: boxH }}
+            />
+            <div
+              className="absolute bg-black/50"
+              style={{ top: boxY, right: 0, left: boxX + boxW, height: boxH }}
+            />
+            <div
+              className="absolute bg-black/50"
+              style={{ top: boxY + boxH, left: 0, right: 0, bottom: 0 }}
+            />
 
-            <div 
+            <div
               className="absolute pointer-events-none"
               style={{
                 top: boxY,
@@ -477,14 +512,14 @@ export default function OcrCropModal({ onSuccess }) {
                 height: boxH,
                 border: `2px solid ${accent}`,
                 boxShadow: `0 0 10px ${accent}40`,
-                background: 'rgba(255, 255, 255, 0.05)'
+                background: 'rgba(255, 255, 255, 0.05)',
               }}
             />
           </div>
         )}
 
         {/* Interactive Annotation Canvas */}
-        <canvas 
+        <canvas
           ref={canvasRef}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
@@ -494,7 +529,7 @@ export default function OcrCropModal({ onSuccess }) {
 
         {/* Inline typing text box overlay */}
         {textInput.visible && (
-          <div 
+          <div
             className="absolute z-40 p-1 bg-black/80 border border-white/10 rounded shadow-lg"
             style={{ left: textInput.x, top: textInput.y - 12 }}
           >
@@ -515,7 +550,7 @@ export default function OcrCropModal({ onSuccess }) {
       {/* OCR Loader Status Overlay */}
       <AnimatePresence>
         {isOcrProcessing && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}

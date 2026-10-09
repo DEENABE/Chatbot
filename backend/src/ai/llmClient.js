@@ -6,10 +6,12 @@
  */
 
 import { config } from '../config.js';
-import {memoryManager,memoryScope} from '../memory/runtime.js';
-import {MEMORY_GUIDANCE} from '../memory/MemoryRetriever.js';
+import { memoryManager, memoryScope } from '../memory/runtime.js';
+import { MEMORY_GUIDANCE } from '../memory/MemoryRetriever.js';
+import { modelRuntime, routedModelOr } from '../services/modelRuntime.js';
 
-export const DEFAULT_MODEL = process.env.AGENT_MODEL || 'qwen3.5:9b';
+// No built-in tag: planner/classifier calls follow the model this request was routed to. AGENT_MODEL may pin one.
+export const DEFAULT_MODEL = process.env.AGENT_MODEL || '';
 
 /**
  * Ask the model for a single JSON object.
@@ -22,9 +24,34 @@ export const DEFAULT_MODEL = process.env.AGENT_MODEL || 'qwen3.5:9b';
  * @param {AbortSignal} [args.signal]
  * @returns {Promise<Object>} Parsed JSON object (best-effort).
  */
-export async function completeJSON({ system, prompt, model = DEFAULT_MODEL, temperature = 0.1, signal, think }) {
-  const scope=memoryScope.getStore();
-  if(scope?.userId){const memory=memoryManager.retriever.retrieve({...scope,message:prompt});system+='\n'+MEMORY_GUIDANCE;prompt=memory.text+'\n\nCURRENT REQUEST AND RUNTIME EVIDENCE\n'+prompt;}
+export async function completeJSON({
+  system,
+  prompt,
+  // A call that names no model follows the model this request was routed to.
+  model = routedModelOr(DEFAULT_MODEL),
+  temperature = 0.1,
+  signal,
+  think,
+  numCtx = 8192,
+  numPredict,
+  keepAlive = config.ollamaKeepAlive,
+}) {
+  model = model || routedModelOr(DEFAULT_MODEL);
+  if (!model)
+    throw new Error(
+      'No local model is selected. Install a model in Ollama and choose it in Settings → Models.',
+    );
+  const timeout = AbortSignal.timeout(240_000);
+  signal = signal ? AbortSignal.any([signal, timeout]) : timeout;
+  const scope = memoryScope.getStore();
+  if (scope?.userId) {
+    const memory = memoryManager.retriever.retrieve({
+      ...scope,
+      message: prompt,
+    });
+    system += '\n' + MEMORY_GUIDANCE;
+    prompt = memory.text + '\n\nCURRENT REQUEST AND RUNTIME EVIDENCE\n' + prompt;
+  }
   let response;
   try {
     response = await fetch(`${config.ollamaUrl}/api/generate`, {
@@ -37,14 +64,21 @@ export async function completeJSON({ system, prompt, model = DEFAULT_MODEL, temp
         prompt,
         format: 'json',
         stream: false,
-        keep_alive: config.ollamaKeepAlive,
+        keep_alive: modelRuntime.getStore()?.keepAlive ?? keepAlive,
         // Callers that only need a decision can switch reasoning off: same answers here, far lower latency on CPU.
         ...(think === undefined ? {} : { think }),
-        options: { temperature, num_ctx: 8192 }
-      })
+        options: {
+          temperature,
+          num_ctx: Math.min(numCtx, modelRuntime.getStore()?.options?.num_ctx ?? numCtx),
+          ...(numPredict === undefined ? {} : { num_predict: numPredict }),
+        },
+      }),
     });
   } catch (error) {
-    throw new Error(`Cannot reach Ollama at ${config.ollamaUrl}. Is it running? (${error.message})`);
+    if (signal.aborted) throw signal.reason;
+    throw new Error(
+      `Cannot reach Ollama at ${config.ollamaUrl}. Is it running? (${error.message})`,
+    );
   }
 
   if (!response.ok) {

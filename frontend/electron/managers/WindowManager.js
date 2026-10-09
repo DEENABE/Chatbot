@@ -1,7 +1,14 @@
 import { BrowserWindow, screen, shell } from 'electron';
 import path from 'path';
 import { getPreloadPath, isPacked, rootDir } from '../utils/pathHelper.js';
-import { BUBBLE_SIZE, CHAT_WIDTH, CHAT_HEIGHT, TOOLBAR_HEIGHT, HOVER_WIDTH } from '../utils/constants.js';
+import { getBackendApiBaseUrl } from '../utils/runtimeEndpoint.js';
+import {
+  BUBBLE_SIZE,
+  CHAT_WIDTH,
+  CHAT_HEIGHT,
+  TOOLBAR_HEIGHT,
+  HOVER_WIDTH,
+} from '../utils/constants.js';
 
 let mainWindow = null;
 let isExpanded = false;
@@ -19,7 +26,7 @@ export function getMainWindow() {
 
 export function createWindow() {
   const { width: screenW, height: screenH } = screen.getPrimaryDisplay().workAreaSize;
-  
+
   const startX = screenW - BUBBLE_SIZE - 20;
   const startY = screenH - BUBBLE_SIZE - 20;
 
@@ -41,12 +48,13 @@ export function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      preload: getPreloadPath()
-    }
+      preload: getPreloadPath(),
+      additionalArguments: [`--chanakya-api-base=${getBackendApiBaseUrl()}`],
+    },
   });
 
   mainWindow.setMenuBarVisibility(false);
-  mainWindow.loadFile(path.join(rootDir, "dist", "index.html"));
+  mainWindow.loadFile(path.join(rootDir, 'dist', 'index.html'));
 
   // This is a single-page app that never legitimately navigates away from
   // its own loaded index.html — every screen change happens through React
@@ -83,16 +91,16 @@ export function createWindow() {
   });
 
   // DevTools - Enable in dev mode only
-  if (!isPacked) {
+  if (!isPacked && process.env.CHANAKYA_DEBUG_DESKTOP === '1') {
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   }
 
-  mainWindow.once("ready-to-show", () => {
+  mainWindow.once('ready-to-show', () => {
     mainWindow.show();
     mainWindow.focus();
   });
 
-  mainWindow.on("closed", () => {
+  mainWindow.on('closed', () => {
     mainWindow = null;
   });
 
@@ -115,11 +123,22 @@ export function toggleExpand(expand) {
 
     // Grow from the bubble's corner, then clamp so the whole chat stays on
     // screen (a bubble near an edge would otherwise open half off-screen).
-    const newX = Math.max(10, Math.min(screenW - CHAT_WIDTH - 10, currentX - (CHAT_WIDTH - currentW)));
-    const newY = Math.max(10, Math.min(screenH - CHAT_HEIGHT - 10, currentY - (CHAT_HEIGHT - currentH)));
+    const newX = Math.max(
+      10,
+      Math.min(screenW - CHAT_WIDTH - 10, currentX - (CHAT_WIDTH - currentW)),
+    );
+    const newY = Math.max(
+      10,
+      Math.min(screenH - CHAT_HEIGHT - 10, currentY - (CHAT_HEIGHT - currentH)),
+    );
 
     mainWindow.setResizable(true);
-    mainWindow.setBounds({ x: newX, y: newY, width: CHAT_WIDTH, height: CHAT_HEIGHT });
+    mainWindow.setBounds({
+      x: newX,
+      y: newY,
+      width: CHAT_WIDTH,
+      height: CHAT_HEIGHT,
+    });
     mainWindow.setSkipTaskbar(false);
   } else {
     // Prefer the remembered position; fall back to the chat's bottom-right
@@ -134,7 +153,12 @@ export function toggleExpand(expand) {
     const newY = Math.max(10, Math.min(screenH - BUBBLE_SIZE - 10, targetY));
 
     mainWindow.setResizable(false);
-    mainWindow.setBounds({ x: newX, y: newY, width: BUBBLE_SIZE, height: BUBBLE_SIZE });
+    mainWindow.setBounds({
+      x: newX,
+      y: newY,
+      width: BUBBLE_SIZE,
+      height: BUBBLE_SIZE,
+    });
     mainWindow.setSkipTaskbar(true);
   }
 
@@ -147,7 +171,7 @@ export function setOcrMode(enable) {
     preOcrBounds = mainWindow.getBounds();
     const primaryDisplay = screen.getPrimaryDisplay();
     const { x, y, width, height } = primaryDisplay.bounds;
-    
+
     mainWindow.setResizable(true);
     mainWindow.setBounds({ x, y, width, height }, true);
     mainWindow.setAlwaysOnTop(true);
@@ -196,7 +220,7 @@ export function handleDragStart() {
   const pos = mainWindow.getPosition();
   dragOffset = {
     x: cursor.x - pos[0],
-    y: cursor.y - pos[1]
+    y: cursor.y - pos[1],
   };
   isDragging = true;
 }
@@ -211,12 +235,12 @@ export function handleDragEnd() {
   isDragging = false;
   isToolbarMode = false;
   if (!mainWindow) return;
-  
+
   if (!isExpanded) {
     const { width: screenW, height: screenH } = screen.getPrimaryDisplay().workAreaSize;
     const [winX, winY] = mainWindow.getPosition();
 
-    const snapX = (winX + BUBBLE_SIZE / 2 < screenW / 2) ? 20 : (screenW - BUBBLE_SIZE - 20);
+    const snapX = winX + BUBBLE_SIZE / 2 < screenW / 2 ? 20 : screenW - BUBBLE_SIZE - 20;
     const snapY = Math.max(20, Math.min(screenH - BUBBLE_SIZE - 20, winY));
 
     mainWindow.setBounds({ x: snapX, y: snapY, width: BUBBLE_SIZE, height: BUBBLE_SIZE }, true);
@@ -251,7 +275,12 @@ function collapseToBubble() {
   const newY = Math.max(10, Math.min(screenH - BUBBLE_SIZE - 10, targetY));
 
   mainWindow.setResizable(false);
-  mainWindow.setBounds({ x: newX, y: newY, width: BUBBLE_SIZE, height: BUBBLE_SIZE });
+  mainWindow.setBounds({
+    x: newX,
+    y: newY,
+    width: BUBBLE_SIZE,
+    height: BUBBLE_SIZE,
+  });
   mainWindow.setSkipTaskbar(true);
 }
 

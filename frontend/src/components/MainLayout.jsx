@@ -1,17 +1,29 @@
-import React, { Suspense, useState, useRef } from 'react';
+import React, { Suspense, useRef } from 'react';
 import { useAppStore } from '../stores/useAppStore.js';
+import { useNavStore } from '../stores/useNavStore.js';
 
 const LoginScreen = React.lazy(() => import('./LoginScreen.jsx'));
 const Sidebar = React.lazy(() => import('../sidebar/Sidebar.jsx'));
 const Topbar = React.lazy(() => import('./Topbar.jsx'));
 const ChatArea = React.lazy(() => import('../chat/ChatArea.jsx'));
 const InputArea = React.lazy(() => import('../chat/InputArea.jsx'));
+const HistoryPanel = React.lazy(() => import('../history/HistoryPanel.jsx'));
+const WorkspaceHub = React.lazy(() => import('../workspace/WorkspaceHub.jsx'));
+const SettingsPanel = React.lazy(() => import('../settings/SettingsPanel.jsx'));
+
+const SECTION_LABELS = {
+  chat: 'Chat',
+  workspace: 'Workspace',
+  history: 'History',
+  settings: 'Settings',
+};
 
 export default function MainLayout() {
   const user = useAppStore((state) => state.user);
   const isAuthLoading = useAppStore((state) => state.isAuthLoading);
   const settings = useAppStore((state) => state.settings);
-  const [activeTab, setActiveTab] = useState('chat'); // 'chat', 'documents', 'memories', 'apps', 'diagnostics'
+  // chat | workspace | history | settings (see stores/useNavStore.js)
+  const activeTab = useNavStore((state) => state.tab);
   const resizeRef = useRef(null);
 
   if (!user) {
@@ -28,7 +40,13 @@ export default function MainLayout() {
       );
     }
     return (
-      <Suspense fallback={<div className="text-white text-center p-10 text-xs font-mono uppercase tracking-widest animate-pulse">Checking credentials...</div>}>
+      <Suspense
+        fallback={
+          <div className="text-white text-center p-10 text-xs font-mono uppercase tracking-widest animate-pulse">
+            Checking credentials...
+          </div>
+        }
+      >
         <LoginScreen />
       </Suspense>
     );
@@ -46,7 +64,7 @@ export default function MainLayout() {
       startX: e.screenX,
       startY: e.screenY,
       startW: w,
-      startH: h
+      startH: h,
     };
 
     const handleMouseMove = (moveEvent) => {
@@ -80,12 +98,14 @@ export default function MainLayout() {
   };
 
   const accent = settings.accentColor || '#3b82f6';
-  const glassBg = settings.transparency 
+  const glassBg = settings.transparency
     ? `rgba(${settings.theme === 'dark' ? '14, 14, 16' : '240, 240, 243'}, ${settings.windowOpacity})`
-    : settings.theme === 'dark' ? '#0c0c0e' : '#ffffff';
+    : settings.theme === 'dark'
+      ? '#0c0c0e'
+      : '#ffffff';
 
   return (
-    <div 
+    <div
       className="w-screen h-screen flex flex-col overflow-hidden relative select-none rounded-2xl border"
       style={{
         background: glassBg,
@@ -96,22 +116,36 @@ export default function MainLayout() {
       }}
     >
       <div className="flex flex-1 overflow-hidden relative">
-        <Suspense fallback={<div className="w-64 border-r border-white/5 animate-pulse bg-[#0c0c0e]/50" />}>
-          <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+        <Suspense
+          fallback={<div className="w-64 border-r border-white/5 animate-pulse bg-[#0c0c0e]/50" />}
+        >
+          <Sidebar />
         </Suspense>
 
-        <div className="flex-1 flex flex-col overflow-hidden relative">
-          <Suspense fallback={<div className="h-14 border-b border-white/5 animate-pulse bg-zinc-900/50" />}>
-            <Topbar />
+        <div className="min-w-0 flex-1 flex flex-col overflow-hidden relative">
+          <Suspense
+            fallback={<div className="h-14 border-b border-white/5 animate-pulse bg-zinc-900/50" />}
+          >
+            <Topbar section={SECTION_LABELS[activeTab]} />
           </Suspense>
 
           <div className="flex-1 overflow-hidden relative">
-            <Suspense fallback={
-              <div className="w-full h-full flex flex-col items-center justify-center text-xs text-stone-500 uppercase tracking-widest animate-pulse">
-                <span>Synchronizing workspace...</span>
-              </div>
-            }>
-              <ChatArea activeTab={activeTab} />
+            <Suspense
+              fallback={
+                <div className="w-full h-full flex flex-col items-center justify-center text-xs text-stone-500 uppercase tracking-widest animate-pulse">
+                  <span>Synchronizing workspace...</span>
+                </div>
+              }
+            >
+              {activeTab === 'workspace' ? (
+                <WorkspaceHub />
+              ) : activeTab === 'history' ? (
+                <HistoryPanel />
+              ) : activeTab === 'settings' ? (
+                <SettingsPanel />
+              ) : (
+                <ChatArea activeTab="chat" />
+              )}
             </Suspense>
           </div>
 
@@ -124,7 +158,7 @@ export default function MainLayout() {
       </div>
 
       {/* Resize corner and edge drag handles */}
-      <div 
+      <div
         onMouseDown={(e) => startResize(e, 'se')}
         className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize z-50 flex items-end justify-end p-0.5 pointer-events-auto"
       >
@@ -132,7 +166,7 @@ export default function MainLayout() {
           <path d="M6 0l2 2-6 6h-2v-2z" />
         </svg>
       </div>
-      <div 
+      <div
         onMouseDown={(e) => startResize(e, 's')}
         className="absolute bottom-0 left-4 right-4 h-1.5 cursor-s-resize z-50"
       />

@@ -24,7 +24,12 @@ export class SettingsWorker {
     this.idleMs = idleMs;
     this.timeoutMs = timeoutMs;
     this.spawnFn = spawnFn;
-    this.paths = paths || (() => ({ file: powerShellPath(), script: helperScriptPath('SystemSettings.ps1') }));
+    this.paths =
+      paths ||
+      (() => ({
+        file: powerShellPath(),
+        script: helperScriptPath('SystemSettings.ps1'),
+      }));
     this.child = null;
     this.buffer = '';
     this.pending = null; // { id, resolve, reject, timer }
@@ -46,21 +51,50 @@ export class SettingsWorker {
     clearTimeout(this.idleTimer);
     const child = this.child;
     this.child = null;
-    if (child) { try { child.stdin.end(); } catch { /* already closed */ } setTimeout(() => { try { child.kill(); } catch { /* gone */ } }, 1500).unref?.(); }
+    if (child) {
+      try {
+        child.stdin.end();
+      } catch {
+        /* already closed */
+      }
+      setTimeout(() => {
+        try {
+          child.kill();
+        } catch {
+          /* gone */
+        }
+      }, 1500).unref?.();
+    }
   }
 
   #ensure() {
     if (this.child) return this.child;
     const { file, script } = this.paths(); // throws DESKTOP_HELPER_MISSING when the script is gone
-    const child = this.spawnFn(file, ['-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-File', script], { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] });
+    const child = this.spawnFn(
+      file,
+      ['-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-File', script],
+      { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] },
+    );
     this.started += 1;
     this.child = child;
     this.buffer = '';
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', (chunk) => this.#onData(child, chunk));
     child.stdin.on('error', () => {}); // a dead worker is reported by the close handler
-    child.on('error', () => this.#onGone(child, 'WORKER_UNAVAILABLE', 'The Windows settings helper could not be started.'));
-    child.on('close', () => this.#onGone(child, 'SETTINGS_HELPER_EXITED', 'The Windows settings helper stopped unexpectedly. Try again.'));
+    child.on('error', () =>
+      this.#onGone(
+        child,
+        'WORKER_UNAVAILABLE',
+        'The Windows settings helper could not be started.',
+      ),
+    );
+    child.on('close', () =>
+      this.#onGone(
+        child,
+        'SETTINGS_HELPER_EXITED',
+        'The Windows settings helper stopped unexpectedly. Try again.',
+      ),
+    );
     child.unref?.(); // never keep the host process alive just for this
     child.stdout.unref?.();
     child.stdin.unref?.();
@@ -76,13 +110,23 @@ export class SettingsWorker {
       this.buffer = this.buffer.slice(at + 1);
       if (!line.startsWith('{')) continue;
       let message;
-      try { message = JSON.parse(line); } catch { continue; }
+      try {
+        message = JSON.parse(line);
+      } catch {
+        continue;
+      }
       const pending = this.pending;
       if (!pending || message.requestId !== pending.id) continue; // a late reply to a request that already timed out
       clearTimeout(pending.timer);
       this.pending = null;
       delete message.requestId;
-      if (message.success === false) pending.reject(coded(message.code || 'SETTING_FAILED', message.message || 'The settings helper reported a failure.'));
+      if (message.success === false)
+        pending.reject(
+          coded(
+            message.code || 'SETTING_FAILED',
+            message.message || 'The settings helper reported a failure.',
+          ),
+        );
       else pending.resolve(message);
     }
   }
@@ -91,25 +135,47 @@ export class SettingsWorker {
     if (child !== this.child) return;
     this.child = null;
     const pending = this.pending;
-    if (pending) { clearTimeout(pending.timer); this.pending = null; pending.reject(coded(code, message)); }
+    if (pending) {
+      clearTimeout(pending.timer);
+      this.pending = null;
+      pending.reject(coded(code, message));
+    }
   }
 
   #send(input) {
     return new Promise((resolve, reject) => {
       let child;
-      try { child = this.#ensure(); } catch (error) { return reject(error); }
+      try {
+        child = this.#ensure();
+      } catch (error) {
+        return reject(error);
+      }
       clearTimeout(this.idleTimer);
       const id = this.nextId++;
       const timer = setTimeout(() => {
         // The helper is stuck (for example on a driver call). Kill it; the next request starts a fresh one.
         this.pending = null;
         if (child === this.child) this.child = null;
-        try { child.kill(); } catch { /* gone */ }
-        reject(coded('SETTINGS_TIMEOUT', 'Changing the setting timed out. No completion is claimed; check the setting before retrying.'));
+        try {
+          child.kill();
+        } catch {
+          /* gone */
+        }
+        reject(
+          coded(
+            'SETTINGS_TIMEOUT',
+            'Changing the setting timed out. No completion is claimed; check the setting before retrying.',
+          ),
+        );
       }, this.timeoutMs);
       this.pending = { id, resolve, reject, timer };
-      try { child.stdin.write(`${JSON.stringify({ ...input, requestId: id })}\n`); }
-      catch { clearTimeout(timer); this.pending = null; reject(coded('SETTINGS_HELPER_EXITED', 'The Windows settings helper is not running.')); }
+      try {
+        child.stdin.write(`${JSON.stringify({ ...input, requestId: id })}\n`);
+      } catch {
+        clearTimeout(timer);
+        this.pending = null;
+        reject(coded('SETTINGS_HELPER_EXITED', 'The Windows settings helper is not running.'));
+      }
     }).finally(() => {
       clearTimeout(this.idleTimer);
       this.idleTimer = setTimeout(() => this.close(), this.idleMs);

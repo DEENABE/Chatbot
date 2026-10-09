@@ -47,9 +47,10 @@ function loadVoices() {
  * @returns {SpeechSynthesisVoice|null}
  */
 function pickVoice(voices) {
-  if (!voices.length) return null;
-  const english = voices.filter((v) => /^en(-|_|$)/i.test(v.lang));
-  const pool = english.length ? english : voices;
+  const local = voices.filter((v) => v.localService);
+  if (!local.length) return null;
+  const english = local.filter((v) => /^en(-|_|$)/i.test(v.lang));
+  const pool = english.length ? english : local;
   // Prefer a natural-sounding local voice over a robotic default.
   return (
     pool.find((v) => /natural|neural|online/i.test(v.name)) ||
@@ -96,6 +97,7 @@ export async function speak(text, { rate = 1.02, pitch = 1.05 } = {}) {
   utterance.pitch = pitch;
 
   const voice = pickVoice(voices);
+  if (!voice) return false;
   if (voice) {
     utterance.voice = voice;
     utterance.lang = voice.lang;

@@ -1,3 +1,4 @@
+
 # ─── Dependencies ───────────────────────────────────────────────
 node_modules/
 .pnp
@@ -134,8 +135,7 @@ CLAUDE.md
  #---.env example---
     .env.example
 
-#---docs---
-docs
+
 
 # ─── IndicTrans2 microservice (Python) ──────────────────────────
 # Local virtualenv and downloaded model checkpoints (~6GB) — never
@@ -165,3 +165,22 @@ backend/data/
 backend/.env
 backend/.env.*
 !backend/.env.example
+
+# Reversible cleanup archive (delete this folder once the demo is done)
+_cleanup_archive/
+
+# Desktop release outputs and isolated QA artifacts
+frontend/release-desktop*/
+.qa/
+.astra-tmp/
+docs/
+indictrans-service
+demo-data
+test
+tests*
+
+.mjs*
+.cjs*
+
+# Offline translator pack builds (about 5 GB each, see indictrans-service/README.md)
+translator-pack/

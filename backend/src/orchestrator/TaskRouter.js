@@ -14,8 +14,8 @@
  * Mirrors the pattern in backend/src/ai/IntentClassifier.js.
  */
 
-import {computerTask,compoundAppTask} from './ComputerTaskPolicy.js';
-import {genericDesktopTask} from './GenericDesktopTask.js';
+import { computerTask, compoundAppTask } from './ComputerTaskPolicy.js';
+import { genericDesktopTask } from './GenericDesktopTask.js';
 import { completeJSON, DEFAULT_MODEL } from '../ai/llmClient.js';
 
 // ---------------------------------------------------------------------------
@@ -62,11 +62,43 @@ const SIMPLE_OVERRIDES = [
  */
 function keywordRoute(task) {
   const text = String(task || '').trim();
-  if(computerTask(text)?.call?.tool==='app')return {mode:'agentic',taskType:'open_application',confidence:1,via:'keyword'};
-  if(computerTask(text)?.genericDesktop)return {mode:'agentic',taskType:'generic_desktop',confidence:1,via:'keyword'};
-  if(computerTask(text)?.requiresBrowser)return {mode:'agentic',taskType:'browser_interaction',confidence:1,via:'keyword'};
-  if(compoundAppTask(text))return {mode:'agentic',taskType:'compound_application',confidence:1,via:'keyword'};
-  if(computerTask(text)?.call?.tool==='uiAutomation')return {mode:'agentic',taskType:'desktop_interaction',confidence:1,via:'keyword'};
+  if (computerTask(text)?.software)
+    return { mode: 'agentic', taskType: 'software_management', confidence: 1, via: 'keyword' };
+  if (computerTask(text)?.call?.tool === 'app')
+    return {
+      mode: 'agentic',
+      taskType: 'open_application',
+      confidence: 1,
+      via: 'keyword',
+    };
+  if (computerTask(text)?.genericDesktop)
+    return {
+      mode: 'agentic',
+      taskType: 'generic_desktop',
+      confidence: 1,
+      via: 'keyword',
+    };
+  if (computerTask(text)?.requiresBrowser)
+    return {
+      mode: 'agentic',
+      taskType: 'browser_interaction',
+      confidence: 1,
+      via: 'keyword',
+    };
+  if (compoundAppTask(text))
+    return {
+      mode: 'agentic',
+      taskType: 'compound_application',
+      confidence: 1,
+      via: 'keyword',
+    };
+  if (computerTask(text)?.call?.tool === 'uiAutomation')
+    return {
+      mode: 'agentic',
+      taskType: 'desktop_interaction',
+      confidence: 1,
+      via: 'keyword',
+    };
 
   // Check agentic task keywords FIRST — a query like "how much RAM is used"
   // starts with "how" which also matches SIMPLE_OVERRIDES, but it's clearly
@@ -79,7 +111,12 @@ function keywordRoute(task) {
 
   // Now apply simple overrides — only reached if no agentic keyword matched.
   if (SIMPLE_OVERRIDES.some((p) => p.test(text))) {
-    return { mode: 'simple', taskType: 'simple', confidence: 0.85, via: 'keyword' };
+    return {
+      mode: 'simple',
+      taskType: 'simple',
+      confidence: 0.85,
+      via: 'keyword',
+    };
   }
 
   return null; // No keyword match — fall through to LLM.
@@ -118,8 +155,18 @@ export async function routeTask(task, { model = DEFAULT_MODEL, signal } = {}) {
     });
 
     const mode = result.mode === 'agentic' ? 'agentic' : 'simple';
-    const validTypes = ['open_application', 'system_diagnostics', 'wifi_diagnostics', 'unknown_agentic', 'simple'];
-    const taskType = validTypes.includes(result.taskType) ? result.taskType : (mode === 'agentic' ? 'unknown_agentic' : 'simple');
+    const validTypes = [
+      'open_application',
+      'system_diagnostics',
+      'wifi_diagnostics',
+      'unknown_agentic',
+      'simple',
+    ];
+    const taskType = validTypes.includes(result.taskType)
+      ? result.taskType
+      : mode === 'agentic'
+        ? 'unknown_agentic'
+        : 'simple';
 
     return {
       mode,
@@ -129,7 +176,12 @@ export async function routeTask(task, { model = DEFAULT_MODEL, signal } = {}) {
     };
   } catch {
     // Degrade gracefully: unknown → simple (safer default).
-    return { mode: 'simple', taskType: 'simple', confidence: 0.3, via: 'keyword' };
+    return {
+      mode: 'simple',
+      taskType: 'simple',
+      confidence: 0.3,
+      via: 'keyword',
+    };
   }
 }
 

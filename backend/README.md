@@ -73,19 +73,19 @@ curl http://localhost:3000/usage/u1
 
 ## File map
 
-| File | Purpose |
-|---|---|
-| `src/server.js` | Express app entry point |
-| `src/config/index.js` | All tunable settings (models, topK, token budget, context limits) |
-| `src/db/schema.sql`, `connection.js` | SQLite + sqlite-vec index setup |
-| `src/ingest/*` | Indexing pipeline: clean → chunk → embed → store (run via `npm run ingest`) |
-| `src/retrieval/*` | Query-time: embed query → vector search → rerank → compress context |
-| `src/llm/*` | Ollama client, prompt building, token counting/limits |
-| `src/routes/ask.js` | Main RAG endpoint (streaming) |
-| `src/routes/ingestRoute.js` | Optional API-triggered re-index (batch by batch) |
-| `src/routes/usage.js` | Per-user token usage lookup |
-| `src/middleware/*` | Error handling, rate limiting |
-| `scripts/reindex.sh` | Cron-friendly re-index trigger |
+| File                                 | Purpose                                                                     |
+| ------------------------------------ | --------------------------------------------------------------------------- |
+| `src/server.js`                      | Express app entry point                                                     |
+| `src/config/index.js`                | All tunable settings (models, topK, token budget, context limits)           |
+| `src/db/schema.sql`, `connection.js` | SQLite + sqlite-vec index setup                                             |
+| `src/ingest/*`                       | Indexing pipeline: clean → chunk → embed → store (run via `npm run ingest`) |
+| `src/retrieval/*`                    | Query-time: embed query → vector search → rerank → compress context         |
+| `src/llm/*`                          | Ollama client, prompt building, token counting/limits                       |
+| `src/routes/ask.js`                  | Main RAG endpoint (streaming)                                               |
+| `src/routes/ingestRoute.js`          | Optional API-triggered re-index (batch by batch)                            |
+| `src/routes/usage.js`                | Per-user token usage lookup                                                 |
+| `src/middleware/*`                   | Error handling, rate limiting                                               |
+| `scripts/reindex.sh`                 | Cron-friendly re-index trigger                                              |
 
 ## Tuning knobs (in `.env`)
 

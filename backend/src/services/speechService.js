@@ -9,7 +9,7 @@ const scriptPath = path.resolve(
   '..',
   '..',
   'scripts',
-  'transcribe.ps1'
+  'transcribe.ps1',
 );
 
 export async function transcribeLocalWav(audioPath) {
@@ -27,9 +27,9 @@ export async function transcribeLocalWav(audioPath) {
         '-File',
         scriptPath,
         '-AudioPath',
-        audioPath
+        audioPath,
       ],
-      { timeout: 60000, windowsHide: true, maxBuffer: 1024 * 1024 }
+      { timeout: 60000, windowsHide: true, maxBuffer: 1024 * 1024 },
     );
     const output = stdout.trim();
     if (!output) return '';

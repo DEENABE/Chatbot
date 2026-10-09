@@ -6,9 +6,7 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "node --watch src/server.js",
-    "ingest": "node src/ingest/runIngest.js",
-    "test": "node --test"
+    "dev": "node --watch src/server.js"
   },
   "dependencies": {
     "@lancedb/lancedb": "^0.18.2",

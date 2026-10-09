@@ -148,7 +148,9 @@ const PROTECTED_PATH_PATTERN = /^[a-zA-Z]:\\windows(\\|$)/i;
 function assertNotProtectedPath(p) {
   const resolved = path.resolve(p);
   if (PROTECTED_PATH_PATTERN.test(resolved)) {
-    const error = new Error(`Refusing to modify '${resolved}' — paths under the Windows system directory are protected regardless of confirmation.`);
+    const error = new Error(
+      `Refusing to modify '${resolved}' — paths under the Windows system directory are protected regardless of confirmation.`,
+    );
     error.code = 'PROTECTED_PATH';
     throw error;
   }
@@ -165,13 +167,24 @@ function assertNotProtectedPath(p) {
  * run PowerShell/CMD.
  */
 const SHELL_ALIAS_TARGETS = new Set([
-  'cmd', 'command prompt', 'terminal', 'windows terminal',
-  'powershell', 'pwsh', 'wt', 'wt.exe', 'cmd.exe', 'powershell.exe', 'pwsh.exe'
+  'cmd',
+  'command prompt',
+  'terminal',
+  'windows terminal',
+  'powershell',
+  'pwsh',
+  'wt',
+  'wt.exe',
+  'cmd.exe',
+  'powershell.exe',
+  'pwsh.exe',
 ]);
 
 function assertNotShellLaunch(target) {
   if (SHELL_ALIAS_TARGETS.has(target.trim().toLowerCase())) {
-    const error = new Error(`Refusing to open '${target}' — launching an interactive shell must go through the powershell/cmd tool, which requires confirmation.`);
+    const error = new Error(
+      `Refusing to open '${target}' — launching an interactive shell must go through the powershell/cmd tool, which requires confirmation.`,
+    );
     error.code = 'SHELL_LAUNCH_BLOCKED';
     throw error;
   }
@@ -195,98 +208,117 @@ export class FileService extends BaseToolService {
   get actions() {
     return {
       createDirectory: {
-        handler: async ({path: target}) => { await fs.mkdir(target, {recursive:false}); return {path:target,created:true}; },
-        schema:{path:{type:'path',required:true}}, destructive:false, description:'Create one folder in an approved document location'
+        handler: async ({ path: target }) => {
+          await fs.mkdir(target, { recursive: false });
+          return { path: target, created: true };
+        },
+        schema: { path: { type: 'path', required: true } },
+        destructive: false,
+        description: 'Create one folder in an approved document location',
       },
       createTextFile: {
-        handler: async ({path: target,content}) => { await fs.writeFile(target,content,{encoding:'utf8',flag:'wx',mode:0o600}); return {path:target,created:true}; },
-        schema:{path:{type:'path',required:true},content:{type:'string',required:true,maxLength:65536}}, destructive:false, description:'Create a new text file without overwriting an existing file'
+        handler: async ({ path: target, content }) => {
+          await fs.writeFile(target, content, {
+            encoding: 'utf8',
+            flag: 'wx',
+            mode: 0o600,
+          });
+          return { path: target, created: true };
+        },
+        schema: {
+          path: { type: 'path', required: true },
+          content: { type: 'string', required: true, maxLength: 65536 },
+        },
+        destructive: false,
+        description: 'Create a new text file without overwriting an existing file',
       },
       open: {
         handler: this.openTarget.bind(this),
         schema: {
-          target: { type: 'string', required: true }
+          target: { type: 'string', required: true },
         },
         destructive: false,
-        description: 'Open a file, folder, drive, or application in Windows with its default handler. Examples: target "C:\\\\" opens the C drive in File Explorer, target of a document path opens it in its default app. Use this whenever the user says "open ...", "launch ...", "show me ... folder", or "run ...".'
+        description:
+          'Open a file, folder, drive, or application in Windows with its default handler. Examples: target "C:\\\\" opens the C drive in File Explorer, target of a document path opens it in its default app. Use this whenever the user says "open ...", "launch ...", "show me ... folder", or "run ...".',
       },
       readFile: {
         handler: this.readFile.bind(this),
         schema: {
           path: { type: 'path', required: true },
-          encoding: { type: 'string', required: false }
+          encoding: { type: 'string', required: false },
         },
         destructive: false,
-        description: 'Read the contents of a file'
+        description: 'Read the contents of a file',
       },
       writeFile: {
         handler: this.writeFile.bind(this),
         schema: {
           path: { type: 'path', required: true },
           content: { type: 'string', required: true },
-          encoding: { type: 'string', required: false }
+          encoding: { type: 'string', required: false },
         },
         destructive: true,
-        description: 'Write content to a file, overwriting existing content'
+        description: 'Write content to a file, overwriting existing content',
       },
       listDir: {
         handler: this.listDir.bind(this),
         schema: {
           path: { type: 'path', required: true },
-          recursive: { type: 'boolean', required: false }
+          recursive: { type: 'boolean', required: false },
         },
         destructive: false,
-        description: 'List directory contents with file metadata'
+        description: 'List directory contents with file metadata',
       },
       fileInfo: {
         handler: this.fileInfo.bind(this),
         schema: {
-          path: { type: 'path', required: true }
+          path: { type: 'path', required: true },
         },
         destructive: false,
-        description: 'Get detailed file or directory information'
+        description: 'Get detailed file or directory information',
       },
       deleteFile: {
         handler: this.deleteFile.bind(this),
         schema: {
           path: { type: 'path', required: true },
-          recursive: { type: 'boolean', required: false }
+          recursive: { type: 'boolean', required: false },
         },
         destructive: true,
-        description: 'Delete a file or directory'
+        description: 'Delete a file or directory',
       },
       copyFile: {
         handler: this.copyFile.bind(this),
         schema: {
           source: { type: 'path', required: true },
-          destination: { type: 'path', required: true }
+          destination: { type: 'path', required: true },
         },
         // Was previously marked non-destructive, but fs.cp/copyFile
         // silently overwrite an existing file at the destination — the
         // same data-loss shape as writeFile/moveFile, which are both
         // correctly gated. There's no dry-run signal here to fall back on.
         destructive: true,
-        description: 'Copy a file or directory to a new location (overwrites an existing destination)'
+        description:
+          'Copy a file or directory to a new location (overwrites an existing destination)',
       },
       moveFile: {
         handler: this.moveFile.bind(this),
         schema: {
           source: { type: 'path', required: true },
-          destination: { type: 'path', required: true }
+          destination: { type: 'path', required: true },
         },
         destructive: true,
-        description: 'Move or rename a file or directory'
+        description: 'Move or rename a file or directory',
       },
       searchFiles: {
         handler: this.searchFiles.bind(this),
         schema: {
           path: { type: 'path', required: true },
           pattern: { type: 'string', required: true },
-          maxResults: { type: 'number', required: false }
+          maxResults: { type: 'number', required: false },
         },
         destructive: false,
-        description: 'Search for files matching a glob pattern'
-      }
+        description: 'Search for files matching a glob pattern',
+      },
     };
   }
 
@@ -330,11 +362,25 @@ export class FileService extends BaseToolService {
       let stderr = '';
       const proc = spawn(
         'powershell.exe',
-        ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', OPEN_TARGET_SCRIPT],
-        { windowsHide: true, env: { ...process.env, CHANAKYA_OPEN_TARGET: target } }
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-Command',
+          OPEN_TARGET_SCRIPT,
+        ],
+        {
+          windowsHide: true,
+          env: { ...process.env, CHANAKYA_OPEN_TARGET: target },
+        },
       );
-      proc.stdout.on('data', (d) => { stdout += d.toString(); });
-      proc.stderr.on('data', (d) => { stderr += d.toString(); });
+      proc.stdout.on('data', (d) => {
+        stdout += d.toString();
+      });
+      proc.stderr.on('data', (d) => {
+        stderr += d.toString();
+      });
       proc.on('error', (err) => reject(new Error(`Failed to open '${target}': ${err.message}`)));
       proc.on('close', (code) => {
         if (code === 0) {
@@ -342,10 +388,12 @@ export class FileService extends BaseToolService {
           const [, via = 'direct', resolved = target] = stdout.trim().split('|');
           resolve({ opened: target, resolved, via });
         } else {
-          reject(new Error(
-            stderr.trim() ||
-            `Could not find an application, file or folder matching '${target}'.`
-          ));
+          reject(
+            new Error(
+              stderr.trim() ||
+                `Could not find an application, file or folder matching '${target}'.`,
+            ),
+          );
         }
       });
     });
@@ -373,7 +421,7 @@ export class FileService extends BaseToolService {
     if (stat.size > MAX_READ_SIZE) {
       throw new Error(
         `File size (${stat.size} bytes) exceeds the 10 MB limit. ` +
-        `Use a streaming approach for large files.`
+          `Use a streaming approach for large files.`,
       );
     }
 
@@ -382,7 +430,7 @@ export class FileService extends BaseToolService {
     return {
       content,
       size: stat.size,
-      encoding
+      encoding,
     };
   }
 
@@ -409,7 +457,7 @@ export class FileService extends BaseToolService {
 
     return {
       path: filePath,
-      bytesWritten: stat.size
+      bytesWritten: stat.size,
     };
   }
 
@@ -456,7 +504,7 @@ export class FileService extends BaseToolService {
     return {
       entries: result,
       totalEntries: entries.length,
-      truncated
+      truncated,
     };
   }
 
@@ -479,7 +527,7 @@ export class FileService extends BaseToolService {
       created: stat.birthtime.toISOString(),
       modified: stat.mtime.toISOString(),
       accessed: stat.atime.toISOString(),
-      permissions: (stat.mode & 0o777).toString(8)
+      permissions: (stat.mode & 0o777).toString(8),
     };
   }
 
@@ -497,7 +545,7 @@ export class FileService extends BaseToolService {
 
     await fs.rm(filePath, {
       recursive: params.recursive || false,
-      force: false
+      force: false,
     });
 
     return { deleted: filePath };
@@ -570,7 +618,7 @@ export class FileService extends BaseToolService {
 
     return {
       matches: matches.slice(0, maxResults),
-      totalFound: matches.length
+      totalFound: matches.length,
     };
   }
 
@@ -611,7 +659,7 @@ export class FileService extends BaseToolService {
           type: dirent.isDirectory() ? 'directory' : 'file',
           size: stat.size,
           modified: stat.mtime.toISOString(),
-          created: stat.birthtime.toISOString()
+          created: stat.birthtime.toISOString(),
         });
 
         if (recursive && dirent.isDirectory()) {
@@ -642,7 +690,11 @@ export class FileService extends BaseToolService {
     for (const dirent of dirEntries) {
       const fullPath = path.join(dirPath, dirent.name);
 
-      try { executionContext.getStore()?.pathPolicy?.validate(fullPath); } catch { continue; }
+      try {
+        executionContext.getStore()?.pathPolicy?.validate(fullPath);
+      } catch {
+        continue;
+      }
       if (dirent.isSymbolicLink()) continue;
 
       if (dirent.isDirectory()) {
@@ -653,7 +705,7 @@ export class FileService extends BaseToolService {
           matches.push({
             path: fullPath,
             name: dirent.name,
-            size: stat.size
+            size: stat.size,
           });
         } catch {
           // Skip files we can't stat
@@ -664,4 +716,3 @@ export class FileService extends BaseToolService {
 }
 
 export default FileService;
-

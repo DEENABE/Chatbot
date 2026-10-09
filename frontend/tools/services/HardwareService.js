@@ -174,10 +174,7 @@ export class HardwareService extends BaseToolService {
       return { core: i, usagePercent: Math.round(usage * 100) / 100 };
     });
 
-    const overall =
-      totalDelta === 0
-        ? 0
-        : ((totalDelta - totalIdle) / totalDelta) * 100;
+    const overall = totalDelta === 0 ? 0 : ((totalDelta - totalIdle) / totalDelta) * 100;
 
     return {
       usagePercent: Math.round(overall * 100) / 100,
@@ -260,4 +257,3 @@ export class HardwareService extends BaseToolService {
 }
 
 export default HardwareService;
-

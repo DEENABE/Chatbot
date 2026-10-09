@@ -50,11 +50,15 @@ const AUTOMATION_LOG_FILE = path.join(DATASET_DIR, 'automation-sessions.json');
 const TYPED_REPAIR_LOG_FILE = path.join(DATASET_DIR, 'typed-repair-sessions.json');
 
 export function logTypedRepair(state) {
-  const sessions=readAll(TYPED_REPAIR_LOG_FILE),record=projectTypedRepair(state);
-  const index=sessions.findIndex(s=>s.id===record.id);
-  if(index>=0){if(sessions[index].revision>record.revision)return;record.feedback=sessions[index].feedback;sessions[index]=record;}
-  else sessions.push(record);
-  writeAll(TYPED_REPAIR_LOG_FILE,sessions);
+  const sessions = readAll(TYPED_REPAIR_LOG_FILE),
+    record = projectTypedRepair(state);
+  const index = sessions.findIndex((s) => s.id === record.id);
+  if (index >= 0) {
+    if (sessions[index].revision > record.revision) return;
+    record.feedback = sessions[index].feedback;
+    sessions[index] = record;
+  } else sessions.push(record);
+  writeAll(TYPED_REPAIR_LOG_FILE, sessions);
 }
 // Curated, hand-written examples (tool calling, tool-result interpretation,
 // clarification, safety refusals, verification, plain conversation) — not
@@ -137,12 +141,12 @@ export function logSession(session) {
       exitCode: s.exitCode ?? null,
       stdout: (s.stdout || '').slice(0, 1500),
       stderr: (s.stderr || '').slice(0, 800),
-      reason: s.reason || null
+      reason: s.reason || null,
     })),
     resolved: Boolean(session.resolved),
     summary: session.summary || '',
     recommendation: session.recommendation || '',
-    feedback: null // { worked: bool, note: string, at: iso } — filled in later
+    feedback: null, // { worked: bool, note: string, at: iso } — filled in later
   });
   writeAll(file, sessions);
   return id;
@@ -174,7 +178,11 @@ export function addFeedback(id, worked, note = '', requesterUserId = null) {
       if (session.userId && requesterUserId && session.userId !== requesterUserId) {
         return false;
       }
-      session.feedback = { worked: Boolean(worked), note, at: new Date().toISOString() };
+      session.feedback = {
+        worked: Boolean(worked),
+        note,
+        at: new Date().toISOString(),
+      };
       writeAll(file, sessions);
       return true;
     }
@@ -188,7 +196,11 @@ export function addFeedback(id, worked, note = '', requesterUserId = null) {
  * regardless of which file a session actually lives in.
  */
 export function getSessions() {
-  const all = [...readAll(REPAIR_LOG_FILE), ...readAll(AUTOMATION_LOG_FILE), ...readAll(TYPED_REPAIR_LOG_FILE)];
+  const all = [
+    ...readAll(REPAIR_LOG_FILE),
+    ...readAll(AUTOMATION_LOG_FILE),
+    ...readAll(TYPED_REPAIR_LOG_FILE),
+  ];
   return all.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
 }
 
@@ -220,7 +232,12 @@ const MIN_SUMMARY_LENGTH = 40;
  */
 function isGoodSession(s) {
   if (!s || !s.goal || typeof s.summary !== 'string') return false;
-  if(s.type==='typed_repair') return s.phase==='done' && s.machineVerification?.status==='passed' && s.steps?.some(x=>x.verificationStatus==='passed');
+  if (s.type === 'typed_repair')
+    return (
+      s.phase === 'done' &&
+      s.machineVerification?.status === 'passed' &&
+      s.steps?.some((x) => x.verificationStatus === 'passed')
+    );
 
   // Quality floor: a session with no evidence and no explanation teaches
   // nothing regardless of how it ended.
@@ -258,7 +275,9 @@ function formatStep(step) {
     return `- ${step.command}  [NOT RUN — ${step.reason || 'requires your confirmation'}]`;
   }
   if (step.exitCode) {
-    const detail = String(step.stderr || '').trim().slice(0, 70);
+    const detail = String(step.stderr || '')
+      .trim()
+      .slice(0, 70);
     return `- ${step.command}${detail ? `  [FAILED: ${detail}]` : '  [FAILED]'}`;
   }
   return `- ${step.command}`;
@@ -276,7 +295,17 @@ function formatStep(step) {
  * @returns {{messages: Array<{role: string, content: string}>}}
  */
 function buildExample(s) {
-  if(s.type==='typed_repair') return {messages:[{role:'user',content:s.goal},{role:'assistant',content:'Print Spooler is running; printing has not been verified. The only supported mutation requires explicit human approval. User feedback does not replace machine verification.'}]};
+  if (s.type === 'typed_repair')
+    return {
+      messages: [
+        { role: 'user', content: s.goal },
+        {
+          role: 'assistant',
+          content:
+            'Print Spooler is running; printing has not been verified. The only supported mutation requires explicit human approval. User feedback does not replace machine verification.',
+        },
+      ],
+    };
   const steps = Array.isArray(s.steps) ? s.steps.filter((step) => step && step.command) : [];
   const commandList = steps.map(formatStep).join('\n');
   const label = domainLabel(s.domain, s.subdomain);
@@ -287,7 +316,9 @@ function buildExample(s) {
   if (isAutomation) {
     if (s.clarification) parts.push(`\nClarification asked: ${s.clarification}`);
     if (s.riskLevel) {
-      parts.push(`\nRisk: ${s.riskLevel} | Confirmation required: ${Boolean(s.requiresConfirmation)}`);
+      parts.push(
+        `\nRisk: ${s.riskLevel} | Confirmation required: ${Boolean(s.requiresConfirmation)}`,
+      );
     }
     if (s.plannedAction) parts.push(`\nPlanned action:\n${s.plannedAction}`);
   }
@@ -295,9 +326,7 @@ function buildExample(s) {
   if (commandList) parts.push(`\nCommands used:\n${commandList}`);
 
   if (isAutomation && Array.isArray(s.verification) && s.verification.length) {
-    const checks = s.verification
-      .map((v) => `- ${v.command}  -> expect: ${v.expected}`)
-      .join('\n');
+    const checks = s.verification.map((v) => `- ${v.command}  -> expect: ${v.expected}`).join('\n');
     parts.push(`\nVerification:\n${checks}`);
   }
   if (isAutomation && s.rollback) parts.push(`\nRollback: ${s.rollback}`);
@@ -310,7 +339,7 @@ function buildExample(s) {
     parts.push(
       isAutomation
         ? '\nNOTE: not executed - see the planned action and recommendation.'
-        : '\nNOTE: not resolved - see recommendation.'
+        : '\nNOTE: not resolved - see recommendation.',
     );
   }
 
@@ -322,8 +351,8 @@ function buildExample(s) {
     messages: [
       { role: 'system', content: persona },
       { role: 'user', content: s.goal },
-      { role: 'assistant', content: parts.join('').trim() }
-    ]
+      { role: 'assistant', content: parts.join('').trim() },
+    ],
   };
 }
 
@@ -339,14 +368,15 @@ export function exportTrainingData() {
   return [
     ...readAll(REPAIR_LOG_FILE).filter(isGoodSession).map(buildExample),
     ...readAll(TYPED_REPAIR_LOG_FILE).filter(isGoodSession).map(buildExample),
-    ...readAll(AUTOMATION_LOG_FILE).filter(isGoodSession).map(buildExample)
+    ...readAll(AUTOMATION_LOG_FILE).filter(isGoodSession).map(buildExample),
   ];
 }
 
 /** Read the curated general-examples seed (already in {messages:[...]} chat format — no session-log cleaning needed). */
 function readGeneralExamples() {
   try {
-    return fs.readFileSync(resolveReadPath(GENERAL_EXAMPLES_FILE), 'utf8')
+    return fs
+      .readFileSync(resolveReadPath(GENERAL_EXAMPLES_FILE), 'utf8')
       .split('\n')
       .filter((l) => l.trim())
       .map((l) => JSON.parse(l));
@@ -366,9 +396,11 @@ function readGeneralExamples() {
  */
 export function exportTrainingDataSplit() {
   return {
-    repair: [...readAll(REPAIR_LOG_FILE),...readAll(TYPED_REPAIR_LOG_FILE)].filter(isGoodSession).map(buildExample),
+    repair: [...readAll(REPAIR_LOG_FILE), ...readAll(TYPED_REPAIR_LOG_FILE)]
+      .filter(isGoodSession)
+      .map(buildExample),
     automation: readAll(AUTOMATION_LOG_FILE).filter(isGoodSession).map(buildExample),
-    general: readGeneralExamples()
+    general: readGeneralExamples(),
   };
 }
 

@@ -1,170 +1,125 @@
-import { spawn, execSync } from 'child_process';
-import path from 'path';
-import fs from 'fs';
-import { dialog } from 'electron';
+import { spawn, execFileSync } from 'node:child_process';
+import path from 'node:path';
+import fs from 'node:fs';
 import { getBackendPath, isPacked } from '../utils/pathHelper.js';
 import { logger } from '../utils/logger.js';
+import { prepareRuntimeStorage } from '../utils/runtimeStorage.js';
+import { setBackendEndpoint } from '../utils/runtimeEndpoint.js';
+import { redactDiagnostics } from '../utils/redactDiagnostics.js';
 
 let backendProcess = null;
+let stopping = false;
+let logStream = null;
 
-/**
- * Terminate whatever is already listening on `port`, if anything.
- *
- * Why this exists: startup used to just probe the health endpoint and, if
- * anything answered, silently reuse it instead of spawning our own backend.
- * That let an orphaned backend from a PREVIOUS launch — e.g. one whose
- * Electron GUI process was killed externally, leaving its spawned backend
- * child running — keep serving every future launch indefinitely, even
- * across full rebuilds, because nothing ever verified it was actually
- * running the current build's code. One real instance of this: an orphaned
- * pre-migration backend kept answering on 3001 for hours, still reading the
- * old JSON-file "database" instead of real SQLite, so accounts registered
- * against the current build were invisible to it and vice versa — same
- * symptom as a genuine password mismatch, but nothing to do with hashing.
- *
- * With the single-instance lock in main.js, by the time this runs we are
- * always the sole legitimate instance — so anything already on this port is
- * by definition a leftover, never a peer to cooperate with.
- */
-export function ensurePortFree(port) {
-  if (process.platform !== 'win32') {
-    // This app currently ships Windows-only (electron-builder --win); a
-    // cross-platform equivalent (lsof, etc.) isn't needed until that changes.
-    return;
-  }
-  try {
-    const output = execSync(`netstat -ano -p tcp`, { encoding: 'utf8' });
-    const pids = new Set();
-    for (const line of output.split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed.includes(`:${port} `) && !trimmed.includes(`:${port}\t`)) continue;
-      const match = trimmed.match(/LISTENING\s+(\d+)\s*$/);
-      if (match) pids.add(match[1]);
-    }
-    for (const pid of pids) {
-      if (pid === String(process.pid)) continue; // never self-kill
-      logger.warn(`Port ${port} was already held by PID ${pid} (leftover from a previous run) — terminating it before starting a fresh backend.`);
-      try {
-        execSync(`taskkill /PID ${pid} /F`, { stdio: 'ignore' });
-      } catch {
-        // Already exited, or we lack permission — either way, the upcoming
-        // spawn will surface a clear EADDRINUSE if the port is still held.
-      }
-    }
-  } catch {
-    // netstat/parsing failing here just means we couldn't confirm the port
-    // is free — not worth blocking startup over; proceed as before.
-  }
-}
-
-export function startBackend(app, toolBridge) {
+/** Own backend always binds an OS-assigned loopback port. Never kill a port owner. */
+export async function startBackend(app, toolBridge) {
+  if (backendProcess && backendProcess.exitCode === null)
+    throw new Error('The local backend is already starting or running.');
+  stopping = false;
   const serverPath = getBackendPath();
-  const env = { ...process.env };
+  const env = {
+    ...process.env,
+    PORT: '0',
+    HOST: '127.0.0.1',
+    CHANAKYA_DESKTOP_CHILD: '1',
+    ELECTRON_RUN_AS_NODE: '1',
+  };
   delete env.TOOL_ENGINE_INTERNAL_URL;
   delete env.TOOL_ENGINE_SESSION_SECRET;
   if (toolBridge) {
     env.TOOL_ENGINE_INTERNAL_URL = toolBridge.url;
     env.TOOL_ENGINE_SESSION_SECRET = toolBridge.secret;
   }
-
   if (isPacked) {
     env.NODE_ENV = 'production';
-    // Deliberately NOT setting APP_DATA_PATH here anymore — the backend's
-    // own config.js now defaults persistent storage to its own resources/
-    // backend/storage folder (portable with the install), not an OS
-    // profile directory. See config.js for the full reasoning, and
-    // scripts/prepare-backend.cjs / afterPack.cjs for how that folder
-    // survives being rebuilt/repackaged.
+    const runtime = await prepareRuntimeStorage(app.getPath('userData'), [
+      path.join(app.getPath('userData'), 'storage'),
+      path.join(process.resourcesPath, 'backend', 'storage'),
+    ]);
+    env.APP_DATA_PATH = runtime.dataRoot;
+    env.FRONTEND_DIST_PATH = path.join(app.getAppPath(), 'dist');
+    if (runtime.migrated) logger.log('Legacy local data copied to the per-user data directory.');
   }
-
-  // Unified Node Environment loading:
-  // Execute via Electron's own executable as Node.js process using ELECTRON_RUN_AS_NODE=1
-  env.ELECTRON_RUN_AS_NODE = '1';
-  
-  // Resolve the BACKEND's own dependencies. When packed they live in
-  // resources/backend/node_modules (bundled by scripts/prepare-backend.cjs).
-  const appNodeModules = isPacked
+  env.NODE_PATH = isPacked
     ? path.join(process.resourcesPath, 'backend', 'node_modules')
-    : path.join(path.resolve(path.dirname(serverPath), '..', '..', 'frontend'), 'node_modules') + path.delimiter + path.resolve(path.dirname(serverPath), '..');
-  env.NODE_PATH = appNodeModules;
-
-  const cmd = process.execPath;
-  const args = [serverPath];
-
-  logger.log(`Spawning backend at path: ${serverPath}`);
-  backendProcess = spawn(cmd, args, {
+    : path.resolve(path.dirname(serverPath), '..', '..', 'node_modules');
+  const child = spawn(process.execPath, [serverPath], {
     shell: false,
-    stdio: 'pipe',
+    stdio: ['pipe', 'pipe', 'pipe'],
+    windowsHide: true,
     env,
-    cwd: isPacked
-      ? path.join(process.resourcesPath, 'backend')
-      : path.resolve(path.dirname(serverPath), '..')
+    cwd: path.resolve(path.dirname(serverPath), '..'),
   });
-
-  // Append, not overwrite: this file is the only record of what a backend
-  // error actually said. Truncating it on every launch means a crash or
-  // auth error from a previous session is gone by the time anyone goes
-  // looking for it, right after the one thing that would make it
-  // diagnosable (a restart) has already happened.
+  backendProcess = child;
   const logPath = path.join(app.getPath('userData'), 'backend.log');
-  const logStream = fs.createWriteStream(logPath, { flags: 'a' });
+  logStream = fs.createWriteStream(logPath, { flags: 'a' });
+  logStream.on('error', (error) => logger.warn('Backend diagnostic log unavailable:', error.code));
   logStream.write(`\n[${new Date().toISOString()}] === backend starting ===\n`);
-
-  backendProcess.stdout?.on('data', (data) => {
-    const text = data.toString();
-    console.log(`[backend] ${text.trim()}`);
-    logStream.write(`[STDOUT] ${text}`);
+  let ready = false;
+  let buffer = '';
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error('The local service did not become ready in time. See diagnostics.'));
+      killBackend();
+    }, 30000);
+    const fail = (error) => {
+      clearTimeout(timer);
+      reject(error);
+    };
+    child.stdout.on('data', (data) => {
+      logStream?.write(`[STDOUT] ${redactDiagnostics(data, [toolBridge?.secret])}`);
+      buffer += data.toString();
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() || '';
+      // A malformed/unbounded child log cannot grow the readiness buffer forever.
+      if (buffer.length > 65536) buffer = buffer.slice(-65536);
+      for (const line of lines) {
+        if (!line.startsWith('CHANAKYA_BACKEND_READY ')) continue;
+        try {
+          const endpoint = JSON.parse(line.slice('CHANAKYA_BACKEND_READY '.length));
+          if (endpoint.pid !== child.pid || ready) continue;
+          const apiBaseUrl = setBackendEndpoint(endpoint.port);
+          ready = true;
+          clearTimeout(timer);
+          resolve({ process: child, apiBaseUrl });
+        } catch {
+          fail(new Error('The local service returned an invalid startup response.'));
+          killBackend();
+        }
+      }
+    });
+    child.stderr.on('data', (data) =>
+      logStream?.write(`[STDERR] ${redactDiagnostics(data, [toolBridge?.secret])}`),
+    );
+    child.once('error', (error) =>
+      fail(new Error(`Could not start the local service (${error.code || 'process error'}).`)),
+    );
+    child.once('exit', (code) => {
+      logStream?.end(`[${new Date().toISOString()}] backend exited (${code})\n`);
+      logStream = null;
+      if (backendProcess === child) backendProcess = null;
+      if (!ready)
+        fail(new Error(`The local service exited during startup (${code}). See diagnostics.`));
+      else if (!stopping) logger.error('The local backend exited unexpectedly:', code);
+    });
   });
-
-  backendProcess.stderr?.on('data', (data) => {
-    const text = data.toString();
-    console.error(`[backend] ${text.trim()}`);
-    logStream.write(`[STDERR] ${text}`);
-  });
-
-  backendProcess.on('error', (err) => {
-    logger.error('Failed to start backend:', err.message);
-    dialog.showErrorBox('Failed to Start Backend', `Could not launch backend process: ${err.message}`);
-  });
-
-  backendProcess.on('exit', (code) => {
-    logger.log(`Backend exited with code ${code}`);
-    if (code !== 0 && code !== null) {
-      dialog.showErrorBox(
-        'Backend Server Error',
-        `The backend process exited unexpectedly with code ${code}.\nThis usually happens if port 3001 is already in use by another process.`
-      );
-    }
-  });
-
-  return backendProcess;
 }
 
 export function killBackend() {
-  if (backendProcess && !backendProcess.killed) {
-    const pid = backendProcess.pid;
-    logger.log(`Terminating backend process (PID ${pid})...`);
-    // taskkill /T kills the whole process TREE rooted at this PID, not just
-    // this one process. Plain backendProcess.kill() only ever touched the
-    // backend itself — but the backend's own agent tools (powershellRunner.js,
-    // CmdService.js, PowerShellService.js) spawn powershell.exe/cmd.exe as
-    // grandchildren while running agent commands. On Windows, killing a
-    // parent process does NOT kill its children (no cascade without a Job
-    // Object), so any agent command still in flight when the app closes was
-    // left running as a genuine orphan — its own per-call timeout lives in
-    // the now-dead parent's event loop and can never fire. This is
-    // synchronous (blocks until the whole tree is confirmed gone) rather
-    // than the previous fire-and-forget .kill(), so cleanUpProcesses()
-    // callers can rely on it having actually finished before app.quit().
-    if (process.platform === 'win32') {
-      try {
-        execSync(`taskkill /PID ${pid} /T /F`, { stdio: 'ignore' });
-      } catch {
-        // Already exited between the .killed check above and here — fine.
-      }
-    } else {
-      backendProcess.kill();
+  const child = backendProcess;
+  if (!child || child.exitCode !== null) return;
+  stopping = true;
+  const pid = child.pid;
+  if (process.platform === 'win32' && Number.isSafeInteger(pid) && pid > 0) {
+    try {
+      // Only a child created by this manager; no port/PID-file lookup is used.
+      execFileSync('taskkill.exe', ['/PID', String(pid), '/T', '/F'], {
+        stdio: 'ignore',
+        windowsHide: true,
+        timeout: 5000,
+      });
+    } catch {
+      child.kill();
     }
-    backendProcess = null;
-  }
+  } else child.kill();
 }

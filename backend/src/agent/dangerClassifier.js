@@ -141,13 +141,38 @@ const SECURITY_PATTERNS = [
  * pipeline still escalates the classification.
  */
 const READ_ALLOWLIST = [
-  /^get-/i, /^test-/i, /^resolve-/i, /^measure-/i, /^select-/i, /^where-/i,
-  /^sort-/i, /^find-/i, /^show-/i, /^read-/i, /^compare-/i, /^format-list/i,
-  /^format-table/i, /^out-string/i, /^convertto-/i, /^convertfrom-/i,
-  /^ipconfig\b/i, /^systeminfo\b/i, /^ping\b/i, /^tracert\b/i, /^nslookup\b/i,
-  /^netstat\b/i, /^tasklist\b/i, /^wmic\b(?![^\n]*\b(delete|call|set)\b)/i,
-  /^whoami\b/i, /^hostname\b/i, /^echo\b/i, /^write-(host|output)\b/i,
-  /^dir\b/i, /^ls\b/i, /^type\b/i, /^gc\b/i,
+  /^get-/i,
+  /^test-/i,
+  /^resolve-/i,
+  /^measure-/i,
+  /^select-/i,
+  /^where-/i,
+  /^sort-/i,
+  /^find-/i,
+  /^show-/i,
+  /^read-/i,
+  /^compare-/i,
+  /^format-list/i,
+  /^format-table/i,
+  /^out-string/i,
+  /^convertto-/i,
+  /^convertfrom-/i,
+  /^ipconfig\b/i,
+  /^systeminfo\b/i,
+  /^ping\b/i,
+  /^tracert\b/i,
+  /^nslookup\b/i,
+  /^netstat\b/i,
+  /^tasklist\b/i,
+  /^wmic\b(?![^\n]*\b(delete|call|set)\b)/i,
+  /^whoami\b/i,
+  /^hostname\b/i,
+  /^echo\b/i,
+  /^write-(host|output)\b/i,
+  /^dir\b/i,
+  /^ls\b/i,
+  /^type\b/i,
+  /^gc\b/i,
 ];
 
 /**
@@ -178,7 +203,8 @@ export function classifyCommand(command) {
     if (pattern.test(normalized)) {
       return {
         level: 'blocked',
-        reason: 'Obfuscated or indirect execution, network download/upload, persistence, security-tool tampering or credential access — needs a human decision.',
+        reason:
+          'Obfuscated or indirect execution, network download/upload, persistence, security-tool tampering or credential access — needs a human decision.',
       };
     }
   }
@@ -194,9 +220,9 @@ export function classifyCommand(command) {
     .split(/[|;\n]|&&|\|\|/)
     .map((s) => s.trim())
     .filter(Boolean);
-  const everySegmentReads = segments.length > 0 && segments.every((seg) =>
-    READ_ALLOWLIST.some((pattern) => pattern.test(seg))
-  );
+  const everySegmentReads =
+    segments.length > 0 &&
+    segments.every((seg) => READ_ALLOWLIST.some((pattern) => pattern.test(seg)));
   if (everySegmentReads) {
     return { level: 'read', reason: 'Read-only diagnostic.' };
   }

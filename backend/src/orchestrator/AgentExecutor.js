@@ -16,15 +16,18 @@ import { validateCapability } from './CapabilityContracts.js';
 import { ALLOWED_ACTIONS } from './OrchestratorPlanner.js';
 import { validateRepair } from './WindowsRepairContract.js';
 export function toolRequestForStep(step) {
-  return { tool: step.confirmationId ? '_system' : step.tool, action: step.confirmationId ? 'confirm' : step.action,
-    params: step.confirmationId ? { confirmationId: step.confirmationId } : step.params ?? {},
-    toolCallId: step.toolCallId, requestId: step.requestId, idempotencyKey: step.idempotencyKey };
+  return {
+    tool: step.confirmationId ? '_system' : step.tool,
+    action: step.confirmationId ? 'confirm' : step.action,
+    params: step.confirmationId ? { confirmationId: step.confirmationId } : (step.params ?? {}),
+    toolCallId: step.toolCallId,
+    requestId: step.requestId,
+    idempotencyKey: step.idempotencyKey,
+  };
 }
 
 // Build a fast lookup: "tool.action" → AllowedAction
-const ALLOWED_LOOKUP = new Map(
-  ALLOWED_ACTIONS.map((a) => [`${a.tool}.${a.action}`, a])
-);
+const ALLOWED_LOOKUP = new Map(ALLOWED_ACTIONS.map((a) => [`${a.tool}.${a.action}`, a]));
 
 /**
  * Execute a single plan step.
@@ -34,10 +37,20 @@ const ALLOWED_LOOKUP = new Map(
  */
 export async function executeStep(step, { signal, ownerId, admission } = {}) {
   const { tool, action, params } = step;
-  if(tool==='windowsRepair') {
-    const invalid=validateRepair(action,params);
-    if(invalid || admission?.taskType!=='windows_repair_print_spooler_start') return {success:false,error:{code:'REPAIR_ADMISSION_REQUIRED',message:invalid||'Typed repair session required.'}};
-    return callTool({...toolRequestForStep(step),admission},{signal,ownerId,humanApproved:!!step.confirmationId});
+  if (tool === 'windowsRepair') {
+    const invalid = validateRepair(action, params);
+    if (invalid || admission?.taskType !== 'windows_repair_print_spooler_start')
+      return {
+        success: false,
+        error: {
+          code: 'REPAIR_ADMISSION_REQUIRED',
+          message: invalid || 'Typed repair session required.',
+        },
+      };
+    return callTool(
+      { ...toolRequestForStep(step), admission },
+      { signal, ownerId, humanApproved: !!step.confirmationId },
+    );
   }
 
   // Independent security check: ensure this tool/action is in the allowed manifest.
@@ -49,13 +62,21 @@ export async function executeStep(step, { signal, ownerId, admission } = {}) {
       success: false,
       error: {
         code: 'TOOL_NOT_ALLOWED',
-        message: `Tool action '${key}' is not in the Milestone 1 allowed manifest. ` +
-                 `Execution blocked by AgentExecutor security check.`,
+        message:
+          `Tool action '${key}' is not in the Milestone 1 allowed manifest. ` +
+          `Execution blocked by AgentExecutor security check.`,
       },
     };
   }
 
   const invalid = validateCapability(tool, action, params ?? {});
-  if (invalid) return { success: false, error: { code: 'VALIDATION_ERROR', message: invalid } };
-  return callTool({...toolRequestForStep(step),admission}, { signal, ownerId, humanApproved:!!step.confirmationId });
+  if (invalid)
+    return {
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: invalid },
+    };
+  return callTool(
+    { ...toolRequestForStep(step), admission },
+    { signal, ownerId, humanApproved: !!step.confirmationId },
+  );
 }

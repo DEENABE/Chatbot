@@ -8,7 +8,7 @@
  *     accurate than the Windows recogniser — that one turned "show me the
  *     network settings" into "Surely the network settings" on clean synthetic
  *     speech, and tends to return nothing at all for ordinary talking.
- *     The model downloads once (~40 MB) and is cached after that.
+ *     The model must already be installed locally; no implicit download occurs.
  *
  *  2. The backend's Windows Speech Recognition route, used when Whisper cannot
  *     load — most likely a first run with no internet.
@@ -18,8 +18,11 @@ import { pipeline, env } from '@huggingface/transformers';
 import { blobToPcm16k, encodeWav } from './wav.js';
 import * as apiService from './api.js';
 
-// Pull straight from the hub; there are no local model files shipped with the app.
-env.allowLocalModels = false;
+// Voice remains offline on first run. Optional Whisper assets may be provided
+// in public/models; Windows speech is retained when those assets are absent.
+env.allowLocalModels = true;
+env.allowRemoteModels = false;
+env.localModelPath = new URL('models/', window.location.href).href;
 
 let transcriberPromise = null;
 
@@ -67,7 +70,10 @@ export async function transcribe(recording) {
 
   const whisper = await loadWhisper();
   if (whisper) {
-    const result = await whisper(samples, { chunk_length_s: 30, stride_length_s: 5 });
+    const result = await whisper(samples, {
+      chunk_length_s: 30,
+      stride_length_s: 5,
+    });
     const text = (Array.isArray(result) ? result[0]?.text : result?.text) || '';
     return { text: text.trim(), engine: 'whisper' };
   }

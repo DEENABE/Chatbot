@@ -15,7 +15,11 @@
         "additionalProperties": false,
         "required": ["role"],
         "properties": {
-          "role": { "type": "string", "enum": ["system", "user", "assistant", "tool"], "description": "'tool' carries a tool's raw result back to the model — general-dataset.jsonl tool-result-interpretation examples only." },
+          "role": {
+            "type": "string",
+            "enum": ["system", "user", "assistant", "tool"],
+            "description": "'tool' carries a tool's raw result back to the model — general-dataset.jsonl tool-result-interpretation examples only."
+          },
           "content": { "type": "string" },
           "tool_call": {
             "type": "string",
@@ -26,10 +30,7 @@
             "description": "Parameters passed to tool_call, e.g. {\"target\": \"notepad++\"} — only meaningful alongside tool_call."
           }
         },
-        "anyOf": [
-          { "required": ["content"] },
-          { "required": ["tool_call"] }
-        ]
+        "anyOf": [{ "required": ["content"] }, { "required": ["tool_call"] }]
       }
     }
   }

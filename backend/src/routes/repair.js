@@ -25,11 +25,18 @@ repairRouter.use(requireAuth);
 // session that belongs to a different account (Step 17: sessionId IDOR).
 repairRouter.post('/feedback', (request, response) => {
   const { sessionId, worked, note } = request.body || {};
-  if (!sessionId || typeof sessionId !== 'string' || sessionId.length > 200 || typeof worked !== 'boolean') {
+  if (
+    !sessionId ||
+    typeof sessionId !== 'string' ||
+    sessionId.length > 200 ||
+    typeof worked !== 'boolean'
+  ) {
     return response.status(400).json({ error: 'sessionId and boolean "worked" are required.' });
   }
   if (note !== undefined && (typeof note !== 'string' || note.length > MAX_NOTE_LENGTH)) {
-    return response.status(400).json({ error: `note must be a string of ${MAX_NOTE_LENGTH} characters or fewer.` });
+    return response.status(400).json({
+      error: `note must be a string of ${MAX_NOTE_LENGTH} characters or fewer.`,
+    });
   }
   const ok = addFeedback(sessionId, worked, note || '', request.userId);
   if (!ok) return response.status(404).json({ error: 'Repair session not found.' });
@@ -65,11 +72,17 @@ repairRouter.post('/', memoryRequest, async (request, response) => {
     return response.status(400).json({ error: 'A "goal" describing the problem is required.' });
   }
   if (String(goal).length > MAX_GOAL_LENGTH) {
-    return response.status(400).json({ error: `goal must be ${MAX_GOAL_LENGTH} characters or fewer.` });
+    return response
+      .status(400)
+      .json({ error: `goal must be ${MAX_GOAL_LENGTH} characters or fewer.` });
   }
   let boundedMaxSteps;
   try {
-    boundedMaxSteps = boundedInt(maxSteps, 'maxSteps', { min: 1, max: MAX_STEPS_CEILING, fallback: undefined });
+    boundedMaxSteps = boundedInt(maxSteps, 'maxSteps', {
+      min: 1,
+      max: MAX_STEPS_CEILING,
+      fallback: undefined,
+    });
   } catch (error) {
     return response.status(400).json({ error: error.message });
   }
@@ -89,7 +102,7 @@ repairRouter.post('/', memoryRequest, async (request, response) => {
       maxSteps: boundedMaxSteps,
       signal,
       userId: request.userId,
-      onEvent: send
+      onEvent: send,
     });
   } catch (error) {
     send({ type: 'error', payload: { message: error.message } });

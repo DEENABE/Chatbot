@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-const API_BASE = 'http://127.0.0.1:3001/api';
+export const API_BASE =
+  window.electronAPI?.getApiBaseUrl?.() ||
+  (/^https?:$/.test(window.location.protocol) ? '/api' : 'http://127.0.0.1:3001/api');
 
 // In-memory fallback for the non-Electron dev path (`npm run dev`, a plain
 // Vite/browser tab with no preload script). Same "gone on reload" property
@@ -62,10 +64,13 @@ api.interceptors.response.use(
       }
     }
     return Promise.reject(error);
-  }
+  },
 );
 
-export async function streamChat(payload, { onToken, onSources, onDone, onToolCall, onMemory, signal }) {
+export async function streamChat(
+  payload,
+  { onToken, onSources, onDone, onToolCall, onMemory, onRoute, onSoftwareChoice, signal },
+) {
   const token = await getToken();
   const headers = { 'Content-Type': 'application/json' };
   if (token) {
@@ -76,7 +81,7 @@ export async function streamChat(payload, { onToken, onSources, onDone, onToolCa
     method: 'POST',
     headers,
     body: JSON.stringify(payload),
-    signal
+    signal,
   });
 
   if (!response.ok) {
@@ -97,6 +102,7 @@ export async function streamChat(payload, { onToken, onSources, onDone, onToolCa
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  let finished = false;
 
   while (true) {
     const { value, done } = await reader.read();
@@ -110,16 +116,24 @@ export async function streamChat(payload, { onToken, onSources, onDone, onToolCa
       try {
         event = JSON.parse(line);
       } catch {
-        throw new Error('The local server returned an incomplete stream. Restart the backend and try again.');
+        throw new Error(
+          'The local server returned an incomplete stream. Restart the backend and try again.',
+        );
       }
+      if (event.type === 'done') finished = true;
       if (event.type === 'token') onToken(event.text);
       if (event.type === 'sources') onSources(event.sources);
       if (event.type === 'memory') onMemory?.(event.decision);
+      if (event.type === 'route') onRoute?.(event);
+      if (event.type === 'software_choice') onSoftwareChoice?.(event);
       if (event.type === 'tool_call' && onToolCall) onToolCall(event.toolCall);
       if (event.type === 'done') onDone(event.message, event.conversationId);
       if (event.type === 'error') throw new Error(event.error);
     }
   }
+  // A stream that just stops (backend restarted, connection dropped) used to leave an empty bubble.
+  if (!finished && !signal?.aborted)
+    throw new Error('The response ended before the model finished. Please ask again.');
 }
 
 export async function streamRepair(payload, handlers) {
@@ -141,13 +155,17 @@ async function streamNdjson(url, payload, { onEvent, signal }) {
     method: 'POST',
     headers,
     body: JSON.stringify(payload),
-    signal
+    signal,
   });
 
   if (!response.ok) {
     const raw = await response.text();
     let detail = raw;
-    try { detail = JSON.parse(raw).error; } catch { /* keep raw */ }
+    try {
+      detail = JSON.parse(raw).error;
+    } catch {
+      /* keep raw */
+    }
     throw new Error(detail || `Agent server returned HTTP ${response.status}.`);
   }
   if (!response.body) {
@@ -167,12 +185,20 @@ async function streamNdjson(url, payload, { onEvent, signal }) {
     for (const line of lines) {
       if (!line.trim()) continue;
       let event;
-      try { event = JSON.parse(line); } catch { continue; }
+      try {
+        event = JSON.parse(line);
+      } catch {
+        continue;
+      }
       onEvent(event);
     }
   }
   if (buffer.trim()) {
-    try { onEvent(JSON.parse(buffer)); } catch { /* ignore trailing */ }
+    try {
+      onEvent(JSON.parse(buffer));
+    } catch {
+      /* ignore trailing */
+    }
   }
 }
 
@@ -187,8 +213,7 @@ export const auth = {
     api.post('/auth/change-password', { currentPassword, newPassword }),
   deleteAccount: (password) => api.delete('/auth/account', { data: { password } }),
   forgotPassword: (username) => api.post('/auth/forgot-password', { username }),
-  resetPassword: (token, newPassword) =>
-    api.post('/auth/reset-password', { token, newPassword })
+  resetPassword: (token, newPassword) => api.post('/auth/reset-password', { token, newPassword }),
 };
 
 // History API calls
@@ -197,16 +222,16 @@ export const history = {
   search: (q) => api.get(`/history/search?q=${encodeURIComponent(q)}`),
   delete: (id) => api.delete(`/history/${id}`),
   update: (id, updates) => api.patch(`/history/${id}`, updates),
-  
+
   createFolder: (name) => api.post('/history/folders', { name }),
   updateFolder: (id, name) => api.patch(`/history/folders/${id}`, { name }),
-  deleteFolder: (id) => api.delete(`/history/folders/${id}`)
+  deleteFolder: (id) => api.delete(`/history/folders/${id}`),
 };
 
 // Documents API calls
 export const documents = {
-  get: () => api.get('/documents'),
-  upload: (formData, onUploadProgress) =>
+  get: (params) => api.get('/documents', { params }),
+  upload: (formData, onUploadProgress, signal) =>
     // A folder can contain many documents, and each one is parsed and
     // embedded (via Ollama) synchronously before the response comes back.
     // If Ollama's model was idle-unloaded (see unloadIdleModel), the first
@@ -215,46 +240,56 @@ export const documents = {
     // docx whenever that cold-load happened, so uploads get a much longer
     // budget than every other request.
     api.post('/upload', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
       onUploadProgress,
-      timeout: 600000
+      signal,
+      timeout: 600000,
     }),
-  delete: (id) => api.delete(`/documents/${id}`)
+  delete: (id) => api.delete(`/documents/${id}`),
+};
+
+export const workspaces = {
+  get: () => api.get('/workspaces'),
+  create: (data) => api.post('/workspaces', data),
+  update: (id, data) => api.patch(`/workspaces/${encodeURIComponent(id)}`, data),
+  activate: (id) => api.post(`/workspaces/${encodeURIComponent(id)}/activate`),
+  files: (id) => api.get(`/workspaces/${encodeURIComponent(id)}/files`),
+  status: (id) => api.get(`/workspaces/${encodeURIComponent(id)}/status`),
+  index: (id, data = {}) =>
+    api.post(`/workspaces/${encodeURIComponent(id)}/index`, data, { timeout: 600000 }),
+  pause: (id) => api.post(`/workspaces/${encodeURIComponent(id)}/pause`),
+  removeIndex: (id) => api.delete(`/workspaces/${encodeURIComponent(id)}/index`),
 };
 
 // Models API
 export const models = {
   get: () => api.get('/models'),
   loaded: () => api.get('/models/loaded'),
-  unload: () => api.post('/models/unload')
+  unload: () => api.post('/models/unload'),
 };
 
 // Memory API
 export const memories = {
   longTerm: () => api.get('/memory/long-term'),
-  saveLongTerm: (value) => api.post('/memory/long-term',value),
-  updateLongTerm: (id,value) => api.patch(`/memory/long-term/${encodeURIComponent(id)}`,value),
+  saveLongTerm: (value) => api.post('/memory/long-term', value),
+  updateLongTerm: (id, value) => api.patch(`/memory/long-term/${encodeURIComponent(id)}`, value),
   deleteLongTerm: (id) => api.delete(`/memory/long-term/${encodeURIComponent(id)}`),
-  get: (type) =>
-    api.get(`/memory${type ? `?type=${type}` : ''}`),
-  create: (content, type) =>
-    api.post('/memory', { content, type }),
+  get: (type) => api.get(`/memory${type ? `?type=${type}` : ''}`),
+  create: (content, type) => api.post('/memory', { content, type }),
   delete: (id) => api.delete(`/memory/${id}`),
-  clear: (type) =>
-    api.delete(`/memory${type ? `?type=${type}` : ''}`)
+  clear: (type) => api.delete(`/memory${type ? `?type=${type}` : ''}`),
 };
 
 // Transcribe API
 export const transcribe = {
   audio: (formData) =>
     api.post('/transcribe', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
 };
 
 // Stats API
 export const stats = {
-  get: () => api.get('/stats')
+  get: () => api.get('/stats'),
 };
 
 // Translator API
@@ -264,17 +299,22 @@ export const translate = {
   // backend config.js's translate.timeoutMs, now 180s) — this must be at
   // least that long, or the client would give up before the server does.
   text: ({ text, sourceLanguage, targetLanguage }) =>
-    api.post('/translate', { text, sourceLanguage, targetLanguage }, { timeout: 200000 })
+    api.post('/translate', { text, sourceLanguage, targetLanguage }, { timeout: 200000 }),
 };
 
 // Repair feedback / dataset API
 export const repair = {
-  inspect: id => api.get(`/orchestrate/checkpoints/${encodeURIComponent(id)}`),
-  resume: (id,body,signal) => api.post(`/orchestrate/checkpoints/${encodeURIComponent(id)}/resume`,body,{signal}),
-  renew: (id,body) => api.post(`/orchestrate/checkpoints/${encodeURIComponent(id)}/confirmation/renew`,body),
-  cancel: (id,requestId) => api.post(`/orchestrate/checkpoints/${encodeURIComponent(id)}/cancel`,{requestId}),
+  inspect: (id) => api.get(`/orchestrate/checkpoints/${encodeURIComponent(id)}`),
+  resume: (id, body, signal) =>
+    api.post(`/orchestrate/checkpoints/${encodeURIComponent(id)}/resume`, body, { signal }),
+  renew: (id, body) =>
+    api.post(`/orchestrate/checkpoints/${encodeURIComponent(id)}/confirmation/renew`, body),
+  cancel: (id, requestId) =>
+    api.post(`/orchestrate/checkpoints/${encodeURIComponent(id)}/cancel`, {
+      requestId,
+    }),
   feedback: (sessionId, worked, note = '') =>
     api.post('/repair/feedback', { sessionId, worked, note }),
   sessions: () => api.get('/repair/sessions'),
-  dataset: () => api.get('/repair/dataset')
+  dataset: () => api.get('/repair/dataset'),
 };

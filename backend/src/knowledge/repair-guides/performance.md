@@ -1,6 +1,7 @@
 # Performance Repair Guide
 
 ## Diagnose
+
 - Top CPU consumers:
   `Get-Process | Sort-Object CPU -Descending | Select-Object -First 8 Name, Id, CPU`
 - Top memory consumers:
@@ -29,6 +30,7 @@
   `Get-ChildItem "$env:WINDIR\SoftwareDistribution\Download" -ErrorAction SilentlyContinue`
 
 ## Common fixes
+
 - Low disk space — clear the current user's temp files (safe):
   `Remove-Item "$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue`
 - Reclaim update/cache space safely with the built-in cleaner:
@@ -47,6 +49,7 @@ The prompt may name a narrower area, e.g. "performance (gpu)". Use the matching
 playbook; fall back to the general sections above when none fits.
 
 ### cpu — high or stuck processor usage
+
 - Top consumers by accumulated CPU:
   `Get-Process | Sort-Object CPU -Descending | Select-Object -First 5 Name, Id, CPU`
 - Live processor load:
@@ -57,6 +60,7 @@ playbook; fall back to the general sections above when none fits.
   at times. Sustained high `System` CPU means a driver, not an app.
 
 ### gpu — graphics load, driver, or thermal issues
+
 - Adapter and driver:
   `Get-CimInstance Win32_VideoController | Select-Object Name, DriverVersion, AdapterRAM, Status`
 - GPU engine utilisation:
@@ -67,6 +71,7 @@ playbook; fall back to the general sections above when none fits.
   crashes; recommend a vendor driver update rather than tweaking settings.
 
 ### memory — RAM pressure and leaks
+
 - Free vs total:
   `Get-CimInstance Win32_OperatingSystem | Select-Object @{N='FreeGB';E={[math]::Round($_.FreePhysicalMemory/1MB,1)}}, @{N='TotalGB';E={[math]::Round($_.TotalVisibleMemorySize/1MB,1)}}`
 - Biggest working sets:
@@ -77,6 +82,7 @@ playbook; fall back to the general sections above when none fits.
   the fix; adding RAM only delays it.
 
 ### boot — slow startup or long login
+
 - Disk media type (the biggest boot factor):
   `Get-PhysicalDisk | Select-Object MediaType, HealthStatus, @{N='GB';E={[int]($_.Size/1GB)}}`
 - Startup programs:
@@ -88,6 +94,7 @@ playbook; fall back to the general sections above when none fits.
 - On an HDD the media type dominates; trim startup apps, then recommend an SSD.
 
 ### power — battery, sleep, and wake problems
+
 - Active power scheme:
   `powercfg /getactivescheme`
 - Available sleep states:
@@ -100,6 +107,7 @@ playbook; fall back to the general sections above when none fits.
   usually come from a network adapter or scheduled task in the list above.
 
 ## Notes
+
 - Never kill critical processes (System, lsass, csrss, winlogon, services).
   These are protected and will return "Access is denied" — that is expected, not
   a failure to retry.

@@ -28,13 +28,35 @@
 /** @typedef {'nod'|'tilt_left'|'tilt_right'|'shake'|'none'} HeadMovement */
 
 export const STATES = Object.freeze([
-  'sleeping', 'meditation', 'wakeUp', 'idle', 'listening', 'thinking', 'speaking',
+  'sleeping',
+  'meditation',
+  'wakeUp',
+  'idle',
+  'listening',
+  'thinking',
+  'speaking',
 ]);
 
-export const EMOTIONS = Object.freeze(['happy', 'serious', 'excited', 'sad', 'surprise', 'neutral']);
+export const EMOTIONS = Object.freeze([
+  'happy',
+  'serious',
+  'excited',
+  'sad',
+  'surprise',
+  'neutral',
+]);
 
 export const GESTURES = Object.freeze([
-  'wave', 'point', 'open_hand', 'explain', 'welcome', 'nod', 'shake_head', 'shrug', 'hands_together', 'none',
+  'wave',
+  'point',
+  'open_hand',
+  'explain',
+  'welcome',
+  'nod',
+  'shake_head',
+  'shrug',
+  'hands_together',
+  'none',
 ]);
 
 export const EYE_FOCUS = Object.freeze(['user', 'look_left', 'look_right', 'look_down']);
@@ -90,7 +112,14 @@ export function deriveAvatarState(signals = {}) {
   const { isListening, isThinking, isSpeaking, justGreeted, hasError } = signals;
 
   if (hasError) {
-    return { ...BASE, state: 'idle', emotion: 'sad', emotionIntensity: 0.4, headMovement: 'shake', breathing: 'normal' };
+    return {
+      ...BASE,
+      state: 'idle',
+      emotion: 'sad',
+      emotionIntensity: 0.4,
+      headMovement: 'shake',
+      breathing: 'normal',
+    };
   }
 
   if (isSpeaking) {

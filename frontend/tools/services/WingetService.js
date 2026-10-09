@@ -1,5 +1,6 @@
 import { BaseToolService } from '../BaseToolService.js';
-import { spawn, checkCancellation } from '../ExecutionContext.js';
+import { sameVersion } from '../software/TrustPolicy.js';
+import { spawn, checkCancellation, executionContext } from '../ExecutionContext.js';
 
 /**
  * winget-backed discovery and installation of applications that are not installed yet.
@@ -14,8 +15,21 @@ export const PACKAGE_ID_PATTERN = '^[A-Za-z0-9][A-Za-z0-9._+-]{1,127}$';
 const PACKAGE_ID = new RegExp(PACKAGE_ID_PATTERN);
 // Search text: no control characters or shell/wildcard metacharacters.
 const QUERY_PATTERN = '^[^\\x00-\\x1f"\'`$;&|<>^%*?\\[\\]{}\\\\!]{1,100}$';
-const SOURCE = ['--source', 'winget', '--accept-source-agreements', '--disable-interactivity'];
-const INSTALL_ARGS = ['--exact', '--silent', '--accept-package-agreements', ...SOURCE];
+// winget's own community repository first; the Microsoft Store catalogue is a second, equally package-manager-backed source.
+export const PACKAGE_SOURCES = ['winget', 'msstore'];
+const sourceArgs = (source = 'winget') => [
+  '--source',
+  PACKAGE_SOURCES.includes(source) ? source : 'winget',
+  '--accept-source-agreements',
+  '--disable-interactivity',
+];
+const SOURCE = sourceArgs('winget');
+const installArgs = (source) => [
+  '--exact',
+  '--silent',
+  '--accept-package-agreements',
+  ...sourceArgs(source),
+];
 export const INSTALL_TIMEOUT_MS = 20 * 60_000;
 const failure = (code, message = code) => Object.assign(new Error(message), { code });
 
@@ -37,22 +51,100 @@ const is = (code, list) => Number.isInteger(code) && list.includes(code);
 
 /** Map a finished `winget install` to a stable status. Pure, so it is unit-testable without winget. */
 export function classifyInstall({ code, text = '', timedOut = false, missing = false }) {
-  if (missing) return { ok: false, status: 'WINGET_UNAVAILABLE', message: 'winget is not available on this PC. Install “App Installer” from the Microsoft Store.' };
-  if (timedOut) return { ok: false, status: 'INSTALL_TIMEOUT', message: 'The installation did not finish in time and was stopped.' };
+  if (missing)
+    return {
+      ok: false,
+      status: 'WINGET_UNAVAILABLE',
+      message:
+        'winget is not available on this PC. Install “App Installer” from the Microsoft Store.',
+    };
+  if (timedOut)
+    return {
+      ok: false,
+      status: 'INSTALL_TIMEOUT',
+      message: 'The installation did not finish in time and was stopped.',
+    };
   const reboot = is(code, EXIT.REBOOT) || (code !== 0 && /(?:restart|reboot)\b/i.test(text));
-  if (code === 0) return reboot
-    ? { ok: true, status: 'INSTALLED_REBOOT_REQUIRED', needsReboot: true, message: 'Installed. Restart Windows to finish.' }
-    : { ok: true, status: 'INSTALLED', message: 'Installed successfully.' };
-  if (is(code, EXIT.ALREADY_INSTALLED) || /already installed|no available upgrade found/i.test(text)) return { ok: true, status: 'ALREADY_INSTALLED', message: 'The application is already installed.' };
-  if (reboot) return { ok: true, status: 'INSTALLED_REBOOT_REQUIRED', needsReboot: true, message: 'Installed. Restart Windows to finish.' };
-  if (is(code, EXIT.CANCELLED)) return { ok: false, status: 'INSTALL_CANCELLED', adminRequired: true, message: 'The installation was cancelled (for example the administrator/UAC prompt was declined).' };
-  if (is(code, EXIT.NEEDS_ADMIN) || is(code, EXIT.ELEVATION_PROHIBITED) || /administrator|elevat/i.test(text)) return { ok: false, status: 'ADMIN_REQUIRED', adminRequired: true, message: 'This package needs administrator rights. Approve the UAC prompt or run Chanakya as Administrator.' };
-  if (is(code, EXIT.HASH_MISMATCH)) return { ok: false, status: 'HASH_MISMATCH', message: 'The downloaded installer failed its integrity check and was not run.' };
-  if (is(code, EXIT.NO_INSTALLER)) return { ok: false, status: 'NO_APPLICABLE_INSTALLER', message: 'This package has no installer that applies to this PC.' };
-  if (is(code, EXIT.NOT_FOUND)) return { ok: false, status: 'PACKAGE_NOT_FOUND', message: 'winget could not find that package.' };
-  if (is(code, EXIT.POLICY)) return { ok: false, status: 'BLOCKED_BY_POLICY', message: 'This installation is blocked by a system policy.' };
-  if (is(code, EXIT.IN_USE)) return { ok: false, status: 'PACKAGE_IN_USE', message: 'The application is running; close it and try again.' };
-  return { ok: false, status: 'INSTALL_FAILED', message: `The installation failed (exit code 0x${(code ?? 0).toString(16)}).` };
+  if (code === 0)
+    return reboot
+      ? {
+          ok: true,
+          status: 'INSTALLED_REBOOT_REQUIRED',
+          needsReboot: true,
+          message: 'Installed. Restart Windows to finish.',
+        }
+      : { ok: true, status: 'INSTALLED', message: 'Installed successfully.' };
+  if (
+    is(code, EXIT.ALREADY_INSTALLED) ||
+    /already installed|no available upgrade found/i.test(text)
+  )
+    return {
+      ok: true,
+      status: 'ALREADY_INSTALLED',
+      message: 'The application is already installed.',
+    };
+  if (reboot)
+    return {
+      ok: true,
+      status: 'INSTALLED_REBOOT_REQUIRED',
+      needsReboot: true,
+      message: 'Installed. Restart Windows to finish.',
+    };
+  if (is(code, EXIT.CANCELLED))
+    return {
+      ok: false,
+      status: 'INSTALL_CANCELLED',
+      adminRequired: true,
+      message:
+        'The installation was cancelled (for example the administrator/UAC prompt was declined).',
+    };
+  if (
+    is(code, EXIT.NEEDS_ADMIN) ||
+    is(code, EXIT.ELEVATION_PROHIBITED) ||
+    /administrator|elevat/i.test(text)
+  )
+    return {
+      ok: false,
+      status: 'ADMIN_REQUIRED',
+      adminRequired: true,
+      message:
+        'This package needs administrator rights. Approve the UAC prompt or run Chanakya as Administrator.',
+    };
+  if (is(code, EXIT.HASH_MISMATCH))
+    return {
+      ok: false,
+      status: 'HASH_MISMATCH',
+      message: 'The downloaded installer failed its integrity check and was not run.',
+    };
+  if (is(code, EXIT.NO_INSTALLER))
+    return {
+      ok: false,
+      status: 'NO_APPLICABLE_INSTALLER',
+      message: 'This package has no installer that applies to this PC.',
+    };
+  if (is(code, EXIT.NOT_FOUND))
+    return {
+      ok: false,
+      status: 'PACKAGE_NOT_FOUND',
+      message: 'winget could not find that package.',
+    };
+  if (is(code, EXIT.POLICY))
+    return {
+      ok: false,
+      status: 'BLOCKED_BY_POLICY',
+      message: 'This installation is blocked by a system policy.',
+    };
+  if (is(code, EXIT.IN_USE))
+    return {
+      ok: false,
+      status: 'PACKAGE_IN_USE',
+      message: 'The application is running; close it and try again.',
+    };
+  return {
+    ok: false,
+    status: 'INSTALL_FAILED',
+    message: `The installation failed (exit code 0x${(code ?? 0).toString(16)}).`,
+  };
 }
 
 /**
@@ -61,14 +153,22 @@ export function classifyInstall({ code, text = '', timedOut = false, missing = f
  * truncated with an ellipsis are unusable and are dropped.
  */
 export function parseWingetTable(raw) {
-  const lines = String(raw).split('\n').map(l => l.replace(/\r+$/, '').split('\r').pop());
-  const sep = lines.findIndex(l => /^-{5,}\s*$/.test(l));
+  const lines = String(raw)
+    .split('\n')
+    .map((l) => l.replace(/\r+$/, '').split('\r').pop());
+  const sep = lines.findIndex((l) => /^-{5,}\s*$/.test(l));
   if (sep < 1) return [];
-  const cols = [...lines[sep - 1].matchAll(/\S+/g)].map(m => ({ name: m[0].toLowerCase(), start: m.index }));
-  const at = name => cols.findIndex(c => c.name === name);
+  const cols = [...lines[sep - 1].matchAll(/\S+/g)].map((m) => ({
+    name: m[0].toLowerCase(),
+    start: m.index,
+  }));
+  const at = (name) => cols.findIndex((c) => c.name === name);
   const idCol = at('id');
   if (idCol === -1) return [];
-  const cell = (line, i) => i < 0 ? '' : line.slice(cols[i].start, i + 1 < cols.length ? cols[i + 1].start : undefined).trim();
+  const cell = (line, i) =>
+    i < 0
+      ? ''
+      : line.slice(cols[i].start, i + 1 < cols.length ? cols[i + 1].start : undefined).trim();
   const rows = [];
   for (const line of lines.slice(sep + 1)) {
     if (!line.trim()) continue;
@@ -80,47 +180,75 @@ export function parseWingetTable(raw) {
       if (!m) continue;
       id = m[0];
     }
-    rows.push({ id, name: cell(line, 0), version: cell(line, at('version')), source: cell(line, at('source')) });
+    rows.push({
+      id,
+      name: cell(line, 0),
+      version: cell(line, at('version')),
+      source: cell(line, at('source')),
+    });
   }
   return rows;
 }
 
 function rank(rows, query) {
   const q = query.toLowerCase().replace(/\s+/g, '');
-  const score = r => {
-    const n = r.name.toLowerCase().replace(/\s+/g, ''), id = r.id.toLowerCase();
+  const score = (r) => {
+    const n = r.name.toLowerCase().replace(/\s+/g, ''),
+      id = r.id.toLowerCase();
     if (n === q || id === q || id.endsWith(`.${q}`)) return 0;
     if (n.startsWith(q) || id.includes(q)) return 1;
     return n.includes(q) ? 2 : 3;
   };
-  return rows.map((r, i) => [r, i]).sort((a, b) => score(a[0]) - score(b[0]) || a[1] - b[1]).map(x => x[0]);
+  return rows
+    .map((r, i) => [r, i])
+    .sort((a, b) => score(a[0]) - score(b[0]) || a[1] - b[1])
+    .map((x) => x[0]);
 }
 
 /** Default runner: winget.exe via argv (no shell), cancellation-aware, whole process tree killed on timeout. */
 export function runWinget(args, { timeout = 60_000, onLine } = {}) {
   return new Promise((resolve, reject) => {
-    let child, out = '', timedOut = false;
-    try { checkCancellation(); child = spawn('winget.exe', args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }); }
-    catch (error) { return reject(error); }
-    const timer = setTimeout(() => { timedOut = true; spawn('taskkill.exe', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }).on('error', () => {}); }, timeout);
-    const feed = chunk => {
+    let child,
+      out = '',
+      timedOut = false;
+    try {
+      checkCancellation();
+      child = spawn('winget.exe', args, {
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (error) {
+      return reject(error);
+    }
+    const timer = setTimeout(() => {
+      timedOut = true;
+      spawn('taskkill.exe', ['/pid', String(child.pid), '/T', '/F'], {
+        windowsHide: true,
+        stdio: 'ignore',
+      }).on('error', () => {});
+    }, timeout);
+    const feed = (chunk) => {
       const text = chunk.toString('utf8');
       if (out.length < 2_000_000) out += text;
       if (onLine) for (const line of text.split(/[\r\n]+/)) if (line.trim()) onLine(line.trim());
     };
     child.stdout.on('data', feed);
     child.stderr.on('data', feed);
-    child.on('error', error => {
+    child.on('error', (error) => {
       clearTimeout(timer);
       if (error.code === 'ENOENT') resolve({ code: null, out: '', missing: true });
       else reject(error); // includes AbortError when the engine cancels the task
     });
-    child.on('close', code => { clearTimeout(timer); resolve({ code: code === null ? null : code >>> 0, out, timedOut }); });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ code: code === null ? null : code >>> 0, out, timedOut });
+    });
   });
 }
 
 // Only milestone lines are kept as progress; spinner frames and download bars are noise.
-const MILESTONE = /found|download|verified|starting|installing|successfully|fail|error|restart|reboot|administrator/i;
+const MILESTONE =
+  /found|download|verified|starting|installing|successfully|fail|error|restart|reboot|administrator/i;
 const NOISE = /^[-\\|/]$|[█▒]|^\s*\d+(?:\.\d+)?\s*[KMG]?B\s*\/\s*\d/;
 
 export class WingetService extends BaseToolService {
@@ -141,14 +269,36 @@ export class WingetService extends BaseToolService {
   get actions() {
     return {
       search: {
-        schema: { query: { type: 'string', required: true, minLength: 1, maxLength: 100, pattern: QUERY_PATTERN } },
-        destructive: false, handler: p => this.search(p),
-        description: 'Search the winget repository for an application that is not installed. Returns package ids and names; the user is never asked for anything here.',
+        schema: {
+          query: {
+            type: 'string',
+            required: true,
+            minLength: 1,
+            maxLength: 100,
+            pattern: QUERY_PATTERN,
+          },
+          source: { type: 'enum', values: PACKAGE_SOURCES },
+        },
+        destructive: true,
+        handler: (p) => this.search(p),
+        description:
+          'Search the winget repository for an application that is not installed. Returns package ids and names; the user is never asked for anything here.',
       },
       install: {
-        schema: { packageId: { type: 'string', required: true, minLength: 2, maxLength: 128, pattern: PACKAGE_ID_PATTERN } },
-        destructive: true, handler: p => this.install(p),
-        description: 'Install one exact winget package id (taken from winget.search) silently. Requires explicit human confirmation. Afterwards open the app with app.openApp.',
+        schema: {
+          packageId: {
+            type: 'string',
+            required: true,
+            minLength: 2,
+            maxLength: 128,
+            pattern: PACKAGE_ID_PATTERN,
+          },
+          source: { type: 'enum', values: PACKAGE_SOURCES },
+        },
+        destructive: true,
+        handler: (p) => this.install(p),
+        description:
+          'Install one exact winget package id (taken from winget.search) silently. Requires explicit human confirmation. Afterwards open the app with app.openApp.',
       },
     };
   }
@@ -156,79 +306,269 @@ export class WingetService extends BaseToolService {
   /** Confirm the id exists BEFORE a human is asked, so the prompt can show the real package name and version. */
   async execute(action, params = {}) {
     // Malformed or missing ids fall through to the base class, which rejects them with a VALIDATION_ERROR.
-    if (action === 'install' && typeof params.packageId === 'string' && PACKAGE_ID.test(params.packageId)) await this.describe(params.packageId);
+    if (
+      action === 'install' &&
+      typeof params.packageId === 'string' &&
+      PACKAGE_ID.test(params.packageId)
+    )
+      if (
+        !this.known.get(`${params.source || 'winget'}:${params.packageId.toLowerCase()}`)?.publisher
+      )
+        throw failure(
+          'PACKAGE_NOT_VERIFIED',
+          'Approve a package lookup first so the exact identity can be shown before installation.',
+        );
     return super.execute(action, params);
   }
 
   getConfirmationMessage(action, params) {
-    const info = this.known.get(String(params.packageId).toLowerCase());
-    const label = info ? `“${info.name}” (${info.id}${info.version ? ` ${info.version}` : ''}${info.publisher ? `, ${info.publisher}` : ''})` : `package ${params.packageId}`;
-    return `Install ${label} from the winget repository? It runs silently, may show a Windows administrator (UAC) prompt, and changes the software installed on this PC.`;
+    if (action === 'search')
+      return `Connect to ${params.source === 'msstore' ? 'the Microsoft Store' : 'the winget repository'} to look up “${params.query}” and package identities? No application will be downloaded or installed.`;
+    const info = this.known.get(
+      `${params.source || 'winget'}:${String(params.packageId).toLowerCase()}`,
+    );
+    const label = info
+      ? `“${info.name}” (${info.id}${info.version ? ` ${info.version}` : ''}${info.publisher ? `, ${info.publisher}` : ''})`
+      : `package ${params.packageId}`;
+    const where = params.source === 'msstore' ? 'the Microsoft Store' : 'the winget repository';
+    return `Install ${label} from ${where}? It runs silently, may show a Windows administrator (UAC) prompt, and changes the software installed on this PC.`;
   }
 
-  async search({ query }) {
-    checkCancellation();
-    const r = await this.run(['search', '--query', query, ...SOURCE, '--count', '10'], { timeout: 60_000 });
-    if (r.missing) return { success: false, status: 'WINGET_UNAVAILABLE', message: classifyInstall({ missing: true }).message };
-    if (r.timedOut) return { success: false, status: 'SEARCH_TIMEOUT', message: 'The winget search timed out.' };
-    const results = rank(parseWingetTable(r.out), query).slice(0, 8);
-    for (const x of results) this.known.set(x.id.toLowerCase(), { id: x.id, name: x.name, version: x.version });
+  _requestConfirmation(action, params, description) {
+    if (action !== 'install') return super._requestConfirmation(action, params, description);
+    const identity = this.known.get(
+      `${params.source || 'winget'}:${params.packageId.toLowerCase()}`,
+    );
+    if (!identity?.publisher)
+      throw failure('PACKAGE_NOT_VERIFIED', 'The package identity has not been verified.');
+    const message = this.getConfirmationMessage(action, params);
+    const { confirmationId, expiresAt } = this.confirmationGate.request({
+      tool: this.name,
+      action,
+      params,
+      scope: executionContext.getStore()?.scope,
+      message,
+      packageIdentity: structuredClone(identity),
+    });
     return {
-      success: true, status: results.length ? 'PACKAGES_FOUND' : 'NO_PACKAGES_FOUND', query, results,
-      message: results.length ? `Found ${results.length} package(s). Pick the id whose name best matches, then call winget.install.` : 'No matching package in the winget repository.',
+      success: true,
+      needsConfirmation: true,
+      confirmationId,
+      expiresAt,
+      message,
+    };
+  }
+
+  async executeConfirmed(action, params = {}, metadata = {}) {
+    return executionContext.run(
+      {
+        ...executionContext.getStore(),
+        packageIdentity: metadata.packageIdentity,
+      },
+      () => super.executeConfirmed(action, params),
+    );
+  }
+
+  async search({ query, source = 'winget' }) {
+    checkCancellation();
+    const r = await this.run(['search', '--query', query, ...sourceArgs(source), '--count', '10'], {
+      timeout: 30_000,
+    });
+    if (r.missing)
+      return {
+        success: false,
+        status: 'WINGET_UNAVAILABLE',
+        message: classifyInstall({ missing: true }).message,
+      };
+    if (r.timedOut)
+      return {
+        success: false,
+        status: 'SEARCH_TIMEOUT',
+        message: 'The winget search timed out.',
+      };
+    const candidates = rank(parseWingetTable(r.out), query).slice(0, 3);
+    for (const x of candidates)
+      this.known.set(`${source}:${x.id.toLowerCase()}`, {
+        id: x.id,
+        name: x.name,
+        version: x.version,
+      });
+    // The user's approved lookup also obtains immutable identity evidence for approval.
+    const verified = await Promise.allSettled(
+      candidates.map((item) => this.describe(item.id, source, { refresh: true })),
+    );
+    const results = verified
+      .filter((item) => item.status === 'fulfilled')
+      .map((item) => item.value);
+    return {
+      success: true,
+      status: results.length ? 'PACKAGES_FOUND' : 'NO_PACKAGES_FOUND',
+      query,
+      source,
+      results,
+      message: results.length
+        ? `Found ${results.length} package(s). Pick the id whose name best matches, then call winget.install.`
+        : 'No matching package in the winget repository.',
     };
   }
 
   /** `winget show` is the authority on whether an id exists; its result is cached for the confirmation text. */
-  async describe(packageId) {
+  async describe(packageId, source = 'winget', { refresh = false, version } = {}) {
     const id = String(packageId ?? '');
-    if (!PACKAGE_ID.test(id)) throw failure('INVALID_PACKAGE_ID', 'That is not a valid winget package id.');
-    const cached = this.known.get(id.toLowerCase());
-    if (cached?.publisher !== undefined) return cached;
-    const r = await this.run(['show', '--id', id, '--exact', ...SOURCE], { timeout: 45_000 });
+    if (!PACKAGE_ID.test(id))
+      throw failure('INVALID_PACKAGE_ID', 'That is not a valid winget package id.');
+    const cacheKey = `${source}:${id.toLowerCase()}`;
+    const cached = this.known.get(cacheKey);
+    if (!refresh && cached?.publisher !== undefined) return cached;
+    const r = await this.run(
+      [
+        'show',
+        '--id',
+        id,
+        '--exact',
+        ...(version && source === 'winget' ? ['--version', version] : []),
+        ...sourceArgs(source),
+      ],
+      {
+        timeout: 10_000,
+      },
+    );
     if (r.missing) throw failure('WINGET_UNAVAILABLE', classifyInstall({ missing: true }).message);
-    if (r.code !== 0) throw failure('PACKAGE_NOT_FOUND', `winget has no package with the exact id “${id}”. Use winget.search first.`);
+    if (r.code !== 0)
+      throw failure(
+        'PACKAGE_NOT_FOUND',
+        `winget has no package with the exact id “${id}”. Use winget.search first.`,
+      );
     const found = r.out.match(/^Found\s+(.+?)\s+\[([^\]]+)\]/m);
+    if (!found)
+      throw failure(
+        'PACKAGE_IDENTITY_UNAVAILABLE',
+        'The package manager did not return a verifiable package identity.',
+      );
     const info = {
-      id: found?.[2] ?? id, name: found?.[1] ?? id,
+      id: found?.[2] ?? id,
+      name: found?.[1] ?? id,
       version: r.out.match(/^Version:\s*(.+)$/m)?.[1]?.trim() ?? cached?.version ?? '',
       publisher: r.out.match(/^Publisher:\s*(.+)$/m)?.[1]?.trim() ?? '',
+      source,
+      installerUrl: r.out.match(/^\s*Installer Url:\s*(.+)$/m)?.[1]?.trim() ?? '',
+      installerSha256:
+        r.out.match(/^\s*Installer SHA256:\s*([a-f0-9]{64})/im)?.[1]?.toLowerCase() ?? '',
     };
-    if (info.id.toLowerCase() !== id.toLowerCase()) throw failure('PACKAGE_NOT_FOUND', `winget has no package with the exact id “${id}”.`);
-    this.known.set(id.toLowerCase(), info);
+    if (info.id.toLowerCase() !== id.toLowerCase())
+      throw failure('PACKAGE_NOT_FOUND', `winget has no package with the exact id “${id}”.`);
+    if (!info.publisher || (source === 'winget' && !info.version))
+      throw failure(
+        'PACKAGE_IDENTITY_UNAVAILABLE',
+        'The package publisher or version could not be verified. No installation was performed.',
+      );
+    this.known.set(cacheKey, info);
     return info;
   }
 
-  async install({ packageId }) {
+  async install({ packageId, source = 'winget' }) {
     checkCancellation();
-    const info = await this.describe(packageId); // also re-checked here: confirmation records can outlive the cache
+    const approved = executionContext.getStore()?.packageIdentity;
+    if (
+      !approved ||
+      approved.id.toLowerCase() !== packageId.toLowerCase() ||
+      approved.source !== source
+    )
+      throw failure('PACKAGE_NOT_VERIFIED', 'A matching package identity approval is required.');
+    const info = await this.describe(packageId, source, {
+      refresh: true,
+      version: approved.version,
+    });
+    if (
+      ['id', 'name', 'version', 'publisher', 'source', 'installerUrl', 'installerSha256'].some(
+        (key) => info[key] !== approved[key],
+      )
+    )
+      throw failure(
+        'PACKAGE_CHANGED',
+        'The package identity changed after approval. Review a new lookup before installing.',
+      );
     const stages = [];
-    const note = line => {
+    const note = (line) => {
       if (NOISE.test(line) || !MILESTONE.test(line) || stages.at(-1) === line) return;
       stages.push(line.slice(0, 160));
-      try { this.onProgress?.({ packageId, stage: line.slice(0, 160) }); } catch { /* progress is best effort */ }
+      try {
+        this.onProgress?.({ packageId, stage: line.slice(0, 160) });
+      } catch {
+        /* progress is best effort */
+      }
     };
     const started = Date.now();
-    const r = await this.run(['install', '--id', info.id, ...INSTALL_ARGS], { timeout: INSTALL_TIMEOUT_MS, onLine: note });
-    const outcome = classifyInstall(r);
+    const r = await this.run(
+      [
+        'install',
+        '--id',
+        info.id,
+        ...(source === 'winget' ? ['--version', info.version] : []),
+        ...installArgs(source),
+      ],
+      {
+        timeout: INSTALL_TIMEOUT_MS,
+        onLine: note,
+      },
+    );
+    const outcome = classifyInstall({ ...r, text: r.out });
 
     // Confirm with the package manager's own inventory rather than trusting the exit code alone.
     let verified = false;
     if (outcome.ok && !outcome.needsReboot) {
-      const listed = await this.run(['list', '--id', info.id, '--exact', ...SOURCE.slice(2)], { timeout: 45_000 }).catch(() => null);
-      verified = listed?.code === 0 && parseWingetTable(listed.out).some(x => x.id.toLowerCase() === info.id.toLowerCase());
+      const listed = await this.run(['list', '--id', info.id, '--exact', ...SOURCE.slice(2)], {
+        timeout: 45_000,
+      }).catch(() => null);
+      verified =
+        listed?.code === 0 &&
+        parseWingetTable(listed.out).some(
+          (x) =>
+            x.id.toLowerCase() === info.id.toLowerCase() &&
+            Boolean(x.version) &&
+            sameVersion(x.version, info.version),
+        );
     }
     // Make the new application resolvable by app.openApp straight away.
     let registryRefreshed = false;
     if (outcome.ok) {
-      try { await this.appService?.registry?.refresh?.(); registryRefreshed = !!this.appService?.registry; } catch { /* the next resolve refreshes on a miss */ }
+      try {
+        await this.appService?.registry?.refresh?.();
+        registryRefreshed = !!this.appService?.registry;
+      } catch {
+        /* the next resolve refreshes on a miss */
+      }
     }
     return {
-      success: outcome.ok, status: outcome.status, packageId: info.id, name: info.name, version: info.version,
-      exitCode: r.code, needsReboot: !!outcome.needsReboot, adminRequired: !!outcome.adminRequired, registryRefreshed,
-      durationMs: Date.now() - started, stages: stages.slice(-12), message: outcome.message,
-      verification: { status: verified ? 'verified' : 'unverified', criterion: verified ? 'winget_list' : 'exit_code_only', observedAt: new Date().toISOString() },
-      ...(outcome.ok ? { next: `Call app.openApp with query "${info.name}" to launch it.` } : {}),
+      success: outcome.ok && verified && !outcome.needsReboot,
+      status: outcome.needsReboot
+        ? 'INSTALL_PENDING_RESTART'
+        : outcome.ok && !verified
+          ? 'INSTALL_UNVERIFIED'
+          : outcome.status,
+      packageId: info.id,
+      source,
+      name: info.name,
+      version: info.version,
+      exitCode: r.code,
+      needsReboot: !!outcome.needsReboot,
+      adminRequired: !!outcome.adminRequired,
+      registryRefreshed,
+      durationMs: Date.now() - started,
+      stages: stages.slice(-12),
+      message: outcome.needsReboot
+        ? 'Windows requires a restart; installation remains pending and is not verified complete.'
+        : outcome.ok && !verified
+          ? 'The installer finished, but the exact approved package identity and version were not found. Installation is unverified.'
+          : outcome.message,
+      verification: {
+        status: verified ? 'verified' : 'unverified',
+        criterion: verified ? 'winget_list' : 'exit_code_only',
+        observedAt: new Date().toISOString(),
+      },
+      ...(outcome.ok && verified && !outcome.needsReboot
+        ? { next: `Call app.openApp with query "${info.name}" to launch it.` }
+        : {}),
     };
   }
 }

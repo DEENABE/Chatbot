@@ -4,19 +4,31 @@
 // happens to be an unsupported type (or fails to parse) looks like nothing
 // happened at all, with no indication why.
 export function warnAboutSkippedUploads(result) {
-  const skipped = result?.skipped;
-  if (!skipped?.length) return;
-
-  const lines = skipped
-    .slice(0, 10)
-    .map((item) => `- ${item.name}: ${item.reason}`)
-    .join('\n');
-  const more = skipped.length > 10 ? `\n…and ${skipped.length - 10} more` : '';
+  const skipped = result?.skipped || [];
+  const warnings = result?.warnings || [];
+  if (!skipped.length && !warnings.length) return;
 
   const indexedCount = result?.documents?.length || 0;
-  const heading = indexedCount
-    ? `${indexedCount} file(s) indexed. ${skipped.length} file(s) were skipped:`
-    : `No files were indexed. ${skipped.length} file(s) were skipped:`;
+  const parts = [];
 
-  alert(`${heading}\n${lines}${more}`);
+  if (skipped.length) {
+    const lines = skipped
+      .slice(0, 10)
+      .map((item) => `- ${item.name}: ${item.reason}`)
+      .join('\n');
+    const more = skipped.length > 10 ? `\n…and ${skipped.length - 10} more` : '';
+    parts.push(
+      `${indexedCount ? `${indexedCount} file(s) indexed. ` : 'No files were indexed. '}${skipped.length} file(s) were skipped:\n${lines}${more}`,
+    );
+  }
+  if (warnings.length) {
+    const lines = warnings
+      .slice(0, 5)
+      .map((item) => `- ${item.name}: ${item.message}`)
+      .join('\n');
+    parts.push(
+      `${skipped.length ? 'Note — ' : `${indexedCount} file(s) indexed. Note — `}${warnings.length} file(s):\n${lines}`,
+    );
+  }
+  alert(parts.join('\n\n'));
 }

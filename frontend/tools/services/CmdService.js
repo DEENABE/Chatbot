@@ -47,21 +47,21 @@ export class CmdService extends BaseToolService {
         handler: this.runCmd.bind(this),
         schema: {
           command: { type: 'string', required: true, minLength: 1 },
-          timeout: { type: 'number', required: false }
+          timeout: { type: 'number', required: false },
         },
         destructive: true,
-        description: 'Execute a CMD command'
+        description: 'Execute a CMD command',
       },
       executeBatch: {
         handler: this.executeBatch.bind(this),
         schema: {
           scriptPath: { type: 'path', required: true },
           args: { type: 'array', required: false },
-          timeout: { type: 'number', required: false }
+          timeout: { type: 'number', required: false },
         },
         destructive: true,
-        description: 'Execute a batch file (.bat / .cmd)'
-      }
+        description: 'Execute a batch file (.bat / .cmd)',
+      },
     };
   }
 
@@ -100,7 +100,9 @@ export class CmdService extends BaseToolService {
     // at request time: it must run on the confirmed path too, not just the
     // initial one.
     if (isBlockedCommand(params.command)) {
-      const error = new Error('This command is irreversible or session-disrupting and is blocked regardless of confirmation.');
+      const error = new Error(
+        'This command is irreversible or session-disrupting and is blocked regardless of confirmation.',
+      );
       error.code = 'COMMAND_BLOCKED';
       throw error;
     }
@@ -134,12 +136,16 @@ export class CmdService extends BaseToolService {
       throw new Error(`Cannot read batch file for safety check: ${err.message}`);
     }
     if (content.length <= MAX_SCRIPT_CHECK_BYTES && isBlockedCommand(content)) {
-      const error = new Error('This batch file contains an irreversible or session-disrupting operation and is blocked regardless of confirmation.');
+      const error = new Error(
+        'This batch file contains an irreversible or session-disrupting operation and is blocked regardless of confirmation.',
+      );
       error.code = 'COMMAND_BLOCKED';
       throw error;
     }
 
-    return this._runCommand('cmd.exe', ['/c', scriptPath, ...args], { timeout });
+    return this._runCommand('cmd.exe', ['/c', scriptPath, ...args], {
+      timeout,
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -165,7 +171,7 @@ export class CmdService extends BaseToolService {
 
       const proc = spawn(cmd, args, {
         windowsHide: true,
-        stdio: ['pipe', 'pipe', 'pipe']
+        stdio: ['pipe', 'pipe', 'pipe'],
       });
 
       const timer = setTimeout(() => {
@@ -173,12 +179,20 @@ export class CmdService extends BaseToolService {
         proc.kill('SIGTERM');
         // Force kill after a grace period
         setTimeout(() => {
-          try { proc.kill('SIGKILL'); } catch { /* already dead */ }
+          try {
+            proc.kill('SIGKILL');
+          } catch {
+            /* already dead */
+          }
         }, 2000);
       }, timeout);
 
-      proc.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
-      proc.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+      proc.stdout.on('data', (chunk) => {
+        stdout += chunk.toString();
+      });
+      proc.stderr.on('data', (chunk) => {
+        stderr += chunk.toString();
+      });
 
       proc.on('error', (err) => {
         clearTimeout(timer);
@@ -192,7 +206,12 @@ export class CmdService extends BaseToolService {
         clearTimeout(timer);
         if (!settled) {
           settled = true;
-          resolve({ stdout: truncate(stdout), stderr: truncate(stderr), exitCode, timedOut });
+          resolve({
+            stdout: truncate(stdout),
+            stderr: truncate(stderr),
+            exitCode,
+            timedOut,
+          });
         }
       });
     });
@@ -200,4 +219,3 @@ export class CmdService extends BaseToolService {
 }
 
 export default CmdService;
-

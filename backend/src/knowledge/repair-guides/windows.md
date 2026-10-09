@@ -4,6 +4,7 @@ Use this for anything not covered by a specialized domain: audio, display,
 printers, Windows Update, drivers, services, etc.
 
 ## Diagnose
+
 - Service state:
   `Get-Service <name> | Select-Object Name, Status, StartType`
 - Problem devices in Device Manager:
@@ -32,6 +33,7 @@ printers, Windows Update, drivers, services, etc.
   `Get-ComputerInfo | Select-Object WindowsProductName, OsBuildNumber, OsUptime`
 
 ## Common fixes
+
 - Audio issues — restart the audio service:
   `Restart-Service Audiosrv -Force`
 - Print spooler stuck:
@@ -66,6 +68,7 @@ The prompt may name a narrower area, e.g. "windows (audio)". Use the matching
 playbook below; fall back to the general sections above when none fits.
 
 ### eventlog — reading Windows logs to find a root cause
+
 - Recent errors in a log:
   `Get-WinEvent -LogName System -MaxEvents 30 | Where-Object LevelDisplayName -in 'Error','Critical' | Select-Object TimeCreated, Id, ProviderName`
 - Filter by a specific event id:
@@ -80,6 +83,7 @@ playbook below; fall back to the general sections above when none fits.
   The Security log needs Administrator rights.
 
 ### errorcode — turning a numeric code into a cause
+
 - Decode an HRESULT / Win32 code:
   `[System.ComponentModel.Win32Exception]::new(<code>).Message`
 - Decode an NTSTATUS-style hex code:
@@ -91,6 +95,7 @@ playbook below; fall back to the general sections above when none fits.
 - Always map the code to a real subsystem before running fixes; never guess.
 
 ### driver — devices that misbehave after an update
+
 - Devices in a fault state:
   `Get-PnpDevice | Where-Object Status -ne 'OK' | Select-Object Status, Class, FriendlyName, InstanceId`
 - Driver version and provider for a device class:
@@ -102,6 +107,7 @@ playbook below; fall back to the general sections above when none fits.
   driver" > reboot), not something to force from PowerShell.
 
 ### audio — no sound, wrong device, or mic problems
+
 - Endpoints and their health:
   `Get-PnpDevice -Class AudioEndpoint | Select-Object Status, FriendlyName`
 - Audio service:
@@ -115,6 +121,7 @@ playbook below; fall back to the general sections above when none fits.
   `Error`, recommend a driver reinstall.
 
 ### printer — offline, stuck queue, nothing prints
+
 - Printers and status:
   `Get-Printer | Select-Object Name, PrinterStatus, PortName`
 - Spooler service:
@@ -129,6 +136,7 @@ playbook below; fall back to the general sections above when none fits.
   "Use Printer Offline" checkbox; check the queue before restarting services.
 
 ### display — resolution, scaling, second monitor
+
 - Active displays:
   `Get-CimInstance -Namespace root/wmi -ClassName WmiMonitorBasicDisplayParams | Measure-Object | Select-Object Count`
 - Monitor devices:
@@ -140,6 +148,7 @@ playbook below; fall back to the general sections above when none fits.
   driver — do not change resolution blindly.
 
 ### registry — settings that survive reboots
+
 - Read a value:
   `Get-ItemProperty -Path '<hive>:\<path>' -Name '<value>' -ErrorAction SilentlyContinue`
 - List startup entries:
@@ -150,6 +159,7 @@ playbook below; fall back to the general sections above when none fits.
   Registry deletion is blocked for good reason.
 
 ### services — something that should be running is not
+
 - State and startup type:
   `Get-Service <name> | Select-Object Name, Status, StartType`
 - What a service depends on:
@@ -160,6 +170,7 @@ playbook below; fall back to the general sections above when none fits.
   dependency often fixes the symptom without touching the service itself.
 
 ## Notes
+
 - Diagnose with read-only commands first; identify the exact service/device
   before changing anything.
 - Service restarts for the current user often work without admin; device

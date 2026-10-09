@@ -1,7 +1,13 @@
-import {computerTask} from './ComputerTaskPolicy.js';
-import {applicationGoalVerdict} from './ApplicationGoal.js';
-import {genericDesktopTask,desktopCompletion} from './GenericDesktopTask.js';
-import {compoundAppTask} from './ComputerTaskPolicy.js';
+import { computerTask } from './ComputerTaskPolicy.js';
+import { applicationGoalVerdict } from './ApplicationGoal.js';
+import {
+  genericDesktopTask,
+  desktopCompletion,
+  verifiedCloseGoal,
+  desktopExecutionEvidence,
+} from './GenericDesktopTask.js';
+import { compoundAppTask } from './ComputerTaskPolicy.js';
+import { nextSoftwareDecision } from './SoftwareRunner.js';
 /**
  * @module orchestrator/Verifier
  * @description After all plan steps have been executed, the Verifier asks the
@@ -37,19 +43,79 @@ Reply with JSON only:
  * @returns {Promise<import('./AgentState.js').Verdict>}
  */
 export async function verifyOutcome({ task, steps, attempts = [], model = DEFAULT_MODEL, signal }) {
-  if(computerTask(task)?.genericDesktop)return {success:steps.length>0&&steps.every(s=>s.status==='done')&&desktopCompletion(steps.at(-1)?.observation?.data,task),summary:'Generic desktop completion requires fresh goal evidence.',recommendation:''};
-  const goal=compoundAppTask(task);
-  if(goal){const verdict=applicationGoalVerdict(goal,steps);const checked=verifyCapabilities(steps);return {...verdict,success:verdict.success && checked?.success===true};}
-  if(steps.length===1 && ['uiAutomation','browser'].includes(steps[0].tool)) {
-    const checked=verifyCapabilities(steps);return {success:checked?.success===true,summary:checked?.success ? steps[0].observation.data.message : steps[0].observation?.error?.message || 'UI action could not be verified.',recommendation:''};
+  const software = computerTask(task)?.software;
+  if (software) {
+    const data = steps.at(-1)?.observation?.data || {};
+    const evidence = attempts.length
+      ? attempts
+          .filter((attempt) => attempt.observation)
+          .map((attempt) => ({
+            ...attempt.observation,
+            toolName: `${attempt.request.tool}_${attempt.request.action}`,
+          }))
+      : steps.map((step) => ({ ...step.observation, toolName: `${step.tool}_${step.action}` }));
+    const decision = nextSoftwareDecision({ task, admission: software, evidence, signal });
+    return {
+      success: decision.success === true,
+      summary:
+        decision.message ||
+        data.message ||
+        'Software discovery or installer exit alone does not verify the requested outcome.',
+      recommendation: '',
+    };
+  }
+  if (computerTask(task)?.genericDesktop)
+    return {
+      success:
+        steps.length > 0 &&
+        steps.every((s) => s.status === 'done') &&
+        (desktopCompletion(steps.at(-1)?.observation?.data, task) ||
+          verifiedCloseGoal(
+            task,
+            computerTask(task).genericDesktop,
+            desktopExecutionEvidence(steps, attempts),
+          )),
+      summary:
+        'Generic desktop completion requires fresh goal evidence or verified absence of the requested window.',
+      recommendation: '',
+    };
+  const goal = compoundAppTask(task);
+  if (goal) {
+    const verdict = applicationGoalVerdict(goal, steps);
+    const checked = verifyCapabilities(steps);
+    return {
+      ...verdict,
+      success: verdict.success && checked?.success === true,
+    };
+  }
+  if (steps.length === 1 && ['uiAutomation', 'browser'].includes(steps[0].tool)) {
+    const checked = verifyCapabilities(steps);
+    return {
+      success: checked?.success === true,
+      summary: checked?.success
+        ? steps[0].observation.data.message
+        : steps[0].observation?.error?.message || 'UI action could not be verified.',
+      recommendation: '',
+    };
   }
   if (steps.length === 1 && steps[0].tool === 'app' && steps[0].action === 'openApp') {
-    const checked=verifyCapabilities(steps), data=steps[0].observation?.data;
-    return {success:checked?.success===true,summary:checked?.success ? `${data.app.name} opened successfully.` : data?.message || steps[0].observation?.error?.message || 'Application launch could not be verified.',recommendation:''};
+    const checked = verifyCapabilities(steps),
+      data = steps[0].observation?.data;
+    return {
+      success: checked?.success === true,
+      summary: checked?.success
+        ? `${data.app.name} opened successfully.`
+        : data?.message ||
+          steps[0].observation?.error?.message ||
+          'Application launch could not be verified.',
+      recommendation: '',
+    };
   }
   const deterministic = verifyCapabilities(steps);
   if (deterministic) return deterministic;
-  const transcript = buildTranscript(attempts.length ? attempts.map(a => ({ ...a.request, observation: a.observation })) : steps);
+  const transcript = buildTranscript(
+    attempts.length ? attempts.map((a) => ({ ...a.request, observation: a.observation })) : steps,
+  );
 
   // If all steps succeeded, we can produce a heuristic verdict immediately.
   const allSucceeded = steps.length > 0 && steps.every((s) => s.status === 'done');

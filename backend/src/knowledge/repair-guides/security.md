@@ -1,6 +1,7 @@
 # Security Repair Guide
 
 ## Diagnose
+
 - Windows Defender status:
   `Get-MpComputerStatus | Select-Object AMRunningMode, AntivirusEnabled, RealTimeProtectionEnabled, AntivirusSignatureLastUpdated`
 - Recent threats:
@@ -22,6 +23,7 @@
   `Get-NetFirewallApplicationFilter -Program '<path>' -ErrorAction SilentlyContinue`
 
 ## Common fixes
+
 - Real-time protection disabled (needs admin):
   `Set-MpPreference -DisableRealtimeMonitoring $false`
 - Update signatures then quick scan:
@@ -46,6 +48,7 @@ The prompt may name a narrower area, e.g. "security (certificates)". Use the
 matching playbook; fall back to the general sections above when none fits.
 
 ### certificates — expiry and trust failures
+
 - Certificates expiring soon in the machine store:
   `Get-ChildItem Cert:\LocalMachine\My | Where-Object NotAfter -lt (Get-Date).AddDays(30) | Select-Object Subject, NotAfter, Thumbprint`
 - Already-expired certificates:
@@ -58,6 +61,7 @@ matching playbook; fall back to the general sections above when none fits.
   manual, admin-owned step — never delete certificates automatically.
 
 ### security-incident — triage after a suspected compromise
+
 - Processes running from user-writable locations:
   `Get-Process | Where-Object Path -like '*\Users\*' | Select-Object Name, Id, Path`
 - Persistence via Run keys:
@@ -73,6 +77,7 @@ matching playbook; fall back to the general sections above when none fits.
   confirmed compromise, isolating the machine from the network.
 
 ## Notes
+
 - Never DISABLE protection as a "fix" — only enable/strengthen it. If the user
   asks to turn off Defender or the firewall, explain the risk and offer a
   targeted exclusion or an app-specific allow rule instead.

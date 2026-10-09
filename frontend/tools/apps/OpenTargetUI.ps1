@@ -4,7 +4,7 @@ $ErrorActionPreference='Stop'
 $desktopMutex=[Threading.Mutex]::new($false,'Local\ChanakyaDesktopAutomation')
 $ownsDesktop=$false
 try {
-  $ownsDesktop=$desktopMutex.WaitOne(0)
+  try{$ownsDesktop=$desktopMutex.WaitOne(4000)}catch{if($_.Exception.GetBaseException() -is [Threading.AbandonedMutexException]){$ownsDesktop=$true}else{throw}}
   if(!$ownsDesktop){throw 'UI_BUSY'}
   $r=[Console]::In.ReadToEnd()|ConvertFrom-Json
   Add-Type -AssemblyName UIAutomationClient

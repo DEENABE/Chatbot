@@ -32,7 +32,13 @@ export function isTrustedSender(event) {
 export function requireTrustedSender(handler) {
   return (event, ...args) => {
     if (!isTrustedSender(event)) {
-      return { success: false, error: { code: 'UNTRUSTED_SENDER', message: 'This request did not originate from the application window.' } };
+      return {
+        success: false,
+        error: {
+          code: 'UNTRUSTED_SENDER',
+          message: 'This request did not originate from the application window.',
+        },
+      };
     }
     return handler(event, ...args);
   };

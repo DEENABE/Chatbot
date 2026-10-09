@@ -98,13 +98,15 @@ export async function registerUser(username, displayName, password) {
     permissions: JSON.stringify(['read', 'write']),
     passwordHash: hash,
     salt,
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
   };
 
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO users (id, username, displayName, email, department, role, permissions, passwordHash, salt, createdAt)
     VALUES (@id, @username, @displayName, @email, @department, @role, @permissions, @passwordHash, @salt, @createdAt)
-  `).run(user);
+  `,
+  ).run(user);
 
   return {
     id: user.id,
@@ -114,7 +116,7 @@ export async function registerUser(username, displayName, password) {
     department: user.department,
     role: user.role,
     permissions: JSON.parse(user.permissions),
-    createdAt: user.createdAt
+    createdAt: user.createdAt,
   };
 }
 
@@ -147,7 +149,7 @@ export async function loginUser(username, password) {
     department: user.department,
     role: user.role,
     permissions: user.permissions ? JSON.parse(user.permissions) : [],
-    createdAt: user.createdAt
+    createdAt: user.createdAt,
   };
 }
 
@@ -162,7 +164,7 @@ export async function getUserById(userId) {
     department: user.department,
     role: user.role,
     permissions: user.permissions ? JSON.parse(user.permissions) : [],
-    createdAt: user.createdAt
+    createdAt: user.createdAt,
   };
 }
 
@@ -180,7 +182,11 @@ export async function changePassword(userId, currentPassword, newPassword) {
   }
   assertValidPassword(newPassword, 'New password');
   const { hash: newHash, salt: newSalt } = await hashPassword(newPassword);
-  db.prepare('UPDATE users SET passwordHash = ?, salt = ? WHERE id = ?').run(newHash, newSalt, userId);
+  db.prepare('UPDATE users SET passwordHash = ?, salt = ? WHERE id = ?').run(
+    newHash,
+    newSalt,
+    userId,
+  );
   // A leaked/stale session token must stop working the moment the password
   // it was issued under changes (AUTH-01/AUTH-02) — the caller re-issues a
   // fresh session for the device that just made this request.
@@ -216,7 +222,7 @@ function writeLocalResetToken(username, token, expiresAt) {
     '',
     'Enter this code in the app to finish resetting your password.',
     'This file is overwritten by the next reset request and deleted once the code is used.',
-    ''
+    '',
   ].join('\n');
   // 0o600: owner read/write only. Best-effort on platforms where chmod
   // semantics don't map cleanly (e.g. Windows) — the OS/filesystem ACLs on
@@ -240,7 +246,9 @@ function clearLocalResetToken() {
 export async function requestPasswordReset(username) {
   const usable = isNonEmptyString(username) && username.length <= MAX_USERNAME_LOOKUP_LENGTH;
   const lowerName = usable ? username.toLowerCase().trim() : '';
-  const user = usable ? db.prepare('SELECT id, username FROM users WHERE username = ?').get(lowerName) : null;
+  const user = usable
+    ? db.prepare('SELECT id, username FROM users WHERE username = ?').get(lowerName)
+    : null;
 
   // Do the same shape of CPU work (generate + hash a token) regardless of
   // whether an account was found, so the dominant observable cost doesn't
@@ -264,8 +272,14 @@ export async function requestPasswordReset(username) {
 
   const now = Date.now();
   db.prepare(
-    'INSERT INTO password_resets (id, userId, tokenHash, expiresAt, usedAt, createdAt) VALUES (@id, @userId, @tokenHash, @expiresAt, NULL, @createdAt)'
-  ).run({ id: crypto.randomUUID(), userId: user.id, tokenHash, expiresAt: now + RESET_TOKEN_TTL_MS, createdAt: now });
+    'INSERT INTO password_resets (id, userId, tokenHash, expiresAt, usedAt, createdAt) VALUES (@id, @userId, @tokenHash, @expiresAt, NULL, @createdAt)',
+  ).run({
+    id: crypto.randomUUID(),
+    userId: user.id,
+    tokenHash,
+    expiresAt: now + RESET_TOKEN_TTL_MS,
+    createdAt: now,
+  });
 
   writeLocalResetToken(user.username, token, now + RESET_TOKEN_TTL_MS);
 }
@@ -288,7 +302,9 @@ export async function resetPasswordWithToken(token, newPassword) {
   // second concurrent request to land in. better-sqlite3 executes this
   // synchronously, so nothing else touching this row can interleave with it.
   const claim = db
-    .prepare('UPDATE password_resets SET usedAt = ? WHERE tokenHash = ? AND usedAt IS NULL AND expiresAt > ?')
+    .prepare(
+      'UPDATE password_resets SET usedAt = ? WHERE tokenHash = ? AND usedAt IS NULL AND expiresAt > ?',
+    )
     .run(now, tokenHash, now);
 
   if (claim.changes === 0) {
@@ -296,7 +312,9 @@ export async function resetPasswordWithToken(token, newPassword) {
     throw new AuthError('Invalid or expired reset code.');
   }
 
-  const record = db.prepare('SELECT userId FROM password_resets WHERE tokenHash = ?').get(tokenHash);
+  const record = db
+    .prepare('SELECT userId FROM password_resets WHERE tokenHash = ?')
+    .get(tokenHash);
   const user = db.prepare('SELECT id FROM users WHERE id = ?').get(record.userId);
   if (!user) {
     // Structurally shouldn't happen — ON DELETE CASCADE removes this row
@@ -361,7 +379,10 @@ export async function deleteAccount(userId, password) {
   try {
     fs.rmSync(vectorDir, { recursive: true, force: true });
   } catch (error) {
-    console.error(`[auth] Failed to remove vector store for deleted account ${userId}:`, error.message);
+    console.error(
+      `[auth] Failed to remove vector store for deleted account ${userId}:`,
+      error.message,
+    );
   }
 
   return { ok: true };
@@ -373,13 +394,36 @@ export async function deleteAccount(userId, password) {
 // it. There is intentionally no API path that lets an account change its own
 // role; promoting a user to Admin is a direct DB operation only.
 export async function updateUserProfile(userId, data) {
-  db.prepare(`
+  const invalid = (message) => Object.assign(new AuthError(message), { status: 400 });
+  const current = await getUserById(userId);
+  if (!current) throw Object.assign(new AuthError('Account not found.'), { status: 404 });
+  const fields = {};
+  for (const [key, limit] of [
+    ['displayName', 120],
+    ['email', 254],
+    ['department', 120],
+  ]) {
+    if (data[key] === undefined) {
+      fields[key] = current[key] ?? null;
+      continue;
+    }
+    if (typeof data[key] !== 'string' || data[key].length > limit)
+      throw invalid(`Invalid ${key === 'displayName' ? 'display name' : key}.`);
+    const value = data[key].trim();
+    if (key === 'displayName' && !value) throw invalid('Display name is required.');
+    if (key === 'email' && value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))
+      throw invalid('Enter a valid email address.');
+    fields[key] = value || null;
+  }
+  db.prepare(
+    `
     UPDATE users
-    SET displayName = COALESCE(?, displayName),
-        email = COALESCE(?, email),
-        department = COALESCE(?, department)
+    SET displayName = ?,
+        email = ?,
+        department = ?
     WHERE id = ?
-  `).run(data.displayName || null, data.email || null, data.department || null, userId);
+  `,
+  ).run(fields.displayName, fields.email, fields.department, userId);
 
   return getUserById(userId);
 }

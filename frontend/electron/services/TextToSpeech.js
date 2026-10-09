@@ -1,4 +1,4 @@
-import say from "say";
+import say from 'say';
 
 let speaking = false;
 let knownVoices = null;
@@ -9,22 +9,15 @@ let knownVoices = null;
  * @returns {Promise<string[]>}
  */
 export async function getVoices() {
+  if (knownVoices) return knownVoices;
 
-    if (knownVoices)
-        return knownVoices;
-
-    knownVoices = await new Promise((resolve) => {
-
-        say.getInstalledVoices((err, voices) => {
-
-            resolve(err || !Array.isArray(voices) ? [] : voices);
-
-        });
-
+  knownVoices = await new Promise((resolve) => {
+    say.getInstalledVoices((err, voices) => {
+      resolve(err || !Array.isArray(voices) ? [] : voices);
     });
+  });
 
-    return knownVoices;
-
+  return knownVoices;
 }
 
 /**
@@ -38,14 +31,11 @@ export async function getVoices() {
  * @returns {Promise<string|null>}
  */
 async function resolveVoice(voice) {
+  if (!voice) return null;
 
-    if (!voice)
-        return null;
+  const installed = await getVoices();
 
-    const installed = await getVoices();
-
-    return installed.includes(voice) ? voice : null;
-
+  return installed.includes(voice) ? voice : null;
 }
 
 /**
@@ -57,74 +47,47 @@ async function resolveVoice(voice) {
  * @param {number} options.speed - Multiplier, 1.0 is normal.
  * @returns {Promise<boolean>} True once the line has been spoken.
  */
-export async function speak(
-    text,
-    {
-        voice = null,
-        speed = 1.0
-    } = {}
-) {
+export async function speak(text, { voice = null, speed = 1.0 } = {}) {
+  const line = String(text ?? '').trim();
 
-    const line = String(text ?? "").trim();
+  if (!line) return false;
 
-    if (!line)
-        return false;
+  // Stop current speech
+  if (speaking) await stop();
 
-    // Stop current speech
-    if (speaking)
-        await stop();
+  const safeVoice = await resolveVoice(voice);
 
-    const safeVoice = await resolveVoice(voice);
+  return new Promise((resolve) => {
+    speaking = true;
 
-    return new Promise((resolve) => {
+    say.speak(line, safeVoice, speed, (err) => {
+      speaking = false;
 
-        speaking = true;
-
-        say.speak(
-            line,
-            safeVoice,
-            speed,
-            (err) => {
-
-                speaking = false;
-
-                // A cut-off line reports an error too. Report it as "did not
-                // finish" rather than rejecting: callers only want to know
-                // whether sound came out, and an unobserved rejection here
-                // would surface as an unhandled rejection in the main process.
-                resolve(!err);
-
-            }
-        );
-
+      // A cut-off line reports an error too. Report it as "did not
+      // finish" rather than rejecting: callers only want to know
+      // whether sound came out, and an unobserved rejection here
+      // would surface as an unhandled rejection in the main process.
+      resolve(!err);
     });
-
+  });
 }
 
 /**
  * Stop speaking.
  */
 export async function stop() {
+  return new Promise((resolve) => {
+    say.stop(() => {
+      speaking = false;
 
-    return new Promise((resolve) => {
-
-        say.stop(() => {
-
-            speaking = false;
-
-            resolve(true);
-
-        });
-
+      resolve(true);
     });
-
+  });
 }
 
 /**
  * Check speech state.
  */
 export function isSpeaking() {
-
-    return speaking;
-
+  return speaking;
 }

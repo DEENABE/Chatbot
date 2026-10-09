@@ -30,11 +30,14 @@ async function db(userId) {
   return database;
 }
 
-export async function indexChunks({ documentId, filename, chunks }, userId) {
+export async function indexChunks({ documentId, filename, chunks }, userId, { signal } = {}) {
   if (!chunks.length) return 0;
   const vectors = [];
-  for (let i = 0; i < chunks.length; i += 16) {
-    vectors.push(...await embed(chunks.slice(i, i + 16)));
+  // Larger batches = far fewer Ollama round-trips for big spreadsheets/folders.
+  const EMBED_BATCH = Number(process.env.EMBED_BATCH_SIZE || 48);
+  for (let i = 0; i < chunks.length; i += EMBED_BATCH) {
+    signal?.throwIfAborted();
+    vectors.push(...(await embed(chunks.slice(i, i + EMBED_BATCH), { signal })));
   }
   const rows = chunks.map((text, index) => ({
     id: randomUUID(),
@@ -42,10 +45,11 @@ export async function indexChunks({ documentId, filename, chunks }, userId) {
     filename,
     chunkIndex: index,
     text,
-    vector: vectors[index]
+    vector: vectors[index],
   }));
-  
+
   const connection = await db(userId);
+  signal?.throwIfAborted();
   const names = await connection.tableNames();
   if (names.includes(TABLE_NAME)) {
     const table = await connection.openTable(TABLE_NAME);
@@ -56,12 +60,36 @@ export async function indexChunks({ documentId, filename, chunks }, userId) {
   return rows.length;
 }
 
-export async function searchChunks(query, limit = config.ragTopK, userId) {
+export async function searchChunks(
+  query,
+  limit = config.ragTopK,
+  userId,
+  { documentIds, signal } = {},
+) {
+  if (Array.isArray(documentIds) && !documentIds.length) return [];
+  if (documentIds?.some((id) => !isValidUuid(id))) throw new Error('Invalid document scope.');
   const connection = await db(userId);
   if (!(await connection.tableNames()).includes(TABLE_NAME)) return [];
-  const [queryVector] = await embed(query);
+  const [queryVector] = await embed(query, { signal });
   const table = await connection.openTable(TABLE_NAME);
-  return table.vectorSearch(queryVector).limit(limit).toArray();
+  if (!documentIds) return table.vectorSearch(queryVector).limit(limit).toArray();
+  // This LanceDB version has camelCase filter issues. Filter via stable UUID
+  // row IDs before vector ranking, so unrelated documents cannot crowd out
+  // the attached file and never enter the model context.
+  return scopedVectorSearch(table, queryVector, documentIds, limit);
+}
+
+export async function scopedVectorSearch(table, queryVector, documentIds, limit) {
+  const wanted = new Set(documentIds);
+  const ids = (await table.query().select(['id', 'documentId']).toArray())
+    .filter((row) => wanted.has(row.documentId) && isValidUuid(row.id))
+    .map((row) => row.id);
+  if (!ids.length) return [];
+  return table
+    .vectorSearch(queryVector)
+    .where(`id IN (${ids.map((id) => `'${id}'`).join(',')})`)
+    .limit(limit)
+    .toArray();
 }
 
 export async function listIndexedDocuments(userId) {
@@ -75,7 +103,11 @@ export async function listIndexedDocuments(userId) {
     if (existing) {
       existing.chunks += 1;
     } else {
-      documents.set(row.documentId, { id: row.documentId, name: row.filename, chunks: 1 });
+      documents.set(row.documentId, {
+        id: row.documentId,
+        name: row.filename,
+        chunks: 1,
+      });
     }
   }
   return [...documents.values()];

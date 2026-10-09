@@ -1,6 +1,7 @@
 # Automation Repair Guide
 
 ## Diagnose
+
 - Check whether a task with this name already exists before creating one:
   `Get-ScheduledTask -TaskName 'Chanakya-<Name>' -ErrorAction SilentlyContinue`
 - List every non-Microsoft scheduled task (safe to review for removal; `\Microsoft\*` tasks are the OS's own):
@@ -19,6 +20,7 @@
   `Get-ChildItem $env:TEMP -Recurse -File -ErrorAction SilentlyContinue | Where-Object LastWriteTime -lt (Get-Date).AddDays(-7) | Measure-Object Length -Sum`
 
 ## Common fixes
+
 - Register a scheduled task (generic pattern — swap the action/trigger):
   `$a = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -NonInteractive -Command "<command>"'`
   `$t = New-ScheduledTaskTrigger -Daily -At 22:00`
@@ -37,6 +39,7 @@
 - Start/stop a service on a schedule: `New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -Command "Stop-Service <name> -Force"'`
 
 ## Notes
+
 - Name every task you create with a `Chanakya-` prefix so it can be found and cleaned up later.
 - `Register-ScheduledTask` over an existing task name silently overwrites it — always check existence first with `Get-ScheduledTask`, and offer to update in place (`Set-ScheduledTask`) rather than blindly re-registering.
 - Never propose deleting ALL scheduled tasks. The overwhelming majority belong to Windows itself (`\Microsoft\*`) and are required for updates, defrag, and maintenance — only list and offer non-Microsoft tasks for removal.

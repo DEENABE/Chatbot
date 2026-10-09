@@ -65,7 +65,7 @@ statsRouter.get('/', async (_request, response, next) => {
       gpu: Math.round(Math.random() * 5 + 3), // dynamic mock fallback
       temperature: 41 + Math.round(Math.random() * 5), // dynamic mock fallback
       disk: diskUsagePercentage,
-      electronMemory: heapUsedMB
+      electronMemory: heapUsedMB,
     });
   } catch (error) {
     next(error);

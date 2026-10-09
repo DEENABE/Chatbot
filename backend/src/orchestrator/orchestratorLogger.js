@@ -78,7 +78,11 @@ export function readSessionTrace(sessionId) {
       .split('\n')
       .filter(Boolean)
       .map((line) => {
-        try { return JSON.parse(line); } catch { return null; }
+        try {
+          return JSON.parse(line);
+        } catch {
+          return null;
+        }
       })
       .filter(Boolean);
   } catch {
@@ -100,7 +104,11 @@ export function listSessionTraces(limit = 50) {
       .filter((f) => f.endsWith('.jsonl'))
       .map((f) => {
         const stat = fs.statSync(path.join(STORAGE_DIR, f));
-        return { sessionId: f.replace('.jsonl', ''), size: stat.size, mtime: stat.mtime };
+        return {
+          sessionId: f.replace('.jsonl', ''),
+          size: stat.size,
+          mtime: stat.mtime,
+        };
       })
       .sort((a, b) => b.mtime - a.mtime)
       .slice(0, limit);

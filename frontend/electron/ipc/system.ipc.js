@@ -1,138 +1,92 @@
-import { ipcMain } from "electron";
+import { ipcMain } from 'electron';
 
-import * as NotificationManager from "../managers/NotificationManager.js";
-import * as FileService from "../services/FileService.js";
-import * as WindowManager from "../managers/WindowManager.js";
-import * as TextToSpeech from "../services/TextToSpeech.js";
-import { isTrustedSender } from "../utils/ipcTrust.js";
+import * as NotificationManager from '../managers/NotificationManager.js';
+import * as FileService from '../services/FileService.js';
+import * as WindowManager from '../managers/WindowManager.js';
+import * as TextToSpeech from '../services/TextToSpeech.js';
+import { isTrustedSender } from '../utils/ipcTrust.js';
 
 export function registerSystemIPCHandlers() {
+  /**
+   * Desktop Notification
+   */
+  ipcMain.handle('show-notification', async (event, payload = {}) => {
+    if (!isTrustedSender(event)) return false;
 
-    /**
-     * Desktop Notification
-     */
-    ipcMain.handle("show-notification", async (event, payload = {}) => {
+    const { title = '', body = '' } = payload;
 
-        if (!isTrustedSender(event)) return false;
+    return NotificationManager.showNotification(title, body);
+  });
 
-        const {
-            title = "",
-            body = ""
-        } = payload;
+  /**
+   * Speak Text
+   */
+  ipcMain.handle('tts:speak', async (event, payload = {}) => {
+    if (!isTrustedSender(event)) return false;
 
-        return NotificationManager.showNotification(title, body);
+    try {
+      // speed, not rate/volume: say's Windows backend takes a speed
+      // multiplier and offers no volume control, so anything else was
+      // being accepted and silently dropped.
+      const { text = '', speed = 1, voice = null } = payload;
 
-    });
+      return await TextToSpeech.speak(text, {
+        speed,
+        voice,
+      });
+    } catch (err) {
+      console.error('TTS Error:', err);
 
+      return false;
+    }
+  });
 
-    /**
-     * Speak Text
-     */
-    ipcMain.handle("tts:speak", async (event, payload = {}) => {
+  /**
+   * Stop Speaking
+   */
+  ipcMain.handle('tts:stop', async (event) => {
+    if (!isTrustedSender(event)) return false;
 
-        if (!isTrustedSender(event)) return false;
+    try {
+      await TextToSpeech.stop();
 
-        try {
+      return true;
+    } catch (err) {
+      console.error(err);
 
-            // speed, not rate/volume: say's Windows backend takes a speed
-            // multiplier and offers no volume control, so anything else was
-            // being accepted and silently dropped.
-            const {
-                text = "",
-                speed = 1,
-                voice = null
-            } = payload;
+      return false;
+    }
+  });
 
-            return await TextToSpeech.speak(text, {
-                speed,
-                voice
-            });
+  /**
+   * Get Installed Voices
+   */
+  ipcMain.handle('tts:voices', async (event) => {
+    if (!isTrustedSender(event)) return [];
 
-        } catch (err) {
+    try {
+      return await TextToSpeech.getVoices();
+    } catch {
+      return [];
+    }
+  });
 
-            console.error("TTS Error:", err);
+  /**
+   * Save File
+   */
+  ipcMain.handle('save-file', async (event, payload = {}) => {
+    if (!isTrustedSender(event)) return null;
 
-            return false;
+    try {
+      const { name, base64 } = payload;
 
-        }
+      const win = WindowManager.getMainWindow();
 
-    });
+      return await FileService.saveBase64File(win, name, base64);
+    } catch (err) {
+      console.error(err);
 
-
-    /**
-     * Stop Speaking
-     */
-    ipcMain.handle("tts:stop", async (event) => {
-
-        if (!isTrustedSender(event)) return false;
-
-        try {
-
-            await TextToSpeech.stop();
-
-            return true;
-
-        } catch (err) {
-
-            console.error(err);
-
-            return false;
-
-        }
-
-    });
-
-
-    /**
-     * Get Installed Voices
-     */
-    ipcMain.handle("tts:voices", async (event) => {
-
-        if (!isTrustedSender(event)) return [];
-
-        try {
-
-            return await TextToSpeech.getVoices();
-
-        } catch {
-
-            return [];
-
-        }
-
-    });
-
-
-    /**
-     * Save File
-     */
-    ipcMain.handle("save-file", async (event, payload = {}) => {
-
-        if (!isTrustedSender(event)) return null;
-
-        try {
-
-            const {
-                name,
-                base64
-            } = payload;
-
-            const win = WindowManager.getMainWindow();
-
-            return await FileService.saveBase64File(
-                win,
-                name,
-                base64
-            );
-
-        } catch (err) {
-
-            console.error(err);
-
-            return null;
-
-        }
-
-    });
-
+      return null;
+    }
+  });
 }

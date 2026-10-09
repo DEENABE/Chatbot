@@ -32,7 +32,9 @@ memoryRouter.get('/', async (request, response, next) => {
 memoryRouter.post('/', async (request, response, next) => {
   try {
     const userId = request.userId;
-    const content = requireString(request.body?.content, 'content', { max: 8000 });
+    const content = requireString(request.body?.content, 'content', {
+      max: 8000,
+    });
     const type = requireEnum(request.body?.type, 'type', MEMORY_TYPES);
     const memory = await addMemory(userId, content, type);
     response.status(201).json({ memory });

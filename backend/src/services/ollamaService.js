@@ -1,14 +1,24 @@
 import { config } from '../config.js';
 
 async function ollamaFetch(path, options = {}) {
+  const deadline = AbortSignal.timeout(options.timeoutMs || 30_000);
+  const signal = options.signal ? AbortSignal.any([options.signal, deadline]) : deadline;
+  const { timeoutMs, ...requestOptions } = options;
   let response;
   try {
     response = await fetch(`${config.ollamaUrl}${path}`, {
-      ...options,
-      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
+      ...requestOptions,
+      signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options.headers || {}),
+      },
     });
   } catch (error) {
-    throw new Error(`Cannot reach Ollama at ${config.ollamaUrl}. Is it running? (${error.message})`);
+    if (signal.aborted) throw signal.reason;
+    throw new Error(
+      `Cannot reach Ollama at ${config.ollamaUrl}. Is it running? (${error.message})`,
+    );
   }
   if (!response.ok) {
     const detail = await response.text();
@@ -21,6 +31,15 @@ export async function listInstalledModels() {
   const response = await ollamaFetch('/api/tags', { method: 'GET' });
   const data = await parseJson(response, 'model discovery');
   return data.models || [];
+}
+
+export async function showModel(model) {
+  const response = await ollamaFetch('/api/show', {
+    method: 'POST',
+    body: JSON.stringify({ model }),
+    timeoutMs: 8000,
+  });
+  return parseJson(response, 'model capability discovery');
 }
 
 // Models currently loaded in memory (RAM/VRAM).
@@ -38,7 +57,7 @@ export async function listLoadedModels() {
 export async function unloadModel(model) {
   await ollamaFetch('/api/generate', {
     method: 'POST',
-    body: JSON.stringify({ model, keep_alive: 0 })
+    body: JSON.stringify({ model, keep_alive: 0 }),
   });
 }
 
@@ -49,28 +68,36 @@ export async function unloadAllModels() {
   return loaded.map((m) => m.name);
 }
 
-export async function embed(texts) {
+export async function embed(texts, { signal } = {}) {
   const input = Array.isArray(texts) ? texts : [texts];
   try {
     const response = await ollamaFetch('/api/embed', {
       method: 'POST',
-      body: JSON.stringify({ model: config.embeddingModel, input })
+      signal,
+      body: JSON.stringify({ model: config.embeddingModel, input }),
     });
     const data = await parseJson(response, `embedding with ${config.embeddingModel}`);
     if (!Array.isArray(data.embeddings)) {
-      throw new Error(`Ollama did not return embeddings. Run: ollama pull ${config.embeddingModel}`);
+      throw new Error(
+        `Ollama did not return embeddings. Run: ollama pull ${config.embeddingModel}`,
+      );
     }
     return data.embeddings;
   } catch (modernError) {
+    if (signal?.aborted || ['AbortError', 'TimeoutError'].includes(modernError?.name))
+      throw modernError;
     const embeddings = [];
     for (const prompt of input) {
       const response = await ollamaFetch('/api/embeddings', {
         method: 'POST',
-        body: JSON.stringify({ model: config.embeddingModel, prompt })
+        signal,
+        body: JSON.stringify({ model: config.embeddingModel, prompt }),
       });
       const data = await parseJson(response, `embedding with ${config.embeddingModel}`);
       if (!Array.isArray(data.embedding)) {
-        throw new Error(`Ollama did not return an embedding. Run: ollama pull ${config.embeddingModel}`);
+        throw new Error(
+          `Ollama did not return an embedding. Run: ollama pull ${config.embeddingModel}`,
+        );
       }
       embeddings.push(data.embedding);
     }
@@ -78,22 +105,34 @@ export async function embed(texts) {
   }
 }
 
-export async function streamChat({ model, messages, tools, signal, onToken, onToolCall }) {
+export async function streamChat({
+  model,
+  messages,
+  tools,
+  signal,
+  onToken,
+  onToolCall,
+  keepAlive = config.ollamaKeepAlive,
+  options = {},
+  think,
+}) {
   const body = {
     model,
     messages,
     stream: true,
-    keep_alive: config.ollamaKeepAlive,
-    options: { temperature: 0.25, num_ctx: 8192 }
+    keep_alive: keepAlive,
+    options: { temperature: 0.25, num_ctx: 8192, ...options },
   };
   if (Array.isArray(tools) && tools.length) {
     body.tools = tools;
   }
+  if (think !== undefined) body.think = think;
 
   const response = await ollamaFetch('/api/chat', {
     method: 'POST',
     signal,
-    body: JSON.stringify(body)
+    timeoutMs: 600_000,
+    body: JSON.stringify(body),
   });
 
   if (!response.body) {
@@ -105,6 +144,7 @@ export async function streamChat({ model, messages, tools, signal, onToken, onTo
   let buffer = '';
   let fullText = '';
   let toolCalls = [];
+  let metrics = {};
 
   const consume = (line) => {
     if (!line.trim()) return;
@@ -112,9 +152,24 @@ export async function streamChat({ model, messages, tools, signal, onToken, onTo
     try {
       event = JSON.parse(line);
     } catch {
-      throw new Error(`Ollama returned incomplete JSON. Update/restart Ollama and verify the '${model}' model.`);
+      throw new Error(
+        `Ollama returned incomplete JSON. Update/restart Ollama and verify the '${model}' model.`,
+      );
     }
     if (event.error) throw new Error(event.error);
+    if (event.done)
+      metrics = Object.fromEntries(
+        [
+          'total_duration',
+          'load_duration',
+          'prompt_eval_count',
+          'prompt_eval_duration',
+          'eval_count',
+          'eval_duration',
+        ]
+          .filter((key) => Number.isFinite(event[key]))
+          .map((key) => [key, event[key]]),
+      );
     const message = event.message;
     if (message) {
       if (message.content) {
@@ -141,13 +196,30 @@ export async function streamChat({ model, messages, tools, signal, onToken, onTo
     }
   }
   consume(buffer);
-  return { text: fullText, toolCalls };
+  return { text: fullText, toolCalls, metrics };
 }
 
-export async function streamGenerate({ model, prompt, images, signal, onChunk }) {
+export async function streamGenerate({
+  model,
+  prompt,
+  images,
+  signal,
+  onChunk,
+  keepAlive = config.ollamaKeepAlive,
+  options = {},
+}) {
   const response = await ollamaFetch('/api/generate', {
     method: 'POST',
-    body: JSON.stringify({ model, prompt, images, stream: true, keep_alive: config.ollamaKeepAlive, options: { temperature: 0.25, num_ctx: 8192 } })
+    signal,
+    timeoutMs: 600_000,
+    body: JSON.stringify({
+      model,
+      prompt,
+      images,
+      stream: true,
+      keep_alive: keepAlive,
+      options: { temperature: 0.25, num_ctx: 8192, ...options },
+    }),
   });
 
   if (!response.body) {
@@ -165,7 +237,9 @@ export async function streamGenerate({ model, prompt, images, signal, onChunk })
     try {
       event = JSON.parse(line);
     } catch {
-      throw new Error(`Ollama returned incomplete JSON. Update/restart Ollama and verify the '${model}' model.`);
+      throw new Error(
+        `Ollama returned incomplete JSON. Update/restart Ollama and verify the '${model}' model.`,
+      );
     }
     if (event.response) {
       fullText += event.response;
@@ -191,7 +265,9 @@ export async function streamGenerate({ model, prompt, images, signal, onChunk })
 async function parseJson(response, operation) {
   const raw = await response.text();
   if (!raw.trim()) {
-    throw new Error(`Ollama returned an empty response during ${operation}. Restart Ollama and confirm the model is installed.`);
+    throw new Error(
+      `Ollama returned an empty response during ${operation}. Restart Ollama and confirm the model is installed.`,
+    );
   }
   try {
     return JSON.parse(raw);

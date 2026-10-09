@@ -41,7 +41,9 @@ export default function SystemMonitor() {
       {/* Title Header */}
       <div className="flex items-center gap-2 border-b border-white/5 pb-3 mb-4 shrink-0">
         <Activity size={16} style={{ color: accent }} />
-        <span className="text-xs font-bold uppercase tracking-wider text-stone-300">Chanakya Diagnostics</span>
+        <span className="text-xs font-bold uppercase tracking-wider text-stone-300">
+          Chanakya Diagnostics
+        </span>
       </div>
 
       <div className="flex flex-col gap-4">
@@ -60,7 +62,10 @@ export default function SystemMonitor() {
             <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden mt-1">
               <motion.div
                 className="h-full rounded-full"
-                animate={{ width: `${metrics.cpu || 0}%`, backgroundColor: getMeterColor(metrics.cpu) }}
+                animate={{
+                  width: `${metrics.cpu || 0}%`,
+                  backgroundColor: getMeterColor(metrics.cpu),
+                }}
                 transition={presets.glide}
               />
             </div>
@@ -79,7 +84,10 @@ export default function SystemMonitor() {
             <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden mt-1">
               <motion.div
                 className="h-full rounded-full"
-                animate={{ width: `${metrics.ram || 0}%`, backgroundColor: getMeterColor(metrics.ram) }}
+                animate={{
+                  width: `${metrics.ram || 0}%`,
+                  backgroundColor: getMeterColor(metrics.ram),
+                }}
                 transition={presets.glide}
               />
             </div>
@@ -98,7 +106,10 @@ export default function SystemMonitor() {
             <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden mt-1">
               <motion.div
                 className="h-full rounded-full"
-                animate={{ width: `${metrics.gpu || 0}%`, backgroundColor: getMeterColor(metrics.gpu) }}
+                animate={{
+                  width: `${metrics.gpu || 0}%`,
+                  backgroundColor: getMeterColor(metrics.gpu),
+                }}
                 transition={presets.glide}
               />
             </div>
@@ -117,7 +128,10 @@ export default function SystemMonitor() {
             <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden mt-1">
               <motion.div
                 className="h-full rounded-full"
-                animate={{ width: `${metrics.disk || 0}%`, backgroundColor: getMeterColor(metrics.disk) }}
+                animate={{
+                  width: `${metrics.disk || 0}%`,
+                  backgroundColor: getMeterColor(metrics.disk),
+                }}
                 transition={presets.glide}
               />
             </div>
@@ -126,8 +140,10 @@ export default function SystemMonitor() {
 
         {/* AI Performance Statistics */}
         <div className="bg-[#141416]/50 border border-white/5 rounded-2xl p-4 flex flex-col gap-3">
-          <span className="text-[9px] uppercase font-bold text-stone-500 tracking-widest block">AI Inference performance</span>
-          
+          <span className="text-[9px] uppercase font-bold text-stone-500 tracking-widest block">
+            AI Inference performance
+          </span>
+
           <div className="flex items-center justify-between border-b border-white/5 pb-2">
             <div className="flex items-center gap-2">
               <Zap size={13} style={{ color: accent }} />
@@ -161,7 +177,9 @@ export default function SystemMonitor() {
 
         {/* System Details (Diagnostics information) */}
         <div className="bg-[#141416]/50 border border-white/5 rounded-2xl p-4">
-          <span className="text-[9px] uppercase font-bold text-stone-500 tracking-widest block mb-2">Offline Execution Environment</span>
+          <span className="text-[9px] uppercase font-bold text-stone-500 tracking-widest block mb-2">
+            Offline Execution Environment
+          </span>
           <div className="flex flex-col gap-1.5 text-[10px] text-stone-400 font-mono">
             <div className="flex justify-between">
               <span>Platform OS:</span>

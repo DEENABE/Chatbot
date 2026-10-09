@@ -26,7 +26,10 @@ import { BLINK_INTERVAL_MS, BLINK_DURATION_MS } from '../avatarDirector.js';
 export default function RpmAvatar({ url, avatarState, onReady, onError }) {
   const groupRef = useRef(null);
   const characterRef = useRef(null);
-  const blinkState = useRef({ next: performance.now() + BLINK_INTERVAL_MS, closedUntil: 0 });
+  const blinkState = useRef({
+    next: performance.now() + BLINK_INTERVAL_MS,
+    closedUntil: 0,
+  });
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -63,7 +66,7 @@ export default function RpmAvatar({ url, avatarState, onReady, onError }) {
       groupRef.current.rotation.y,
       Math.sin(t * 0.4) * 0.05,
       3,
-      delta
+      delta,
     );
 
     const now = performance.now();

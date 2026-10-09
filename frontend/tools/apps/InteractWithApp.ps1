@@ -4,7 +4,7 @@ $ErrorActionPreference='Stop'
 $desktopMutex=[Threading.Mutex]::new($false,'Local\ChanakyaDesktopAutomation')
 $ownsDesktop=$false
 try {
-  $ownsDesktop=$desktopMutex.WaitOne(0)
+  try{$ownsDesktop=$desktopMutex.WaitOne(4000)}catch{if($_.Exception.GetBaseException() -is [Threading.AbandonedMutexException]){$ownsDesktop=$true}else{throw}}
   if(!$ownsDesktop){throw 'UI_BUSY'}
   $request=[Console]::In.ReadToEnd() | ConvertFrom-Json
   if($request.action -notin @('calculate','typeInNotepad','inspect','locate')) { throw 'UI_UNSUPPORTED_ACTION' }

@@ -1,14 +1,25 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Bot, Copy, Volume2, ThumbsUp, ThumbsDown } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
+import {
+  Bot,
+  Copy,
+  Volume2,
+  ThumbsUp,
+  ThumbsDown,
+  FileText,
+  Image as ImageIcon,
+} from 'lucide-react';
+import RichMessage from './RichMessage.jsx';
+import { hasMarkdownTable } from './markdownTables.js';
 import { useAppStore } from '../stores/useAppStore.js';
 import { presets } from '../animations/presets.js';
+import { parseMetadata, formatBytes, toolStatus } from '../utils/attachments.js';
 
 export default function MessageList() {
   const messages = useAppStore((state) => state.activeMessages);
   const isGenerating = useAppStore((state) => state.isGenerating);
   const settings = useAppStore((state) => state.settings);
+  const generationStatus = useAppStore((state) => state.generationStatus);
   const setInputText = useAppStore((state) => state.setInputText);
   const pendingRepairFeedback = useAppStore((state) => state.pendingRepairFeedback);
   const submitRepairFeedback = useAppStore((state) => state.submitRepairFeedback);
@@ -41,19 +52,19 @@ export default function MessageList() {
         setSelectionBox(null);
         return;
       }
-      
+
       const text = selection.toString().trim();
       if (text.length < 3) return; // ignore short selections
-      
+
       try {
         const range = selection.getRangeAt(0);
         const rect = range.getBoundingClientRect();
-        
+
         // Position toolbar 40px above selection center
         setSelectionBox({
           x: rect.left + rect.width / 2,
           y: rect.top - 40,
-          text
+          text,
         });
       } catch (err) {
         // ignore errors getting range bounds
@@ -86,10 +97,10 @@ export default function MessageList() {
     >
       {/* Floating Highlight Actions Toolbar */}
       {selectionBox && (
-        <div 
+        <div
           className="fixed z-50 flex items-center gap-1.5 rounded-xl border border-white/5 bg-[#121214]/95 backdrop-blur-md p-1 shadow-2xl transition-all -translate-x-1/2"
-          style={{ 
-            top: selectionBox.y, 
+          style={{
+            top: selectionBox.y,
             left: selectionBox.x,
           }}
         >
@@ -121,9 +132,10 @@ export default function MessageList() {
         <AnimatePresence initial={false}>
           {messages.map((message, i) => {
             const isLast = i === messages.length - 1;
-            const parsedSources = typeof message.sources === 'string' && message.sources
-              ? JSON.parse(message.sources)
-              : message.sources;
+            const parsedSources = parseMetadata(message.sources);
+            const attachments = parseMetadata(message.attachments);
+            // Tables need the full row width; plain replies keep the compact bubble.
+            const wide = message.role === 'assistant' && hasMarkdownTable(message.content);
 
             return (
               <motion.div
@@ -135,12 +147,12 @@ export default function MessageList() {
               >
                 {/* Bot Avatar */}
                 {message.role === 'assistant' && (
-                  <div 
+                  <div
                     className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border text-xs"
-                    style={{ 
-                      borderColor: `${accent}30`, 
+                    style={{
+                      borderColor: `${accent}30`,
                       background: `linear-gradient(135deg, ${accent}20, transparent)`,
-                      color: accent
+                      color: accent,
                     }}
                   >
                     <Bot size={14} />
@@ -148,8 +160,8 @@ export default function MessageList() {
                 )}
 
                 {/* Message Bubble */}
-                <div 
-                  className={`group max-w-[85%] rounded-2xl p-3 text-xs leading-5 relative transition-all ${
+                <div
+                  className={`group min-w-0 ${wide ? 'w-full max-w-full' : 'max-w-[85%]'} rounded-2xl p-3 text-xs leading-5 relative transition-all ${
                     message.role === 'user'
                       ? 'rounded-tr-none text-white'
                       : message.role === 'tool'
@@ -157,32 +169,43 @@ export default function MessageList() {
                         : 'rounded-tl-none text-stone-200 border border-white/[0.04]'
                   }`}
                   style={{
-                    background: message.role === 'user' 
-                      ? `linear-gradient(135deg, ${accent}30, ${accent}10)` 
-                      : message.role === 'tool'
-                        ? 'rgba(6, 78, 59, 0.05)'
-                        : 'rgba(255, 255, 255, 0.02)',
-                    borderColor: message.role === 'user' 
-                      ? `${accent}25` 
-                      : message.role === 'tool'
-                        ? 'rgba(16, 185, 129, 0.15)'
-                        : undefined
+                    background:
+                      message.role === 'user'
+                        ? `linear-gradient(135deg, ${accent}30, ${accent}10)`
+                        : message.role === 'tool'
+                          ? 'rgba(6, 78, 59, 0.05)'
+                          : 'rgba(255, 255, 255, 0.02)',
+                    borderColor:
+                      message.role === 'user'
+                        ? `${accent}25`
+                        : message.role === 'tool'
+                          ? 'rgba(16, 185, 129, 0.15)'
+                          : undefined,
                   }}
                 >
                   {message.role === 'tool' ? (
                     <div className="space-y-1.5 text-[10px]">
                       <div className="flex items-center gap-1.5 border-b border-emerald-500/10 pb-1 opacity-70">
                         <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                        <span className="font-extrabold uppercase tracking-widest text-[8px]">Native System Tool Output</span>
+                        <span className="font-extrabold uppercase tracking-widest text-[8px]">
+                          Assistant status
+                        </span>
                       </div>
-                      <div className="select-text whitespace-pre-wrap break-all leading-4">{message.content}</div>
+                      <div className="select-text whitespace-pre-wrap break-all leading-4">
+                        {toolStatus(message)}
+                      </div>
                     </div>
                   ) : message.role === 'assistant' ? (
                     <div className="space-y-2">
                       <div className="markdown prose prose-invert select-text">
-                        <ReactMarkdown>{message.content || ''}</ReactMarkdown>
+                        <RichMessage content={message.content || ''} accent={accent} />
+                        {isGenerating && isLast && !message.content && (
+                          <span className="text-stone-400" role="status">
+                            {generationStatus}…
+                          </span>
+                        )}
                         {isGenerating && isLast && (
-                          <motion.span 
+                          <motion.span
                             animate={{ opacity: [0, 1, 0] }}
                             transition={{ duration: 0.8, repeat: Infinity }}
                             className="inline-block h-3.5 w-1.5 ml-1 align-middle"
@@ -190,7 +213,7 @@ export default function MessageList() {
                           />
                         )}
                       </div>
- 
+
                       {/* Action buttons */}
                       {message.content && (!isGenerating || !isLast) && (
                         <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity mt-2">
@@ -210,29 +233,65 @@ export default function MessageList() {
                           </button>
                         </div>
                       )}
- 
-                      {/* Display RAG sources */}
-                      {parsedSources && parsedSources.length > 0 && (
-                        <div className="mt-2 border-t border-white/[0.04] pt-2">
-                          <div className="text-[9px] font-semibold text-stone-600 uppercase tracking-wider mb-1">
-                            Retrieved Context Sources
+
+                      {/* Sources are shown only when the answer came from the person's own knowledge files on request.
+                          Normal chat and attachment answers (which already name their file) show none. */}
+                      {parsedSources && parsedSources.some((src) => src.scope === 'knowledge') && (
+                        <details className="mt-2 border-t border-white/[0.04] pt-2">
+                          <summary className="cursor-pointer select-none text-[9px] font-semibold uppercase tracking-wider text-stone-600 hover:text-stone-400">
+                            Sources (
+                            {parsedSources.filter((src) => src.scope === 'knowledge').length})
+                          </summary>
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {parsedSources
+                              .filter((src) => src.scope === 'knowledge')
+                              .map((src, sIdx) => (
+                                <span
+                                  key={sIdx}
+                                  className="rounded-full border border-white/[0.05] bg-white/[0.03] px-2 py-0.5 text-[9px] text-stone-400"
+                                  title={src.filename}
+                                >
+                                  {src.filename} ·{' '}
+                                  {src.page
+                                    ? `Page ${src.page}`
+                                    : typeof src.chunk === 'string'
+                                      ? src.chunk
+                                      : `Chunk ${src.chunk}`}
+                                </span>
+                              ))}
                           </div>
-                          <div className="flex flex-wrap gap-1">
-                            {parsedSources.map((src, sIdx) => (
-                              <span 
-                                key={sIdx} 
-                                className="rounded-full bg-white/[0.03] border border-white/[0.05] px-2 py-0.5 text-[9px] text-stone-400"
-                                title={`Matching score: ${Math.round((1 - src.score) * 100)}%`}
-                              >
-                                {src.filename} · Chunk {src.chunk}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
+                        </details>
                       )}
                     </div>
                   ) : (
-                    <div className="select-text whitespace-pre-wrap">{message.content}</div>
+                    <div className="select-text whitespace-pre-wrap break-words">
+                      {message.content}
+                    </div>
+                  )}
+                  {attachments.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2" aria-label="Message attachments">
+                      {attachments.map((attachment) => (
+                        <div
+                          key={attachment.id}
+                          className="flex max-w-full items-center gap-2 rounded-lg border border-white/10 bg-black/10 px-2 py-1.5 text-[10px]"
+                        >
+                          {attachment.mediaType === 'image' ||
+                          /^image\//.test(attachment.mimeType || '') ? (
+                            <ImageIcon size={13} className="shrink-0" />
+                          ) : (
+                            <FileText size={13} className="shrink-0" />
+                          )}
+                          <div className="min-w-0">
+                            <div className="truncate font-semibold" title={attachment.name}>
+                              {attachment.name}
+                            </div>
+                            <div className="text-stone-400">
+                              {formatBytes(attachment.size)} · Attached to this message
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
               </motion.div>

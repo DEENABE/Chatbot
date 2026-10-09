@@ -5,7 +5,7 @@ import { translateLimiter } from '../middleware/rateLimiter.js';
 import { requireEnum, requireString, ValidationError } from '../lib/validate.js';
 import { LANGUAGE_CODES, AUTO } from '../services/languageRegistry.js';
 import { detectLanguage } from '../services/languageDetect.js';
-import { translateText, TranslationError } from '../services/translationService.js';
+import { translateWithEngine, TranslationError } from '../services/translationService.js';
 
 // sourceLanguage may additionally be 'auto'; targetLanguage never can be —
 // there is no such thing as an auto-detected *destination*.
@@ -41,11 +41,18 @@ translateRouter.post('/', requireAuth, translateLimiter, async (request, respons
     // Language codes are validated against the server-side allowlist before
     // anything else — an unsupported code is rejected here and can never
     // reach the provider or a prompt.
-    const requestedSource = requireEnum(body.sourceLanguage, 'sourceLanguage', SOURCE_LANGUAGE_CODES);
+    const requestedSource = requireEnum(
+      body.sourceLanguage,
+      'sourceLanguage',
+      SOURCE_LANGUAGE_CODES,
+    );
     const targetLanguage = requireEnum(body.targetLanguage, 'targetLanguage', LANGUAGE_CODES);
     // requireString rejects non-strings, empty/whitespace-only text, and
     // oversized text (server-side cap — the UI's counter is cosmetic).
-    const text = requireString(body.text, 'text', { min: 1, max: config.translate.maxChars });
+    const text = requireString(body.text, 'text', {
+      min: 1,
+      max: config.translate.maxChars,
+    });
 
     // This route is the one place responsible for turning "auto" into a
     // concrete language — translateText() itself never has to know what
@@ -56,7 +63,9 @@ translateRouter.post('/', requireAuth, translateLimiter, async (request, respons
     if (requestedSource === AUTO) {
       const detected = detectLanguage(text);
       if (!detected.language) {
-        throw new ValidationError('Could not confidently detect the source language. Please select it manually.');
+        throw new ValidationError(
+          'Could not confidently detect the source language. Please select it manually.',
+        );
       }
       sourceLanguage = detected.language;
     }
@@ -69,17 +78,21 @@ translateRouter.post('/', requireAuth, translateLimiter, async (request, respons
       return response.json({ translation: text });
     }
 
-    const translation = await translateText({ text, sourceLanguage, targetLanguage });
+    const { translation, engine } = await translateWithEngine({
+      text,
+      sourceLanguage,
+      targetLanguage,
+      userId: request.userId,
+    });
 
     // Structured, operational logging only — source/target/size/timing/
     // engine, never the text or its translation. Matches this app's
     // existing no-content-logging convention (see e.g. authService.js's
     // PASSWORD_RESET_* markers).
     const durationMs = Date.now() - startedAt;
-    const engine = config.translate.postProcessingEnabled ? 'indictrans2+qwen' : 'indictrans2';
     console.log(
       `[${request.id || '-'}] [translate] source=${sourceLanguage} target=${targetLanguage} ` +
-        `chars=${text.length} durationMs=${durationMs} engine=${engine}`
+        `chars=${text.length} durationMs=${durationMs} engine=${engine}`,
     );
 
     return response.json({ translation });

@@ -18,9 +18,10 @@ import { completeJSON, DEFAULT_MODEL } from '../ai/llmClient.js';
 
 // Build allowed action description text (same as OrchestratorPlanner).
 function buildManifestText() {
-  return ALLOWED_ACTIONS.map((a, i) =>
-    `${i + 1}. tool="${a.tool}" action="${a.action}" — ${a.description}` +
-    (a.requiredParams.length ? ` [required params: ${a.requiredParams.join(', ')}]` : '')
+  return ALLOWED_ACTIONS.map(
+    (a, i) =>
+      `${i + 1}. tool="${a.tool}" action="${a.action}" — ${a.description}` +
+      (a.requiredParams.length ? ` [required params: ${a.requiredParams.join(', ')}]` : ''),
   ).join('\n');
 }
 
@@ -56,7 +57,14 @@ Reply with JSON only:
  * @returns {Promise<{ summary: string, steps: import('./AgentState.js').PlanStep[] }>}
  */
 export async function replan({ task, state, model = DEFAULT_MODEL, signal }) {
-  const transcript = buildTranscript(state.attempts?.length ? state.attempts.map(a => ({ ...a.request, observation: a.observation })) : state.plan);
+  const transcript = buildTranscript(
+    state.attempts?.length
+      ? state.attempts.map((a) => ({
+          ...a.request,
+          observation: a.observation,
+        }))
+      : state.plan,
+  );
 
   // Find which steps already succeeded.
   const completedActions = state.plan
@@ -81,13 +89,20 @@ export async function replan({ task, state, model = DEFAULT_MODEL, signal }) {
         failedSteps ? `FAILED STEPS:\n${failedSteps}` : '',
         `\nFULL TRANSCRIPT:\n${transcript}`,
         '\nProduce a revised plan for the remaining work only.',
-      ].filter(Boolean).join('\n'),
+      ]
+        .filter(Boolean)
+        .join('\n'),
       model,
       signal,
     });
 
     const rawSteps = Array.isArray(result.steps) ? result.steps : [];
-    const validated = validateAndNormaliseLLMSteps(rawSteps, state.currentStepIndex,state.plan.filter(s=>s.status==='done'),task);
+    const validated = validateAndNormaliseLLMSteps(
+      rawSteps,
+      state.currentStepIndex,
+      state.plan.filter((s) => s.status === 'done'),
+      task,
+    );
 
     if (validated.length === 0) {
       // Nothing the LLM suggested is valid — give up gracefully.

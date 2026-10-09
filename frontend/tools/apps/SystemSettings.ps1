@@ -18,7 +18,10 @@ $limits = @{
     'mouse-speed' = @(1, 20); 'scroll-lines' = @(1, 100); 'double-click-speed' = @(200, 900); 'keyboard-repeat-rate' = @(0, 31); 'cursor-blink-rate' = @(200, 1200)
     'hibernate-timeout' = @(0, 1440); 'disk-timeout' = @(0, 1440); 'lock-screen-timeout' = @(0, 60)
     'dim-timeout' = @(0, 1440); 'max-processor-state' = @(20, 100); 'battery-saver-threshold' = @(0, 100)
+    'default-brightness' = @(10, 100); 'unattended-sleep-timeout' = @(0, 1440); 'low-battery-level' = @(5, 100); 'critical-battery-level' = @(3, 50); 'battery-saver-brightness' = @(10, 100)
+    'caret-width' = @(1, 20); 'horizontal-scroll-chars' = @(1, 100)
     'pointer-trails' = @(0, 20); 'keyboard-repeat-delay' = @(0, 3); 'menu-show-delay' = @(0, 4000)
+    'active-hours-start' = @(0, 23); 'active-hours-end' = @(0, 23)
 }
 $choices = @{
     'power-mode' = @('best-power-efficiency', 'balanced', 'best-performance')
@@ -27,17 +30,37 @@ $choices = @{
     'mouse-primary-button' = @('left', 'right')
     'wake-timers' = @('disabled', 'enabled', 'important-only')
     'cooling-policy' = @('passive', 'active')
+    'low-battery-action' = @('do-nothing', 'sleep', 'hibernate', 'shut-down')
+    'critical-battery-action' = @('do-nothing', 'sleep', 'hibernate', 'shut-down')
+    'taskbar-alignment' = @('left', 'center')
+    'open-explorer-to' = @('this-pc', 'home')
+    'taskbar-combine-buttons' = @('always', 'when-full', 'never')
 }
 $types = @{
     'dark-mode' = 'boolean'; mute = 'boolean'; wifi = 'boolean'; bluetooth = 'boolean'; 'mic-mute' = 'boolean'
     transparency = 'boolean'; 'file-extensions' = 'boolean'; 'hidden-files' = 'boolean'
     notifications = 'boolean'; 'clipboard-history' = 'boolean'; 'airplane-mode' = 'boolean'; 'pointer-precision' = 'boolean'; 'clock-24-hour' = 'boolean'
     'animations' = 'boolean'; 'drag-window-contents' = 'boolean'; 'snap-to-default-button' = 'boolean'; 'hide-pointer-while-typing' = 'boolean'; 'pointer-location-on-ctrl' = 'boolean'; 'usb-selective-suspend' = 'boolean'
+    'mouse-click-lock' = 'boolean'; 'keyboard-underlines' = 'boolean'; 'window-minimize-animation' = 'boolean'; 'hybrid-sleep' = 'boolean'
     brightness = 'number'; volume = 'number'; 'mic-volume' = 'number'; 'screen-timeout' = 'number'; 'sleep-timeout' = 'number'; 'mouse-speed' = 'number'
     'scroll-lines' = 'number'; 'double-click-speed' = 'number'; 'keyboard-repeat-rate' = 'number'; 'cursor-blink-rate' = 'number'
     'hibernate-timeout' = 'number'; 'disk-timeout' = 'number'; 'lock-screen-timeout' = 'number'; 'dim-timeout' = 'number'; 'max-processor-state' = 'number'; 'battery-saver-threshold' = 'number'
+    'default-brightness' = 'number'; 'unattended-sleep-timeout' = 'number'; 'low-battery-level' = 'number'; 'critical-battery-level' = 'number'; 'battery-saver-brightness' = 'number'
+    'caret-width' = 'number'; 'horizontal-scroll-chars' = 'number'
     'pointer-trails' = 'number'; 'keyboard-repeat-delay' = 'number'; 'menu-show-delay' = 'number'
-    'power-mode' = 'choice'; 'lid-close-action' = 'choice'; 'power-button-action' = 'choice'; 'mouse-primary-button' = 'choice'; 'wake-timers' = 'choice'; 'cooling-policy' = 'choice'
+    'power-mode' = 'choice'; 'lid-close-action' = 'choice'; 'power-button-action' = 'choice'; 'mouse-primary-button' = 'choice'; 'wake-timers' = 'choice'; 'cooling-policy' = 'choice'; 'low-battery-action' = 'choice'; 'critical-battery-action' = 'choice'
+    'task-view-button' = 'boolean'; 'taskbar-badges' = 'boolean'; 'taskbar-all-displays' = 'boolean'; 'clock-seconds' = 'boolean'
+    'desktop-icons' = 'boolean'; 'full-path-title-bar' = 'boolean'; 'compact-view' = 'boolean'; 'item-checkboxes' = 'boolean'
+    'folder-thumbnails' = 'boolean'; 'recent-items' = 'boolean'; 'quick-access-recent-files' = 'boolean'; 'quick-access-frequent-folders' = 'boolean'
+    'aero-shake' = 'boolean'; 'classic-context-menu' = 'boolean'; 'accent-on-taskbar' = 'boolean'; 'accent-on-title-bars' = 'boolean'
+    'advertising-id' = 'boolean'; 'tips-and-suggestions' = 'boolean'; 'game-mode' = 'boolean'; 'mono-audio' = 'boolean'
+    'always-show-scrollbars' = 'boolean'; 'notification-sounds' = 'boolean'; 'storage-sense' = 'boolean'; 'adaptive-brightness' = 'boolean'
+    'camera-access' = 'boolean'; 'microphone-access' = 'boolean'; 'location-access' = 'boolean'; 'sign-in-on-wake' = 'boolean'
+    'firewall-private' = 'boolean'; 'firewall-public' = 'boolean'; 'firewall-domain' = 'boolean'; 'hibernate' = 'boolean'
+    'fast-startup' = 'boolean'; 'remote-desktop' = 'boolean'; 'long-paths' = 'boolean'; 'feature-wsl' = 'boolean'
+    'feature-virtual-machine-platform' = 'boolean'; 'feature-hyper-v' = 'boolean'; 'feature-windows-sandbox' = 'boolean'
+    'active-hours-start' = 'number'; 'active-hours-end' = 'number'
+    'taskbar-alignment' = 'choice'; 'open-explorer-to' = 'choice'; 'taskbar-combine-buttons' = 'choice'
 }
 
 # Tell running apps / the shell that a setting changed (WM_SETTINGCHANGE), as the Settings app does.
@@ -87,6 +110,118 @@ function Set-Notifications([bool]$on) { Set-RegDword $toastKey 'ToastEnabled' $(
 function Get-ClipboardHistory { return ((Get-RegValue $clipKey 'EnableClipboardHistory' 0) -eq 1) }
 function Set-ClipboardHistory([bool]$on) { Set-RegDword $clipKey 'EnableClipboardHistory' $(if ($on) { 1 } else { 0 }) }
 
+# ---- table-driven per-user registry settings (HKCU; no elevation). A request only picks an id from this table and a typed value ----
+# Nothing from a request is used as a path, a value name or text written to the registry. Absent values mean "Windows default".
+#   dword (default): on/off are the numbers stored for true/false.   map: option name -> stored number.   text: on/off are strings.
+#   notify: 'explorer' refreshes the shell, 'immersive' tells apps the colors changed, anything else sends nothing.
+$cvKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion'
+$consentKey = "$cvKey\CapabilityAccessManager\ConsentStore"
+$clsidKey = 'HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}'
+$regSettings = @{
+    'taskbar-alignment'             = @{ path = $advKey; name = 'TaskbarAl'; default = 'center'; map = @{ left = 0; center = 1 }; notify = 'explorer' }
+    'task-view-button'              = @{ path = $advKey; name = 'ShowTaskViewButton'; default = 1; on = 1; off = 0; notify = 'explorer' }
+    'taskbar-badges'                = @{ path = $advKey; name = 'TaskbarBadges'; default = 1; on = 1; off = 0; notify = 'explorer' }
+    'taskbar-all-displays'          = @{ path = $advKey; name = 'MMTaskbarEnabled'; default = 0; on = 1; off = 0; notify = 'explorer' }
+    'taskbar-combine-buttons'       = @{ path = $advKey; name = 'TaskbarGlomLevel'; default = 'always'; map = @{ always = 0; 'when-full' = 1; never = 2 }; notify = 'explorer' }
+    'clock-seconds'                 = @{ path = $advKey; name = 'ShowSecondsInSystemClock'; default = 0; on = 1; off = 0; notify = 'explorer' }
+    'desktop-icons'                 = @{ path = $advKey; name = 'HideIcons'; default = 0; on = 0; off = 1; notify = 'explorer' }
+    'full-path-title-bar'           = @{ path = "$cvKey\Explorer\CabinetState"; name = 'FullPath'; default = 0; on = 1; off = 0; notify = 'explorer' }
+    'open-explorer-to'              = @{ path = $advKey; name = 'LaunchTo'; default = 'home'; map = @{ 'this-pc' = 1; home = 2 }; notify = 'explorer' }
+    'compact-view'                  = @{ path = $advKey; name = 'UseCompactMode'; default = 0; on = 1; off = 0; notify = 'explorer' }
+    'item-checkboxes'               = @{ path = $advKey; name = 'AutoCheckSelect'; default = 0; on = 1; off = 0; notify = 'explorer' }
+    'folder-thumbnails'             = @{ path = $advKey; name = 'IconsOnly'; default = 0; on = 0; off = 1; notify = 'explorer' }
+    'recent-items'                  = @{ path = $advKey; name = 'Start_TrackDocs'; default = 1; on = 1; off = 0; notify = 'explorer' }
+    'quick-access-recent-files'     = @{ path = "$cvKey\Explorer"; name = 'ShowRecent'; default = 1; on = 1; off = 0; notify = 'explorer' }
+    'quick-access-frequent-folders' = @{ path = "$cvKey\Explorer"; name = 'ShowFrequent'; default = 1; on = 1; off = 0; notify = 'explorer' }
+    'aero-shake'                    = @{ path = $advKey; name = 'DisallowShaking'; default = 0; on = 0; off = 1; notify = 'explorer' }
+    'classic-context-menu'          = @{ kind = 'clsid'; notify = 'explorer' }
+    'accent-on-taskbar'             = @{ path = $themeKey; name = 'ColorPrevalence'; default = 0; on = 1; off = 0; notify = 'immersive' }
+    'accent-on-title-bars'          = @{ path = 'HKCU:\Software\Microsoft\Windows\DWM'; name = 'ColorPrevalence'; default = 0; on = 1; off = 0; notify = 'immersive' }
+    'advertising-id'                = @{ path = "$cvKey\AdvertisingInfo"; name = 'Enabled'; default = 1; on = 1; off = 0 }
+    'tips-and-suggestions'          = @{ path = "$cvKey\ContentDeliveryManager"; name = 'SubscribedContent-338389Enabled'; default = 1; on = 1; off = 0 }
+    'game-mode'                     = @{ path = 'HKCU:\Software\Microsoft\GameBar'; name = 'AutoGameModeEnabled'; also = 'AllowAutoGameMode'; default = 1; on = 1; off = 0 }
+    'mono-audio'                    = @{ path = 'HKCU:\Software\Microsoft\Multimedia\Audio'; name = 'AccessibilityMonoMixState'; default = 0; on = 1; off = 0 }
+    'always-show-scrollbars'        = @{ path = 'HKCU:\Control Panel\Accessibility'; name = 'DynamicScrollbars'; default = 1; on = 0; off = 1 }
+    'notification-sounds'           = @{ path = "$cvKey\Notifications\Settings"; name = 'NOC_GLOBAL_SETTING_ALLOW_NOTIFICATION_SOUND'; default = 1; on = 1; off = 0 }
+    'storage-sense'                 = @{ path = "$cvKey\StorageSense\Parameters\StoragePolicy"; name = '01'; default = 0; on = 1; off = 0 }
+    'camera-access'                 = @{ kind = 'text'; path = "$consentKey\webcam"; name = 'Value'; default = 'Allow'; on = 'Allow'; off = 'Deny' }
+    'microphone-access'             = @{ kind = 'text'; path = "$consentKey\microphone"; name = 'Value'; default = 'Allow'; on = 'Allow'; off = 'Deny' }
+    'location-access'               = @{ kind = 'text'; path = "$consentKey\location"; name = 'Value'; default = 'Allow'; on = 'Allow'; off = 'Deny' }
+}
+function Set-RegString([string]$path, [string]$name, [string]$value) {
+    if (-not (Test-Path -Path $path)) { [void](New-Item -Path $path -Force) }
+    Set-ItemProperty -Path $path -Name $name -Value $value -Type String
+}
+function Get-RegSetting([string]$id) {
+    $d = $script:regSettings[$id]
+    if ($d.kind -eq 'clsid') { return (Test-Path -LiteralPath "$($script:clsidKey)\InprocServer32") }
+    $raw = Get-RegValue $d.path $d.name $null
+    if ($d.map) {
+        if ($null -eq $raw) { return [string]$d.default }
+        foreach ($k in $d.map.Keys) { if ([string]$d.map[$k] -eq [string]$raw) { return [string]$k } }
+        return 'other' # a value this tool does not manage (for example Explorer set to open on Downloads)
+    }
+    if ($null -eq $raw) { $raw = $d.default }
+    if ($d.kind -eq 'text') { return ([string]$raw -ne $d.off) }
+    return ([int]$raw -eq [int]$d.on)
+}
+function Set-RegSetting([string]$id, $value) {
+    $d = $script:regSettings[$id]
+    if ($d.kind -eq 'clsid') {
+        # The Windows 10 style right-click menu is an empty InprocServer32 override for one fixed CLSID; deleting that key restores the new menu.
+        if ($value) { [void](New-Item -Path "$($script:clsidKey)\InprocServer32" -Force -Value '') }
+        elseif (Test-Path -LiteralPath $script:clsidKey) { Remove-Item -LiteralPath $script:clsidKey -Recurse -Force }
+    }
+    elseif ($d.map) { Set-RegDword $d.path $d.name ([int]$d.map[[string]$value]) }
+    elseif ($d.kind -eq 'text') { Set-RegString $d.path $d.name $(if ($value) { [string]$d.on } else { [string]$d.off }) }
+    else {
+        $n = if ($value) { [int]$d.on } else { [int]$d.off }
+        Set-RegDword $d.path $d.name $n
+        if ($d.also) { Set-RegDword $d.path $d.also $n }
+    }
+    switch ($d.notify) { 'explorer' { Update-Explorer } 'immersive' { Send-SettingChange 'ImmersiveColorSet' } }
+}
+
+# ---- settings that need administrator rights to CHANGE: they are only READ here (HKLM/WMI reads work without elevation). ----
+# Changing them is SystemSettingsAdmin.ps1's job, run through a UAC prompt; this helper refuses with ELEVATION_REQUIRED.
+$adminIds = @(
+    'firewall-private', 'firewall-public', 'firewall-domain', 'hibernate', 'fast-startup', 'remote-desktop', 'long-paths',
+    'active-hours-start', 'active-hours-end',
+    'feature-wsl', 'feature-virtual-machine-platform', 'feature-hyper-v', 'feature-windows-sandbox'
+)
+$firewallKey = 'HKLM:\SYSTEM\CurrentControlSet\Services\SharedAccess\Parameters\FirewallPolicy'
+$powerCtlKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Power'
+$bootPowerKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power'
+$activeHoursKey = 'HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings'
+$featureNames = @{
+    'feature-wsl' = 'Microsoft-Windows-Subsystem-Linux'; 'feature-virtual-machine-platform' = 'VirtualMachinePlatform'
+    'feature-hyper-v' = 'Microsoft-Hyper-V-All'; 'feature-windows-sandbox' = 'Containers-DisposableClientVM'
+}
+function Test-HomeEdition { return ([int](Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop).OperatingSystemSKU -in 98, 99, 100, 101) }
+function Get-FeatureState([string]$name) {
+    $f = $null
+    try { $f = Get-CimInstance -ClassName Win32_OptionalFeature -Filter "Name='$name'" -ErrorAction Stop } catch { Unavailable 'Windows does not report optional features to this account on this PC.' }
+    if (-not $f) { Unavailable 'This edition of Windows does not include that feature.' }
+    return ([int]@($f)[0].InstallState -eq 1)
+}
+function Get-AdminSetting([string]$id) {
+    switch ($id) {
+        'firewall-private' { return ((Get-RegValue "$($script:firewallKey)\StandardProfile" 'EnableFirewall' 1) -eq 1) }
+        'firewall-public' { return ((Get-RegValue "$($script:firewallKey)\PublicProfile" 'EnableFirewall' 1) -eq 1) }
+        'firewall-domain' { return ((Get-RegValue "$($script:firewallKey)\DomainProfile" 'EnableFirewall' 1) -eq 1) }
+        'hibernate' { return ((Get-RegValue $script:powerCtlKey 'HibernateEnabled' 0) -eq 1) }
+        'fast-startup' { return ((Get-RegValue $script:bootPowerKey 'HiberbootEnabled' 0) -eq 1) }
+        'remote-desktop' {
+            if (Test-HomeEdition) { Unavailable 'Windows Home cannot host Remote Desktop connections.' }
+            return ((Get-RegValue 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server' 'fDenyTSConnections' 1) -eq 0)
+        }
+        'long-paths' { return ((Get-RegValue 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' 'LongPathsEnabled' 0) -eq 1) }
+        'active-hours-start' { return [int](Get-RegValue $script:activeHoursKey 'ActiveHoursStart' 8) }
+        'active-hours-end' { return [int](Get-RegValue $script:activeHoursKey 'ActiveHoursEnd' 17) }
+        default { return (Get-FeatureState $script:featureNames[$id]) }
+    }
+}
+
 # ---- power-plan settings (powercfg): plugged-in (AC) and on-battery (DC) are read and written SEPARATELY ----
 # Table-driven: each entry is a fixed subgroup/setting pair owned by this file. A request only picks an id, a typed value and a source
 # (both | plugged-in | battery); nothing from it reaches powercfg except an integer. Many of these settings are hidden from
@@ -105,6 +240,16 @@ $powerSettings = @{
     'usb-selective-suspend'   = @{ sub = '2a737441-1930-4402-8d77-b2bebba308a3'; setting = '48e6b7a6-50f5-4782-a5d4-53bb8f07e226'; kind = 'bool' }
     'wake-timers'             = @{ sub = 'SUB_SLEEP'; setting = 'RTCWAKE'; kind = 'choice'; options = @('disabled', 'enabled', 'important-only') }
     'cooling-policy'          = @{ sub = 'SUB_PROCESSOR'; setting = 'SYSCOOLPOL'; kind = 'choice'; options = @('passive', 'active') }
+    'hybrid-sleep'            = @{ sub = 'SUB_SLEEP'; setting = 'HYBRIDSLEEP'; kind = 'bool' }
+    'unattended-sleep-timeout' = @{ sub = 'SUB_SLEEP'; setting = 'UNATTENDSLEEP'; kind = 'minutes' }
+    'default-brightness'      = @{ sub = 'SUB_VIDEO'; setting = 'VIDEONORMALLEVEL'; kind = 'percent' }
+    'battery-saver-brightness' = @{ sub = 'SUB_ENERGYSAVER'; setting = 'ESBRIGHTNESS'; kind = 'percent'; batteryOnly = $true }
+    'low-battery-level'       = @{ sub = 'SUB_BATTERY'; setting = 'BATLEVELLOW'; kind = 'percent'; batteryOnly = $true }
+    'critical-battery-level'  = @{ sub = 'SUB_BATTERY'; setting = 'BATLEVELCRIT'; kind = 'percent'; batteryOnly = $true }
+    'low-battery-action'      = @{ sub = 'SUB_BATTERY'; setting = 'BATACTIONLOW'; kind = 'choice'; options = $buttonActions; batteryOnly = $true }
+    'critical-battery-action' = @{ sub = 'SUB_BATTERY'; setting = 'BATACTIONCRIT'; kind = 'choice'; options = $buttonActions; batteryOnly = $true }
+    'sign-in-on-wake'         = @{ sub = 'SUB_NONE'; setting = 'CONSOLELOCK'; kind = 'bool' }
+    'adaptive-brightness'     = @{ sub = 'SUB_VIDEO'; setting = 'ADAPTBRIGHT'; kind = 'bool' }
     'lid-close-action'        = @{ sub = $buttonGroup; setting = '5ca83367-6e45-459f-a27b-476b1d01c936'; kind = 'choice'; options = $buttonActions }
     'power-button-action'     = @{ sub = $buttonGroup; setting = '7648efa3-dd9c-4e3e-b566-50f929386280'; kind = 'choice'; options = $buttonActions }
 }
@@ -185,6 +330,17 @@ function Get-KeyboardRepeatDelay { return (Get-SpiInt 0x16) }
 function Set-KeyboardRepeatDelay([int]$n) { Set-SpiInt 0x17 $n 'keyboard repeat delay' }
 function Get-MenuShowDelay { return (Get-SpiInt 0x6A) }
 function Set-MenuShowDelay([int]$ms) { Set-SpiInt 0x6B $ms 'menu show delay' }
+# A few SPI_SET* calls take their value in pvParam, and window minimize/maximize animation takes an ANIMATIONINFO {size, flag}.
+function Set-SpiPtr([uint32]$setCode, [int]$n, [string]$what) {
+    Initialize-Spi
+    if (-not [SpiNative]::SystemParametersInfo($setCode, 0, [IntPtr]$n, 3)) { throw "Windows rejected the $what." }
+}
+function Get-WindowMinimizeAnimation { Initialize-Spi; $a = [int[]](8, 0); [void][SpiNative]::SystemParametersInfo(0x48, 8, $a, 0); return ($a[1] -ne 0) }
+function Set-WindowMinimizeAnimation([bool]$on) {
+    Initialize-Spi
+    $a = [int[]](8, $(if ($on) { 1 } else { 0 }))
+    if (-not [SpiNative]::SystemParametersInfo(0x49, 8, $a, 3)) { throw 'Windows rejected the window animation setting.' }
+}
 # Boolean SystemParametersInfo settings. Older SPI_SET* calls take the BOOL in uiParam, newer ones in pvParam.
 function Get-SpiBool([uint32]$getCode) { Initialize-Spi; $v = 0; [void][SpiNative]::SystemParametersInfo($getCode, 0, [ref]$v, 0); return ($v -ne 0) }
 function Set-SpiBoolUi([uint32]$setCode, [bool]$on, [string]$what) {
@@ -358,6 +514,8 @@ function Get-Value([string]$id, [string]$source = 'both') {
         $pair = Get-PowerPair $id
         return $(if (@(Get-PowerSides $id $source)[0] -eq 'onBattery') { $pair.onBattery } else { $pair.pluggedIn })
     }
+    if ($script:regSettings.ContainsKey($id)) { return Get-RegSetting $id }
+    if ($script:adminIds -contains $id) { return Get-AdminSetting $id }
     switch ($id) {
         'dark-mode' { return Get-DarkMode }
         'brightness' { return Get-Brightness }
@@ -388,6 +546,11 @@ function Get-Value([string]$id, [string]$source = 'both') {
         'snap-to-default-button' { return Get-SpiBool 0x5F }
         'hide-pointer-while-typing' { return Get-SpiBool 0x1020 }
         'pointer-location-on-ctrl' { return Get-SpiBool 0x101C }
+        'mouse-click-lock' { return Get-SpiBool 0x101E }
+        'keyboard-underlines' { return Get-SpiBool 0x100A }
+        'window-minimize-animation' { return Get-WindowMinimizeAnimation }
+        'caret-width' { return Get-SpiInt 0x2006 }
+        'horizontal-scroll-chars' { return Get-SpiInt 0x6C }
         'wifi' { return Get-RadioOn 'WiFi' }
         'bluetooth' { return Get-RadioOn 'Bluetooth' }
         default { Fail 'UNKNOWN_SETTING' 'Unknown setting.' }
@@ -395,6 +558,8 @@ function Get-Value([string]$id, [string]$source = 'both') {
 }
 function Set-Value([string]$id, $value, [string]$source = 'both') {
     if ($script:powerSettings.ContainsKey($id)) { Set-PowerSetting $id $value $source; return }
+    if ($script:adminIds -contains $id) { Fail 'ELEVATION_REQUIRED' 'This setting needs administrator approval and is changed through the elevated helper.' }
+    if ($script:regSettings.ContainsKey($id)) { Set-RegSetting $id $value; return }
     switch ($id) {
         'dark-mode' { Set-DarkMode ([bool]$value) }
         'brightness' { Set-Brightness ([int]$value) }
@@ -425,6 +590,11 @@ function Set-Value([string]$id, $value, [string]$source = 'both') {
         'snap-to-default-button' { Set-SpiBoolUi 0x60 ([bool]$value) 'snap-to-default-button' }
         'hide-pointer-while-typing' { Set-SpiBoolPtr 0x1021 ([bool]$value) 'hide-pointer-while-typing' }
         'pointer-location-on-ctrl' { Set-SpiBoolPtr 0x101D ([bool]$value) 'pointer-location-on-ctrl' }
+        'mouse-click-lock' { Set-SpiBoolPtr 0x101F ([bool]$value) 'mouse-click-lock' }
+        'keyboard-underlines' { Set-SpiBoolPtr 0x100B ([bool]$value) 'keyboard-underlines' }
+        'window-minimize-animation' { Set-WindowMinimizeAnimation ([bool]$value) }
+        'caret-width' { Set-SpiPtr 0x2007 ([int]$value) 'text cursor width' }
+        'horizontal-scroll-chars' { Set-SpiInt 0x6D ([int]$value) 'horizontal scroll' }
         'wifi' { Set-RadioOn 'WiFi' ([bool]$value) }
         'bluetooth' { Set-RadioOn 'Bluetooth' ([bool]$value) }
         default { Fail 'UNKNOWN_SETTING' 'Unknown setting.' }
@@ -498,7 +668,10 @@ function Invoke-Request($req) {
                 # Windows treats a pointer-trail length of 1 as "off" and reads it back as 0, so the value is ambiguous: refuse it.
                 if ($id -eq 'pointer-trails' -and $value -eq 1) { Fail 'OUT_OF_RANGE' 'Use 0 for no trails, or 2-20 for the trail length.' }
             }
+            if ($script:adminIds -contains $id) { Fail 'ELEVATION_REQUIRED' 'This setting needs administrator approval and is changed through the elevated helper.' }
             if ($isPower) {
+                if ($id -eq 'low-battery-level') { $crit = (Get-PowerPair 'critical-battery-level').onBattery; if ($value -le $crit) { Fail 'OUT_OF_RANGE' "The low battery level must be above the critical level ($crit%)." } }
+                if ($id -eq 'critical-battery-level') { $low = (Get-PowerPair 'low-battery-level').onBattery; if ($value -ge $low) { Fail 'OUT_OF_RANGE' "The critical battery level must be below the low level ($low%)." } }
                 $before = Get-PowerPair $id
                 Set-PowerSetting $id $value $source
                 $now = Read-Back $id $value $source

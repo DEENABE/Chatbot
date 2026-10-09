@@ -47,14 +47,22 @@ export default function ProceduralAvatar({ avatarState, accent = '#3b82f6' }) {
 
   // Own blink clock — self-contained rather than reusing FloatingBubble's 2D
   // blink state, so this component works even if that layer changes.
-  const blinkState = useRef({ next: performance.now() + BLINK_INTERVAL_MS, closedUntil: 0 });
+  const blinkState = useRef({
+    next: performance.now() + BLINK_INTERVAL_MS,
+    closedUntil: 0,
+  });
 
   // A running wave gesture plays for this long before returning to rest.
   const waveUntil = useRef(0);
   const wasWaving = useRef(false);
 
   const emotionTint = useMemo(() => {
-    const map = { happy: '#ffb020', excited: '#ff5fa2', sad: '#5b7ba6', surprise: '#ffffff' };
+    const map = {
+      happy: '#ffb020',
+      excited: '#ff5fa2',
+      sad: '#5b7ba6',
+      surprise: '#ffffff',
+    };
     return map[avatarState.emotion] || accent;
   }, [avatarState.emotion, accent]);
 
@@ -100,8 +108,20 @@ export default function ProceduralAvatar({ avatarState, accent = '#3b82f6' }) {
       blinkState.current.next = now + BLINK_INTERVAL_MS * (0.6 + Math.random() * 0.8);
     }
     const closed = now < blinkState.current.closedUntil ? 1 : 0;
-    if (leftEyelid.current) leftEyelid.current.scale.y = THREE.MathUtils.damp(leftEyelid.current.scale.y, closed, 20, delta);
-    if (rightEyelid.current) rightEyelid.current.scale.y = THREE.MathUtils.damp(rightEyelid.current.scale.y, closed, 20, delta);
+    if (leftEyelid.current)
+      leftEyelid.current.scale.y = THREE.MathUtils.damp(
+        leftEyelid.current.scale.y,
+        closed,
+        20,
+        delta,
+      );
+    if (rightEyelid.current)
+      rightEyelid.current.scale.y = THREE.MathUtils.damp(
+        rightEyelid.current.scale.y,
+        closed,
+        20,
+        delta,
+      );
 
     // --- mouth: talking pulse, stands in for lip-sync (no viseme data exists) ---
     if (mouth.current) {
@@ -119,12 +139,32 @@ export default function ProceduralAvatar({ avatarState, accent = '#3b82f6' }) {
       const restShoulderZ = -0.05;
       const restElbowX = 0.15;
       if (waving) {
-        rightShoulder.current.rotation.z = THREE.MathUtils.damp(rightShoulder.current.rotation.z, -2.0, 8, delta);
+        rightShoulder.current.rotation.z = THREE.MathUtils.damp(
+          rightShoulder.current.rotation.z,
+          -2.0,
+          8,
+          delta,
+        );
         rightElbow.current.rotation.z = Math.sin(t * 10) * 0.4;
       } else {
-        rightShoulder.current.rotation.z = THREE.MathUtils.damp(rightShoulder.current.rotation.z, restShoulderZ, 6, delta);
-        rightElbow.current.rotation.z = THREE.MathUtils.damp(rightElbow.current.rotation.z, 0, 6, delta);
-        rightElbow.current.rotation.x = THREE.MathUtils.damp(rightElbow.current.rotation.x, restElbowX, 6, delta);
+        rightShoulder.current.rotation.z = THREE.MathUtils.damp(
+          rightShoulder.current.rotation.z,
+          restShoulderZ,
+          6,
+          delta,
+        );
+        rightElbow.current.rotation.z = THREE.MathUtils.damp(
+          rightElbow.current.rotation.z,
+          0,
+          6,
+          delta,
+        );
+        rightElbow.current.rotation.x = THREE.MathUtils.damp(
+          rightElbow.current.rotation.x,
+          restElbowX,
+          6,
+          delta,
+        );
       }
     }
 

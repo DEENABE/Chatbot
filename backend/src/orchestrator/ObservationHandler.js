@@ -18,10 +18,22 @@
 export function normaliseObservation(toolResponse, stepIndex, toolCallId = null) {
   toolResponse = toolResponse && typeof toolResponse === 'object' ? toolResponse : {};
   if (toolResponse.toolCallId != null && toolResponse.toolCallId !== toolCallId) {
-    toolResponse = { success: false, error: { code: 'IDENTITY_MISMATCH', message: 'Response belongs to another tool call.' } };
+    toolResponse = {
+      success: false,
+      error: {
+        code: 'IDENTITY_MISMATCH',
+        message: 'Response belongs to another tool call.',
+      },
+    };
   }
   const now = new Date().toISOString();
-  const permission=toolResponse.permission ? {decision:toolResponse.permission.decision,risk:toolResponse.permission.risk,reasonCode:toolResponse.permission.reasonCode} : null;
+  const permission = toolResponse.permission
+    ? {
+        decision: toolResponse.permission.decision,
+        risk: toolResponse.permission.risk,
+        reasonCode: toolResponse.permission.reasonCode,
+      }
+    : null;
 
   // Confirmation-required case: the action is waiting for user approval.
   if (toolResponse.needsConfirmation === true) {
@@ -41,9 +53,35 @@ export function normaliseObservation(toolResponse, stepIndex, toolCallId = null)
     };
   }
 
+  // The call named an ambiguous application: the user has to pick one of the offered candidates.
+  if (toolResponse.needsAppChoice === true) {
+    return {
+      stepIndex,
+      toolCallId,
+      success: false,
+      data: null,
+      error: null,
+      needsConfirmation: false,
+      confirmationId: null,
+      needsAppChoice: true,
+      choiceId: toolResponse.choiceId || null,
+      choiceExpiresAt: toolResponse.expiresAt ?? null,
+      choiceMessage: toolResponse.message || 'Which application do you mean?',
+      requestedApp: typeof toolResponse.requestedApp === 'string' ? toolResponse.requestedApp : '',
+      candidates: Array.isArray(toolResponse.candidates)
+        ? toolResponse.candidates.slice(0, 10)
+        : [],
+      permission,
+      timestamp: now,
+    };
+  }
+
   // Error case.
   if (toolResponse.success !== true) {
-    const error = toolResponse.error || { code: 'UNKNOWN_ERROR', message: 'Tool returned failure with no details.' };
+    const error = toolResponse.error || {
+      code: 'UNKNOWN_ERROR',
+      message: 'Tool returned failure with no details.',
+    };
     return {
       stepIndex,
       toolCallId,
@@ -51,7 +89,7 @@ export function normaliseObservation(toolResponse, stepIndex, toolCallId = null)
       data: toolResponse.data ?? null,
       error: {
         code: error.code || 'UNKNOWN_ERROR',
-        ...(typeof error.retryable==='boolean'?{retryable:error.retryable}:{}),
+        ...(typeof error.retryable === 'boolean' ? { retryable: error.retryable } : {}),
         message: error.message || 'Unknown error',
         validationErrors: error.validationErrors || null,
       },
@@ -91,6 +129,10 @@ export function summariseObservation(obs, step) {
     return `${prefix} AWAITING USER CONFIRMATION (id: ${obs.confirmationId})`;
   }
 
+  if (obs.needsAppChoice) {
+    return `${prefix} AWAITING USER CHOICE of application (id: ${obs.choiceId})`;
+  }
+
   if (!obs.success) {
     const { code, message } = obs.error || {};
     return `${prefix} FAILED — ${code}: ${message}`;
@@ -98,9 +140,7 @@ export function summariseObservation(obs, step) {
 
   // Truncate data to avoid overwhelming LLM context.
   const dataStr = JSON.stringify(obs.data);
-  const truncated = dataStr.length > 800
-    ? dataStr.slice(0, 800) + '…[truncated]'
-    : dataStr;
+  const truncated = dataStr.length > 800 ? dataStr.slice(0, 800) + '…[truncated]' : dataStr;
 
   return `${prefix} SUCCESS — ${truncated}`;
 }
@@ -114,11 +154,13 @@ export function summariseObservation(obs, step) {
 export function buildTranscript(steps) {
   if (!steps.length) return '(no steps executed)';
 
-  return steps.map((step) => {
-    const obs = step.observation;
-    if (!obs) {
-      return `Step ${step.index + 1} [${step.tool}.${step.action}]: ${step.status.toUpperCase()} (no observation)`;
-    }
-    return summariseObservation(obs, step);
-  }).join('\n');
+  return steps
+    .map((step) => {
+      const obs = step.observation;
+      if (!obs) {
+        return `Step ${step.index + 1} [${step.tool}.${step.action}]: ${step.status.toUpperCase()} (no observation)`;
+      }
+      return summariseObservation(obs, step);
+    })
+    .join('\n');
 }

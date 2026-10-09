@@ -11,7 +11,7 @@ Two things were tried and both fell short:
 - **Hand-built primitive shapes** (spheres/capsules coded directly, no model
   file) — this is a real, moving, rigged 3D character with actual joints, but
   it can never look like a sculpted face. Code can't replace an artist.
-- **Mixamo** — great for a rigged *body* with animations, but Mixamo
+- **Mixamo** — great for a rigged _body_ with animations, but Mixamo
   characters are stock models; you can't turn a Chanakya photo into a Mixamo
   face.
 

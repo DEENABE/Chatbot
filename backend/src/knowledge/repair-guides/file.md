@@ -1,6 +1,7 @@
 # File / Folder Repair Guide
 
 ## Diagnose
+
 - Confirm a path exists and its attributes:
   `Get-Item -LiteralPath '<path>' | Select-Object FullName, Attributes, Length, LastWriteTime`
 - List a folder:
@@ -25,6 +26,7 @@
   `Get-ChildItem -LiteralPath '<path>' -Recurse -ErrorAction SilentlyContinue | Measure-Object Length -Sum`
 
 ## Common fixes
+
 - Hidden/system attribute making a file "disappear":
   `Set-ItemProperty -LiteralPath '<path>' -Name Attributes -Value 'Normal'`
 - Access denied — take ownership (needs admin, be cautious):
@@ -46,6 +48,7 @@ The prompt may name a narrower area, e.g. "file (storage)". Use the matching
 playbook; fall back to the general sections above when none fits.
 
 ### storage — disk space, health, and volumes
+
 - Free space per drive:
   `Get-PSDrive -PSProvider FileSystem | Select-Object Name, @{N='FreeGB';E={[int]($_.Free/1GB)}}, @{N='UsedGB';E={[int]($_.Used/1GB)}}`
 - Physical disk health and media type:
@@ -61,6 +64,7 @@ playbook; fall back to the general sections above when none fits.
 - Never format a volume to free space, and never touch the recovery partition.
 
 ### raid / dfs — arrays and distributed shares
+
 - Storage pool and virtual disk health:
   `Get-StoragePool | Select-Object FriendlyName, HealthStatus, OperationalStatus`
   `Get-VirtualDisk | Select-Object FriendlyName, HealthStatus, OperationalStatus, ResiliencySettingName`
@@ -74,6 +78,7 @@ playbook; fall back to the general sections above when none fits.
   automatically.
 
 ## Notes
+
 - Always use -LiteralPath and quote paths (spaces are common).
 - Deleting/overwriting user files is destructive — recommend, do not auto-run.
 - Taking ownership and ACL changes require Administrator rights. If `takeown`

@@ -1,3 +1,4 @@
+param([string]$Query = '')
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $rows = [System.Collections.Generic.List[object]]::new()
@@ -24,13 +25,20 @@ try {
     }
   }
 } catch { $errors.Add('start_menu') }
+# A targeted lookup with a verified exact shortcut need not wait for unrelated
+# MSIX, association and install-root scans. All records are still discovered on
+# this machine and independently validated by the Node registry before launch.
+if($Query){
+  $exact=@($rows | Where-Object {$_.source -eq 'start_menu' -and $_.name.Trim() -ieq $Query.Trim() -and !$_.requiresArguments -and [IO.Path]::GetExtension($_.executablePath) -ieq '.exe' -and (Test-Path -LiteralPath $_.executablePath -PathType Leaf)})
+  if($exact.Count){[pscustomobject]@{apps=@($exact);errors=@($errors.ToArray()|Select-Object -Unique)}|ConvertTo-Json -Depth 5 -Compress;exit}
+}
 foreach ($root in @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\App Paths','HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths')) {
   try { if (Test-Path $root) { Get-ChildItem $root | ForEach-Object { try { $p=$_.GetValue(''); if ($p) { $p=$p.Trim('"'); $info=[Diagnostics.FileVersionInfo]::GetVersionInfo($p); Add-App $(if($info.FileDescription){$info.FileDescription}else{$_.PSChildName}) $p 'app_paths' $info.ProductVersion $info.CompanyName } }catch{$errors.Add('app_paths_entry')} } } } catch { $errors.Add('app_paths') }
 }
 foreach ($root in @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall','HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall')) {
   try { if (Test-Path $root) { Get-ItemProperty "$root\*" | ForEach-Object {
-    if ($_.DisplayName -and $_.DisplayIcon) {
-      $p = $_.DisplayIcon -replace ',\s*-?\d+$',''; $p=$p.Trim('"')
+    if ($_.DisplayName) {
+      $p = [string]$_.DisplayIcon -replace ',\s*-?\d+$',''; $p=$p.Trim('"')
       # DisplayIcon is only a candidate; JS validates existence, extension and safety.
       Add-App $_.DisplayName $p 'uninstall' $_.DisplayVersion $_.Publisher '' '' $_.InstallLocation
     }
@@ -141,12 +149,42 @@ function Is-GuiExecutable($file) {
   $stream.Position=$pe+24+68;return $reader.ReadUInt16() -eq 2
  }catch{return $false}finally{if($reader){$reader.Dispose()}elseif($stream){$stream.Dispose()}}
 }
+# Query arguments are data, never evaluated as PowerShell. On a miss, re-read inexpensive
+# registration sources above, then prioritize matching installation folders instead of
+# traversing every product's deep subtree. Names come only from this machine.
+function Matches-Query([string]$value) {
+ if(!$Query){return $true}
+ $compact=$value.ToLowerInvariant() -replace '[^\p{L}\p{N}]',''
+ $needle=$Query.ToLowerInvariant() -replace '[^\p{L}\p{N}]',''
+ if($compact.Contains($needle)){return $true}
+ $wanted=@($Query.ToLowerInvariant() -split '[^\p{L}\p{N}]+' | Where-Object {$_.Length -ge 3})
+ foreach($token in @($value.ToLowerInvariant() -split '[^\p{L}\p{N}]+')) {
+  foreach($word in $wanted) {
+   if($token -eq $word){return $true}
+   $limit=if($word.Length -ge 8){2}else{1}
+   if($token.Length -lt 3 -or [Math]::Abs($word.Length-$token.Length) -gt $limit){continue}
+   # Bounded Levenshtein matching helps a miss caused by a typo select its directory.
+   $previous=0..$token.Length
+   for($i=1;$i -le $word.Length;$i++) {
+    $current=New-Object int[] ($token.Length+1);$current[0]=$i
+    for($j=1;$j -le $token.Length;$j++) {
+     $cost=if($word[$i-1] -eq $token[$j-1]){0}else{1}
+     $current[$j]=[Math]::Min([Math]::Min($current[$j-1]+1,$previous[$j]+1),$previous[$j-1]+$cost)
+    }
+    $previous=$current
+   }
+   if($previous[$token.Length] -le $limit){return $true}
+  }
+ }
+ return $false
+}
 $scanClock=[Diagnostics.Stopwatch]::StartNew();$fileBudget=40000
 $known=@{};foreach($row in $rows){if($row.executablePath){$known[$row.executablePath]=$true}}
-$installRoots=@($env:ProgramFiles,${env:ProgramFiles(x86)},"$env:LOCALAPPDATA\Programs")+@($rows|Where-Object {$_.installLocation -match '^[A-Za-z]:\\' -and $_.installLocation -notmatch '(?i)\\(temp|tmp|package cache)\\'}|ForEach-Object {$_.installLocation})
+$registeredRoots=@($rows|Where-Object {$_.installLocation -match '^[A-Za-z]:\\' -and $_.installLocation -notmatch '(?i)\\(temp|tmp|package cache)\\' -and (!$Query -or (Matches-Query $_.name))}|ForEach-Object {$_.installLocation})
+$installRoots=$registeredRoots+@($env:ProgramFiles,${env:ProgramFiles(x86)},"$env:LOCALAPPDATA\Programs")
 $installRoots=@($installRoots|Where-Object {$_}|Select-Object -Unique)
 foreach($root in $installRoots){
- $queue=[Collections.Generic.Queue[object]]::new();$queue.Enqueue(@{path=$root;depth=0})
+ $queue=[Collections.Generic.Queue[object]]::new();$queue.Enqueue(@{path=$root;depth=0;selected=(!$Query -or $registeredRoots -contains $root)})
  while($queue.Count -and $fileBudget -gt 0 -and $scanClock.ElapsedMilliseconds -lt 12000){
   $node=$queue.Dequeue()
   # Raw .NET enumeration: the PowerShell FileSystem provider costs several times more per directory.
@@ -155,10 +193,12 @@ foreach($root in $installRoots){
    if($fileBudget-- -le 0 -or $scanClock.ElapsedMilliseconds -gt 12000){break}
    if($entry.Attributes -band [IO.FileAttributes]::ReparsePoint){continue}
    if($entry.Attributes -band [IO.FileAttributes]::Directory){
-    if($node.depth -lt 5 -and $entry.Name -notmatch '^(WindowsApps|node_modules|resources|locales|plugins|packages|cache|installer|redist|cef|runtime|runtimes)$'){$queue.Enqueue(@{path=$entry.FullName;depth=$node.depth+1})};continue
+    $selected=$node.selected -or (Matches-Query $entry.Name)
+    if($node.depth -lt 5 -and (!$Query -or $selected -or $node.depth -lt 2) -and $entry.Name -notmatch '^(WindowsApps|node_modules|resources|locales|plugins|packages|cache|installer|redist|cef|runtime|runtimes)$'){$queue.Enqueue(@{path=$entry.FullName;depth=$node.depth+1;selected=$selected})};continue
    }
    $baseName=[IO.Path]::GetFileNameWithoutExtension($entry.Name)
    if($entry.Extension -ine '.exe' -or $known.ContainsKey($entry.FullName) -or $baseName -match '(?i)unins|setup|install|updat|crash|helper|service|broker|handler|reporter|elevat|repair'){continue}
+   if($Query -and !$node.selected -and !(Matches-Query $baseName)){continue}
    if(!(Is-GuiExecutable $entry.FullName)){continue}
    try{$info=[Diagnostics.FileVersionInfo]::GetVersionInfo($entry.FullName);$name=if($info.FileDescription){$info.FileDescription}elseif($info.ProductName){$info.ProductName}else{$baseName}
     Add-App $name $entry.FullName 'install_roots' $info.ProductVersion $info.CompanyName
@@ -168,6 +208,7 @@ foreach($root in $installRoots){
  }
 }
 if($fileBudget -le 0 -or $scanClock.ElapsedMilliseconds -ge 12000){$errors.Add('install_scan_budget')}
+if($Query){$errors.Add('targeted_install_scope')}
 
 # Registered application associations are metadata only; never run registry command strings.
 $associationBudget=200

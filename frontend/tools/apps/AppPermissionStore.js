@@ -19,27 +19,50 @@ export const PERMISSION_LEVELS = Object.freeze(['blocked', 'read', 'interact', '
 export const DEFAULT_LEVEL = 'modify';
 const RANK = Object.freeze({ blocked: 0, read: 1, interact: 2, modify: 3 });
 // Minimum level for each action risk class (see security/ToolRegistry.js RISK). CRITICAL is never allowed.
-const REQUIRED = Object.freeze({ READ: 'read', SAFE_WRITE: 'interact', DANGEROUS: 'modify' });
+const REQUIRED = Object.freeze({
+  READ: 'read',
+  SAFE_WRITE: 'interact',
+  DANGEROUS: 'modify',
+});
 
 export const LEVEL_DESCRIPTIONS = Object.freeze({
   blocked: 'No access: the assistant will not open, read or control this application.',
   read: 'Read only: may open/focus the application and read what is on screen; it will not click, type or change anything.',
-  interact: 'Interact: may also navigate and use low-risk controls (select, expand, scroll, type in text fields, open/search/play). Anything that changes data is refused.',
-  modify: 'Modify: may also operate controls that change data (save, delete, send...), each one only after you confirm it. Security-sensitive controls stay blocked.',
+  interact:
+    'Interact: may also navigate and use low-risk controls (select, expand, scroll, type in text fields, open/search/play). Anything that changes data is refused.',
+  modify:
+    'Modify: may also operate controls that change data (save, delete, send...), each one only after you confirm it. Security-sensitive controls stay blocked.',
 });
 
-export const isLevel = value => typeof value === 'string' && PERMISSION_LEVELS.includes(value);
-export const levelAllows = (level, risk) => Object.hasOwn(REQUIRED, risk) && RANK[level] >= RANK[REQUIRED[risk]];
+export const isLevel = (value) => typeof value === 'string' && PERMISSION_LEVELS.includes(value);
+export const levelAllows = (level, risk) =>
+  Object.hasOwn(REQUIRED, risk) && RANK[level] >= RANK[REQUIRED[risk]];
 /** Human-readable list of what a level permits, for the model and the settings UI. */
 export function levelSummary(level) {
-  return { level, description: LEVEL_DESCRIPTIONS[level], allows: Object.keys(REQUIRED).filter(risk => levelAllows(level, risk)).map(risk => ({ READ: 'read_ui', SAFE_WRITE: 'use_low_risk_controls', DANGEROUS: 'change_data_with_confirmation' })[risk]) };
+  return {
+    level,
+    description: LEVEL_DESCRIPTIONS[level],
+    allows: Object.keys(REQUIRED)
+      .filter((risk) => levelAllows(level, risk))
+      .map(
+        (risk) =>
+          ({
+            READ: 'read_ui',
+            SAFE_WRITE: 'use_low_risk_controls',
+            DANGEROUS: 'change_data_with_confirmation',
+          })[risk],
+      ),
+  };
 }
-const validId = id => typeof id === 'string' && /^[A-Za-z0-9._-]{1,80}$/.test(id);
+const validId = (id) => typeof id === 'string' && /^[A-Za-z0-9._-]{1,80}$/.test(id);
 
 export class AppPermissionStore {
   constructor({ directory, defaultLevel = DEFAULT_LEVEL } = {}) {
-    if (!isLevel(defaultLevel) || defaultLevel === 'blocked') throw new Error('INVALID_PERMISSION_LEVEL');
-    this.directory = directory; this.defaultLevel = defaultLevel; this.levels = new Map();
+    if (!isLevel(defaultLevel) || defaultLevel === 'blocked')
+      throw new Error('INVALID_PERMISSION_LEVEL');
+    this.directory = directory;
+    this.defaultLevel = defaultLevel;
+    this.levels = new Map();
     this.file = directory ? path.join(directory, 'app-permissions.json') : null;
     this.ready = this.load();
   }
@@ -50,16 +73,27 @@ export class AppPermissionStore {
       if (data?.schemaVersion !== 1 || !data.levels || typeof data.levels !== 'object') return;
       if (isLevel(data.default) && data.default !== 'blocked') this.defaultLevel = data.default;
       // Anything malformed in the file is ignored, never trusted.
-      for (const [id, level] of Object.entries(data.levels)) if (validId(id) && isLevel(level)) this.levels.set(id, level);
-    } catch { /* Missing or corrupt file: defaults apply. */ }
+      for (const [id, level] of Object.entries(data.levels))
+        if (validId(id) && isLevel(level)) this.levels.set(id, level);
+    } catch {
+      /* Missing or corrupt file: defaults apply. */
+    }
   }
   /** Effective level for an application record. Unknown applications get the default. */
-  levelFor(app) { return (validId(app?.id) && this.levels.get(app.id)) || this.defaultLevel; }
-  explicitLevel(appId) { return this.levels.get(appId) || null; }
+  levelFor(app) {
+    return (validId(app?.id) && this.levels.get(app.id)) || this.defaultLevel;
+  }
+  explicitLevel(appId) {
+    return this.levels.get(appId) || null;
+  }
   async setLevel(appId, level) {
     await this.ready;
-    if (!validId(appId) || !isLevel(level)) throw Object.assign(new Error('INVALID_PERMISSION_LEVEL'), { code: 'INVALID_PERMISSION_LEVEL' });
-    if (level === this.defaultLevel) this.levels.delete(appId); else this.levels.set(appId, level);
+    if (!validId(appId) || !isLevel(level))
+      throw Object.assign(new Error('INVALID_PERMISSION_LEVEL'), {
+        code: 'INVALID_PERMISSION_LEVEL',
+      });
+    if (level === this.defaultLevel) this.levels.delete(appId);
+    else this.levels.set(appId, level);
     await this.save();
     return this.levelFor({ id: appId });
   }
@@ -68,8 +102,18 @@ export class AppPermissionStore {
     await fs.mkdir(this.directory, { recursive: true });
     const tmp = `${this.file}.${randomUUID()}.tmp`;
     try {
-      await fs.writeFile(tmp, JSON.stringify({ schemaVersion: 1, default: this.defaultLevel, levels: Object.fromEntries(this.levels) }), { mode: 0o600 });
+      await fs.writeFile(
+        tmp,
+        JSON.stringify({
+          schemaVersion: 1,
+          default: this.defaultLevel,
+          levels: Object.fromEntries(this.levels),
+        }),
+        { mode: 0o600 },
+      );
       await fs.rename(tmp, this.file);
-    } finally { await fs.rm(tmp, { force: true }).catch(() => {}); }
+    } finally {
+      await fs.rm(tmp, { force: true }).catch(() => {});
+    }
   }
 }

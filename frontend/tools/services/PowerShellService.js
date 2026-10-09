@@ -47,27 +47,27 @@ export class PowerShellService extends BaseToolService {
         handler: this.runPS.bind(this),
         schema: {
           command: { type: 'string', required: true, minLength: 1 },
-          timeout: { type: 'number', required: false }
+          timeout: { type: 'number', required: false },
         },
         destructive: true,
-        description: 'Execute a PowerShell command'
+        description: 'Execute a PowerShell command',
       },
       executeScript: {
         handler: this.executeScript.bind(this),
         schema: {
           scriptPath: { type: 'path', required: true },
           args: { type: 'array', required: false },
-          timeout: { type: 'number', required: false }
+          timeout: { type: 'number', required: false },
         },
         destructive: true,
-        description: 'Execute a PowerShell script file'
+        description: 'Execute a PowerShell script file',
       },
       getVersion: {
         handler: this.getVersion.bind(this),
         schema: {},
         destructive: false,
-        description: 'Get the installed PowerShell version'
-      }
+        description: 'Get the installed PowerShell version',
+      },
     };
   }
 
@@ -109,19 +109,20 @@ export class PowerShellService extends BaseToolService {
     // already claimed this ran "even after the user has confirmed the
     // action"; it didn't actually get called anywhere until now.
     if (isBlockedCommand(params.command)) {
-      const error = new Error('This command is irreversible or session-disrupting and is blocked regardless of confirmation.');
+      const error = new Error(
+        'This command is irreversible or session-disrupting and is blocked regardless of confirmation.',
+      );
       error.code = 'COMMAND_BLOCKED';
       throw error;
     }
 
     const timeout = params.timeout || DEFAULT_TIMEOUT;
 
-    return this._runCommand('powershell.exe', [
-      '-NoProfile',
-      '-NonInteractive',
-      '-ExecutionPolicy', 'Bypass',
-      '-Command', params.command
-    ], { timeout });
+    return this._runCommand(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', params.command],
+      { timeout },
+    );
   }
 
   /**
@@ -153,18 +154,18 @@ export class PowerShellService extends BaseToolService {
       throw new Error(`Cannot read script for safety check: ${err.message}`);
     }
     if (content.length <= MAX_SCRIPT_CHECK_BYTES && isBlockedCommand(content)) {
-      const error = new Error('This script contains an irreversible or session-disrupting operation and is blocked regardless of confirmation.');
+      const error = new Error(
+        'This script contains an irreversible or session-disrupting operation and is blocked regardless of confirmation.',
+      );
       error.code = 'COMMAND_BLOCKED';
       throw error;
     }
 
-    return this._runCommand('powershell.exe', [
-      '-NoProfile',
-      '-NonInteractive',
-      '-ExecutionPolicy', 'Bypass',
-      '-File', scriptPath,
-      ...args
-    ], { timeout });
+    return this._runCommand(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, ...args],
+      { timeout },
+    );
   }
 
   /**
@@ -173,11 +174,11 @@ export class PowerShellService extends BaseToolService {
    * @returns {Promise<Object>} Parsed PSVersionTable object.
    */
   async getVersion() {
-    const result = await this._runCommand('powershell.exe', [
-      '-NoProfile',
-      '-NonInteractive',
-      '-Command', '$PSVersionTable | ConvertTo-Json'
-    ], { timeout: 10_000 });
+    const result = await this._runCommand(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-Command', '$PSVersionTable | ConvertTo-Json'],
+      { timeout: 10_000 },
+    );
 
     if (result.exitCode !== 0) {
       throw new Error(`Failed to get PowerShell version: ${result.stderr}`);
@@ -213,7 +214,7 @@ export class PowerShellService extends BaseToolService {
 
       const proc = spawn(cmd, args, {
         windowsHide: true,
-        stdio: ['pipe', 'pipe', 'pipe']
+        stdio: ['pipe', 'pipe', 'pipe'],
       });
 
       const timer = setTimeout(() => {
@@ -221,12 +222,20 @@ export class PowerShellService extends BaseToolService {
         proc.kill('SIGTERM');
         // Force kill after a grace period
         setTimeout(() => {
-          try { proc.kill('SIGKILL'); } catch { /* already dead */ }
+          try {
+            proc.kill('SIGKILL');
+          } catch {
+            /* already dead */
+          }
         }, 2000);
       }, timeout);
 
-      proc.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
-      proc.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+      proc.stdout.on('data', (chunk) => {
+        stdout += chunk.toString();
+      });
+      proc.stderr.on('data', (chunk) => {
+        stderr += chunk.toString();
+      });
 
       proc.on('error', (err) => {
         clearTimeout(timer);
@@ -240,7 +249,12 @@ export class PowerShellService extends BaseToolService {
         clearTimeout(timer);
         if (!settled) {
           settled = true;
-          resolve({ stdout: truncate(stdout), stderr: truncate(stderr), exitCode, timedOut });
+          resolve({
+            stdout: truncate(stdout),
+            stderr: truncate(stderr),
+            exitCode,
+            timedOut,
+          });
         }
       });
     });
@@ -248,4 +262,3 @@ export class PowerShellService extends BaseToolService {
 }
 
 export default PowerShellService;
-

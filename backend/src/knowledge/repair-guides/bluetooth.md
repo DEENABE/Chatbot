@@ -1,6 +1,7 @@
 # Bluetooth Repair Guide
 
 ## Diagnose
+
 - List Bluetooth devices and their state:
   `Get-PnpDevice -Class Bluetooth | Select-Object Status, FriendlyName, InstanceId`
 - Check the Bluetooth Support Service:
@@ -19,6 +20,7 @@
   `Get-PnpDeviceProperty -InstanceId '<InstanceId>' -KeyName DEVPKEY_Device_DriverVersion`
 
 ## Common fixes
+
 - Radio is OFF (device Status is OK but Bluetooth won't turn on): this is a
   software radio toggle. Start the service, then the radio usually needs a
   toggle in Settings if the WinRT Radios API is unavailable non-interactively:
@@ -40,6 +42,7 @@
   `Get-Service bthserv | Select-Object Status`
 
 ## Notes
+
 - Enabling/disabling PnP devices and radios requires Administrator rights.
 - If admin is unavailable, recommend the user toggle Bluetooth in
   Settings > Devices, or run the app as Administrator.

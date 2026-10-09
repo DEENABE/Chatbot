@@ -3,18 +3,18 @@ import { ChevronDown, Circle, Settings, Minimize2, Square, X, BarChart2 } from '
 import { useAppStore } from '../stores/useAppStore.js';
 import { presets } from '../animations/presets.js';
 
-export default function Topbar() {
+export default function Topbar({ section = 'Chat' }) {
   const models = useAppStore((state) => state.models);
   const selectedModelId = useAppStore((state) => state.selectedModelId);
   const selectModel = useAppStore((state) => state.selectModel);
   const fetchModels = useAppStore((state) => state.fetchModels);
   const isModelsLoading = useAppStore((state) => state.isModelsLoading);
-  
+
   const toggleExpand = useAppStore((state) => state.toggleExpand);
   const collapseToBubble = useAppStore((state) => state.collapseToBubble);
   const selectedAgentProfile = useAppStore((state) => state.selectedAgentProfile);
   const selectAgentProfile = useAppStore((state) => state.selectAgentProfile);
-  
+
   const settings = useAppStore((state) => state.settings);
 
   const metrics = useAppStore((state) => state.metrics);
@@ -72,31 +72,41 @@ export default function Topbar() {
   };
 
   return (
-    <header 
+    <header
       onMouseDown={handleHeaderMouseDown}
-      className="flex h-14 shrink-0 items-center justify-between border-b border-white/[0.05] px-4 select-none relative cursor-move"
-      style={{ background: themeDark ? 'rgba(20, 20, 22, 0.4)' : 'rgba(255, 255, 255, 0.4)' }}
+      className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-white/[0.05] px-3 sm:px-4 select-none relative cursor-move"
+      style={{
+        background: themeDark ? 'rgba(20, 20, 22, 0.4)' : 'rgba(255, 255, 255, 0.4)',
+      }}
     >
       {/* Title & Info */}
-      <div className="min-w-0">
-        <h1 className="text-xs font-bold text-stone-300 truncate uppercase tracking-wider">Chanakya Workspace</h1>
-        <p className="text-[9px] text-stone-500 truncate mt-0.5 font-mono">100% offline intelligence</p>
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <h1 className="text-sm font-bold text-stone-100 truncate tracking-tight">Chanakya AI</h1>
+          <span
+            className="hidden shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider min-[560px]:inline-flex"
+            style={{ borderColor: `${accent}40`, color: accent }}
+            title="Runs on this computer — no cloud connection needed"
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            Local AI
+          </span>
+        </div>
+        <p className="text-[10px] text-stone-500 truncate mt-0.5">{section}</p>
       </div>
 
       {/* Model Selection and Controls */}
-      <div className="flex items-center gap-2">
+      <div className="flex shrink-0 items-center gap-1 sm:gap-2">
         {/* Performance Hover Diagnostics */}
-        <div 
-          className="relative"
+        <div
+          className="relative hidden sm:block"
           onMouseEnter={() => setShowMetricsPanel(true)}
           onMouseLeave={() => setShowMetricsPanel(false)}
         >
-          <button 
-            className="flex h-8 w-8 items-center justify-center rounded-xl hover:bg-white/5 text-stone-400 hover:text-white transition-colors cursor-pointer"
-          >
+          <button className="flex h-8 w-8 items-center justify-center rounded-xl hover:bg-white/5 text-stone-400 hover:text-white transition-colors cursor-pointer">
             <BarChart2 size={14} />
           </button>
-          
+
           {/* Popover dashboard */}
           {showMetricsPanel && (
             <div className="absolute right-0 top-9 w-48 rounded-xl border border-white/[0.08] bg-[#121214] p-3 shadow-xl z-50 space-y-2">
@@ -123,11 +133,15 @@ export default function Topbar() {
                 <div className="border-t border-white/5 pt-1.5 mt-1.5 space-y-1">
                   <div className="flex justify-between text-[10px] text-stone-400">
                     <span>Speed:</span>
-                    <span className="font-semibold" style={{ color: accent }}>{metrics.tokensPerSec} t/s</span>
+                    <span className="font-semibold" style={{ color: accent }}>
+                      {metrics.tokensPerSec} t/s
+                    </span>
                   </div>
                   <div className="flex justify-between text-[10px] text-stone-400">
                     <span>Latency:</span>
-                    <span className="font-semibold" style={{ color: accent }}>{metrics.latency}ms</span>
+                    <span className="font-semibold" style={{ color: accent }}>
+                      {metrics.latency}ms
+                    </span>
                   </div>
                 </div>
               )}
@@ -137,13 +151,13 @@ export default function Topbar() {
 
         {/* Agent Persona dropdown */}
         <div className="relative flex items-center">
-          <select 
-            value={selectedAgentProfile} 
+          <select
+            value={selectedAgentProfile}
             onChange={(e) => selectAgentProfile(e.target.value)}
-            className="appearance-none rounded-xl border border-white/10 bg-[#09090a]/80 py-1.5 pl-3 pr-8 text-xs text-stone-200 outline-none cursor-pointer"
-            style={{ 
+            className="w-[6.75rem] appearance-none truncate rounded-xl border border-white/10 bg-[#09090a]/80 py-1.5 pl-2.5 pr-7 text-xs text-stone-200 outline-none cursor-pointer sm:w-auto sm:pl-3 sm:pr-8"
+            style={{
               borderColor: 'rgba(255,255,255,0.08)',
-              focusBorderColor: accent 
+              focusBorderColor: accent,
             }}
             title="Choose active agent"
           >
@@ -152,59 +166,53 @@ export default function Topbar() {
             <option value="writer">Writer Agent</option>
             <option value="analyst">Analyst Agent</option>
           </select>
-          <ChevronDown size={11} className="pointer-events-none absolute right-2.5 text-stone-500" />
-        </div>
-
-        {/* Local Model dropdown */}
-        <div className="relative flex items-center">
-          <select 
-            value={selectedModelId} 
-            onChange={handleModelChange}
-            className="appearance-none rounded-xl border border-white/10 bg-[#09090a]/80 py-1.5 pl-3 pr-8 text-xs text-stone-200 outline-none cursor-pointer"
-            style={{ 
-              borderColor: 'rgba(255,255,255,0.08)',
-              focusBorderColor: accent 
-            }}
-          >
-            {models.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.label} {!item.installed ? ' (Not Pulled)' : ''}
-              </option>
-            ))}
-          </select>
-          <ChevronDown size={11} className="pointer-events-none absolute right-2.5 text-stone-500" />
-        </div>
-
-        {/* Status indicator */}
-        <div className="flex items-center gap-1 px-1">
-          <Circle 
-            size={6} 
-            fill={currentModel?.installed ? 'currentColor' : 'transparent'} 
-            className={currentModel?.installed ? 'text-emerald-500' : 'text-amber-500 border border-amber-500 rounded-full'} 
+          <ChevronDown
+            size={11}
+            className="pointer-events-none absolute right-2.5 text-stone-500"
           />
         </div>
 
-        <hr className="h-4 border-l border-white/5 mx-1" />
+        <span
+          className="hidden min-w-0 truncate text-[10px] text-stone-500 lg:inline"
+          title="Model routes are selected in Settings"
+        >
+          Automatic model routing
+        </span>
+
+        {/* Status indicator */}
+        <div className="hidden items-center gap-1 px-1 sm:flex">
+          <Circle
+            size={6}
+            fill={currentModel?.installed ? 'currentColor' : 'transparent'}
+            className={
+              currentModel?.installed
+                ? 'text-emerald-500'
+                : 'text-amber-500 border border-amber-500 rounded-full'
+            }
+          />
+        </div>
+
+        <hr className="mx-1 hidden h-4 border-l border-white/5 sm:block" />
 
         {/* Window controls */}
-        <div className="flex items-center gap-0.5">
-          <button 
+        <div className="flex shrink-0 items-center gap-0.5">
+          <button
             onClick={handleMinimize}
             className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-white/5 text-stone-500 hover:text-white transition-colors cursor-pointer"
             title="Minimize"
           >
             <Minimize2 size={13} />
           </button>
-          
-          <button 
+
+          <button
             onClick={() => toggleExpand()}
             className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-white/5 text-stone-500 hover:text-white transition-colors cursor-pointer"
             title="Collapse to Bubble"
           >
             <Square size={11} />
           </button>
-          
-          <button 
+
+          <button
             onClick={handleClose}
             className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-red-500/20 text-stone-500 hover:text-red-400 transition-colors cursor-pointer"
             title="Hide window"

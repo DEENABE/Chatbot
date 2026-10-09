@@ -30,27 +30,44 @@ app.whenReady().then(async () => {
   // internal tracked window, which getMainWindow()/isTrustedSender rely on.
   const trustedWindow = WindowManager.createWindow();
   // A second, structurally identical window WindowManager never tracked.
-  const otherWindow = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  const otherWindow = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
 
-  check('the tracked window\'s own webContents is recognized as trusted', () => {
+  check("the tracked window's own webContents is recognized as trusted", () => {
     assert.equal(isTrustedSender({ sender: trustedWindow.webContents }), true);
   });
 
-  check('a second, real but untracked window\'s webContents is not trusted', () => {
+  check("a second, real but untracked window's webContents is not trusted", () => {
     assert.equal(isTrustedSender({ sender: otherWindow.webContents }), false);
   });
 
   check('requireTrustedSender lets the real handler run for the trusted sender', () => {
-    const handler = requireTrustedSender((event) => ({ ran: true, sender: event.sender }));
+    const handler = requireTrustedSender((event) => ({
+      ran: true,
+      sender: event.sender,
+    }));
     const result = handler({ sender: trustedWindow.webContents });
     assert.equal(result.ran, true);
   });
 
   check('requireTrustedSender refuses to run the handler for an untrusted sender', () => {
     let handlerRan = false;
-    const handler = requireTrustedSender(() => { handlerRan = true; return { ran: true }; });
+    const handler = requireTrustedSender(() => {
+      handlerRan = true;
+      return { ran: true };
+    });
     const result = handler({ sender: otherWindow.webContents });
-    assert.equal(handlerRan, false, 'the wrapped handler must never execute for an untrusted sender');
+    assert.equal(
+      handlerRan,
+      false,
+      'the wrapped handler must never execute for an untrusted sender',
+    );
     assert.equal(result.success, false);
     assert.equal(result.error.code, 'UNTRUSTED_SENDER');
   });

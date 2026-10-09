@@ -34,11 +34,17 @@ agentRouter.post('/', requireAuth, memoryRequest, async (request, response) => {
     return response.status(400).json({ error: 'A "goal" describing the problem is required.' });
   }
   if (String(goal).length > MAX_GOAL_LENGTH) {
-    return response.status(400).json({ error: `goal must be ${MAX_GOAL_LENGTH} characters or fewer.` });
+    return response
+      .status(400)
+      .json({ error: `goal must be ${MAX_GOAL_LENGTH} characters or fewer.` });
   }
   let boundedMaxSteps;
   try {
-    boundedMaxSteps = boundedInt(maxSteps, 'maxSteps', { min: 1, max: MAX_STEPS_CEILING, fallback: undefined });
+    boundedMaxSteps = boundedInt(maxSteps, 'maxSteps', {
+      min: 1,
+      max: MAX_STEPS_CEILING,
+      fallback: undefined,
+    });
   } catch (error) {
     return response.status(400).json({ error: error.message });
   }

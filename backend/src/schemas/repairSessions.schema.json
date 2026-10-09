@@ -183,11 +183,7 @@
             {
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "worked",
-                "note",
-                "at"
-              ],
+              "required": ["worked", "note", "at"],
               "properties": {
                 "worked": {
                   "type": "boolean"
@@ -222,18 +218,11 @@
           }
         },
         "clarification": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": ["string", "null"]
         },
         "riskLevel": {
           "type": "string",
-          "enum": [
-            "low",
-            "medium",
-            "high"
-          ]
+          "enum": ["low", "medium", "high"]
         },
         "requiresConfirmation": {
           "type": "boolean"
@@ -246,10 +235,7 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "command",
-              "expected"
-            ],
+            "required": ["command", "expected"],
             "properties": {
               "command": {
                 "type": "string"
@@ -261,45 +247,26 @@
           }
         },
         "rollback": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": ["string", "null"]
         },
         "userId": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": ["string", "null"]
         }
       }
     },
     "step": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "command",
-        "blocked",
-        "exitCode",
-        "stdout",
-        "stderr",
-        "reason"
-      ],
+      "required": ["command", "blocked", "exitCode", "stdout", "stderr", "reason"],
       "properties": {
         "command": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": ["string", "null"]
         },
         "blocked": {
           "type": "boolean"
         },
         "exitCode": {
-          "type": [
-            "integer",
-            "null"
-          ]
+          "type": ["integer", "null"]
         },
         "stdout": {
           "type": "string"
@@ -308,10 +275,7 @@
           "type": "string"
         },
         "reason": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": ["string", "null"]
         }
       }
     },
@@ -361,10 +325,7 @@
           "type": "string"
         },
         "userId": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": ["string", "null"]
         },
         "goal": {
           "type": "string"
@@ -411,31 +372,19 @@
                 "type": "string"
               },
               "success": {
-                "type": [
-                  "boolean",
-                  "null"
-                ]
+                "type": ["boolean", "null"]
               },
               "needsConfirmation": {
                 "type": "boolean"
               },
               "diagnosisId": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "verificationStatus": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "errorCode": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               }
             }
           }
@@ -456,20 +405,13 @@
         "machineVerification": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "scope",
-            "status"
-          ],
+          "required": ["scope", "status"],
           "properties": {
             "scope": {
               "const": "service_running"
             },
             "status": {
-              "enum": [
-                "passed",
-                "failed",
-                "not_established"
-              ]
+              "enum": ["passed", "failed", "not_established"]
             }
           }
         },
@@ -487,11 +429,7 @@
             {
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "worked",
-                "note",
-                "at"
-              ],
+              "required": ["worked", "note", "at"],
               "properties": {
                 "worked": {
                   "type": "boolean"
@@ -510,21 +448,13 @@
         "auditEvent": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "eventId",
-            "eventType",
-            "stateRevision",
-            "phase"
-          ],
+          "required": ["eventId", "eventType", "stateRevision", "phase"],
           "properties": {
             "eventId": {
               "type": "string"
             },
             "eventType": {
-              "enum": [
-                "session.completed",
-                "session.checkpoint"
-              ]
+              "enum": ["session.completed", "session.checkpoint"]
             },
             "stateRevision": {
               "type": "integer"
