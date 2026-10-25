@@ -1,4 +1,8 @@
-import { helperScriptPath, powerShellPath } from '../DesktopRuntime.js';
+import {
+  desktopHelperArguments,
+  desktopHelperEnvironment,
+  powerShellPath,
+} from '../DesktopRuntime.js';
 import { resolveDocumentTarget } from '../apps/DocumentTarget.js';
 import {
   trustedSystemCapability,
@@ -125,15 +129,15 @@ export class ProcessService extends BaseToolService {
       const evidence = await new Promise((resolve, reject) =>
         execFile(
           powerShellPath(),
-          [
-            '-NoProfile',
-            '-NonInteractive',
-            '-File',
-            helperScriptPath('ActivateApp.ps1'),
-            '-AppId',
-            app.appUserModelId,
-          ],
-          { windowsHide: true, timeout: 15000, maxBuffer: 65536 },
+          desktopHelperArguments('ActivateApp.ps1', {
+            args: ['-AppId', app.appUserModelId],
+          }),
+          {
+            windowsHide: true,
+            env: desktopHelperEnvironment(),
+            timeout: 15000,
+            maxBuffer: 65536,
+          },
           (error, out) => {
             if (error) return reject(error);
             try {
@@ -214,20 +218,19 @@ export class ProcessService extends BaseToolService {
     const evidence = await new Promise((resolve, reject) =>
       execFile(
         powerShellPath(),
-        [
-          '-NoProfile',
-          '-NonInteractive',
-          '-File',
-          helperScriptPath('ObserveApp.ps1'),
-          '-ExecutablePath',
-          app.executablePath,
-          '-LaunchProcessId',
-          String(child.pid),
-          '-LaunchedAt',
-          launchedAt,
-        ],
+        desktopHelperArguments('ObserveApp.ps1', {
+          args: [
+            '-ExecutablePath',
+            app.executablePath,
+            '-LaunchProcessId',
+            String(child.pid),
+            '-LaunchedAt',
+            launchedAt,
+          ],
+        }),
         {
           windowsHide: true,
+          env: desktopHelperEnvironment(),
           timeout: 16000,
           maxBuffer: 65536,
           encoding: 'utf8',

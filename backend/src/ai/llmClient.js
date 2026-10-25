@@ -9,6 +9,7 @@ import { config } from '../config.js';
 import { memoryManager, memoryScope } from '../memory/runtime.js';
 import { MEMORY_GUIDANCE } from '../memory/MemoryRetriever.js';
 import { modelRuntime, routedModelOr } from '../services/modelRuntime.js';
+import { fetchInference } from '../services/inferenceTransport.js';
 
 // No built-in tag: planner/classifier calls follow the model this request was routed to. AGENT_MODEL may pin one.
 export const DEFAULT_MODEL = process.env.AGENT_MODEL || '';
@@ -44,6 +45,9 @@ export async function completeJSON({
   const timeout = AbortSignal.timeout(240_000);
   signal = signal ? AbortSignal.any([signal, timeout]) : timeout;
   const scope = memoryScope.getStore();
+  const routing = modelRuntime.getStore();
+  const reasoning =
+    think ?? (routing?.capabilities?.includes('thinking') ? routing.thinking !== false : undefined);
   if (scope?.userId) {
     const memory = memoryManager.retriever.retrieve({
       ...scope,
@@ -54,8 +58,9 @@ export async function completeJSON({
   }
   let response;
   try {
-    response = await fetch(`${config.ollamaUrl}/api/generate`, {
+    response = await fetchInference(`${config.ollamaUrl}/api/generate`, {
       method: 'POST',
+      redirect: 'error',
       headers: { 'Content-Type': 'application/json' },
       signal,
       body: JSON.stringify({
@@ -66,7 +71,7 @@ export async function completeJSON({
         stream: false,
         keep_alive: modelRuntime.getStore()?.keepAlive ?? keepAlive,
         // Callers that only need a decision can switch reasoning off: same answers here, far lower latency on CPU.
-        ...(think === undefined ? {} : { think }),
+        ...(reasoning === undefined ? {} : { think: reasoning }),
         options: {
           temperature,
           num_ctx: Math.min(numCtx, modelRuntime.getStore()?.options?.num_ctx ?? numCtx),
@@ -76,6 +81,7 @@ export async function completeJSON({
     });
   } catch (error) {
     if (signal.aborted) throw signal.reason;
+    if (['MODEL_CONTEXT_TOO_LARGE', 'MODEL_MEMORY_INSUFFICIENT'].includes(error.code)) throw error;
     throw new Error(
       `Cannot reach Ollama at ${config.ollamaUrl}. Is it running? (${error.message})`,
     );

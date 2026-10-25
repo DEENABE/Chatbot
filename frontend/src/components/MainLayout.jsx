@@ -9,10 +9,12 @@ const ChatArea = React.lazy(() => import('../chat/ChatArea.jsx'));
 const InputArea = React.lazy(() => import('../chat/InputArea.jsx'));
 const HistoryPanel = React.lazy(() => import('../history/HistoryPanel.jsx'));
 const WorkspaceHub = React.lazy(() => import('../workspace/WorkspaceHub.jsx'));
+const CodingPanel = React.lazy(() => import('../coding/CodingPanel.jsx'));
 const SettingsPanel = React.lazy(() => import('../settings/SettingsPanel.jsx'));
 
 const SECTION_LABELS = {
   chat: 'Chat',
+  coding: 'Code',
   workspace: 'Workspace',
   history: 'History',
   settings: 'Settings',
@@ -137,7 +139,9 @@ export default function MainLayout() {
                 </div>
               }
             >
-              {activeTab === 'workspace' ? (
+              {activeTab === 'coding' ? (
+                <CodingPanel />
+              ) : activeTab === 'workspace' ? (
                 <WorkspaceHub />
               ) : activeTab === 'history' ? (
                 <HistoryPanel />

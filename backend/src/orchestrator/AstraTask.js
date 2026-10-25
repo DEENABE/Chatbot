@@ -470,7 +470,7 @@ export async function planAstraTask({
     const answer = await complete({
       system: PLANNER_SYSTEM,
       prompt: `${EXAMPLES}\n\nREQUEST: ${task}\nPLAN:`,
-      model: process.env.DESKTOP_MODEL || model,
+      model,
       signal,
       think: false,
       temperature: 0,
@@ -513,7 +513,7 @@ export async function composeText({ about, app, task, model, signal, complete })
     system:
       'You write content that will be typed into a Windows application for the user. Reply with JSON {"text":"..."} only. Plain text, no markdown fences, use \\n for new lines, at most 3000 characters. Write in the language the user used.',
     prompt: `Application: ${app}\nFull user request: ${task}\nWrite: ${about}`,
-    model: process.env.COMPOSE_MODEL || model,
+    model,
     signal,
     think: false,
     temperature: 0.4,

@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Cpu, HardDrive, Zap, RefreshCw, BarChart2, Activity } from 'lucide-react';
 import { useAppStore } from '../stores/useAppStore.js';
 import { presets } from '../animations/presets.js';
+import { percentValue, meterWidth, executionModeLabel } from '../utils/metricsDisplay.js';
 
 export default function SystemMonitor() {
   const metrics = useAppStore((state) => state.metrics);
@@ -22,7 +23,8 @@ export default function SystemMonitor() {
 
   // Helper to format bytes to MB/GB
   const formatBytes = (bytes) => {
-    if (bytes === 0 || !bytes) return '0 MB';
+    if (!Number.isFinite(bytes)) return 'N/A';
+    if (bytes === 0) return '0 MB';
     const mb = bytes / (1024 * 1024);
     if (mb > 1024) {
       return `${(mb / 1024).toFixed(1)} GB`;
@@ -56,14 +58,15 @@ export default function SystemMonitor() {
               <Cpu size={12} />
             </div>
             <div className="flex items-baseline gap-1 mt-1">
-              <span className="text-xl font-bold text-white font-mono">{metrics.cpu || 0}</span>
-              <span className="text-[10px] text-stone-500">%</span>
+              <span className="text-xl font-bold text-white font-mono">
+                {percentValue(metrics.cpu)}
+              </span>
             </div>
             <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden mt-1">
               <motion.div
                 className="h-full rounded-full"
                 animate={{
-                  width: `${metrics.cpu || 0}%`,
+                  width: meterWidth(metrics.cpu),
                   backgroundColor: getMeterColor(metrics.cpu),
                 }}
                 transition={presets.glide}
@@ -78,14 +81,15 @@ export default function SystemMonitor() {
               <Activity size={12} />
             </div>
             <div className="flex items-baseline gap-1 mt-1">
-              <span className="text-xl font-bold text-white font-mono">{metrics.ram || 0}</span>
-              <span className="text-[10px] text-stone-500">%</span>
+              <span className="text-xl font-bold text-white font-mono">
+                {percentValue(metrics.ram)}
+              </span>
             </div>
             <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden mt-1">
               <motion.div
                 className="h-full rounded-full"
                 animate={{
-                  width: `${metrics.ram || 0}%`,
+                  width: meterWidth(metrics.ram),
                   backgroundColor: getMeterColor(metrics.ram),
                 }}
                 transition={presets.glide}
@@ -100,14 +104,18 @@ export default function SystemMonitor() {
               <BarChart2 size={12} />
             </div>
             <div className="flex items-baseline gap-1 mt-1">
-              <span className="text-xl font-bold text-white font-mono">{metrics.gpu || 0}</span>
-              <span className="text-[10px] text-stone-500">%</span>
+              <span
+                className="text-xl font-bold text-white font-mono"
+                title={metrics.gpuUnavailableReason}
+              >
+                {percentValue(metrics.gpu)}
+              </span>
             </div>
             <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden mt-1">
               <motion.div
                 className="h-full rounded-full"
                 animate={{
-                  width: `${metrics.gpu || 0}%`,
+                  width: meterWidth(metrics.gpu),
                   backgroundColor: getMeterColor(metrics.gpu),
                 }}
                 transition={presets.glide}
@@ -118,18 +126,21 @@ export default function SystemMonitor() {
           {/* Disk Card */}
           <div className="bg-[#141416]/80 border border-white/5 rounded-2xl p-3 flex flex-col gap-2">
             <div className="flex items-center justify-between text-stone-400">
-              <span className="text-[10px] uppercase font-bold tracking-wider">C: Disk Drive</span>
+              <span className="text-[10px] uppercase font-bold tracking-wider">
+                App Disk {metrics.diskRoot || ''}
+              </span>
               <HardDrive size={12} />
             </div>
             <div className="flex items-baseline gap-1 mt-1">
-              <span className="text-xl font-bold text-white font-mono">{metrics.disk || 0}</span>
-              <span className="text-[10px] text-stone-500">%</span>
+              <span className="text-xl font-bold text-white font-mono">
+                {percentValue(metrics.disk)}
+              </span>
             </div>
             <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden mt-1">
               <motion.div
                 className="h-full rounded-full"
                 animate={{
-                  width: `${metrics.disk || 0}%`,
+                  width: meterWidth(metrics.disk),
                   backgroundColor: getMeterColor(metrics.disk),
                 }}
                 transition={presets.glide}
@@ -167,10 +178,10 @@ export default function SystemMonitor() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <RefreshCw size={13} style={{ color: accent }} />
-              <span className="text-xs text-stone-300">Process Memory Usage</span>
+              <span className="text-xs text-stone-300">Backend Memory Usage</span>
             </div>
             <span className="text-xs font-mono font-bold text-white">
-              {formatBytes(metrics.electronMemory)}
+              {formatBytes(metrics.backendMemoryBytes)}
             </span>
           </div>
         </div>
@@ -181,6 +192,18 @@ export default function SystemMonitor() {
             Offline Execution Environment
           </span>
           <div className="flex flex-col gap-1.5 text-[10px] text-stone-400 font-mono">
+            <div className="flex justify-between gap-3">
+              <span>AI execution:</span>
+              <span className="text-stone-300 text-right">
+                {executionModeLabel(metrics.acceleration)}
+              </span>
+            </div>
+            <div className="flex justify-between gap-3">
+              <span>Display adapters:</span>
+              <span className="text-stone-300 text-right">
+                {metrics.hardware?.gpus?.map((gpu) => gpu.name).join(', ') || 'Not confirmed'}
+              </span>
+            </div>
             <div className="flex justify-between">
               <span>Platform OS:</span>
               <span className="text-stone-300">Windows (Native x64)</span>

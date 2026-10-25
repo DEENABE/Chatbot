@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../stores/useAppStore.js';
 
 const button =
@@ -17,6 +17,15 @@ export default function SoftwareSourcesPanel() {
     [version, setVersion] = useState(''),
     [found, setFound] = useState(null),
     [plan, setPlan] = useState(null);
+  const queryRevision = useRef(0);
+  const changeQuery = (update, value) => {
+    queryRevision.current += 1;
+    update(value);
+    setFound(null);
+    setPlan(null);
+    setNotice('');
+    setFailure('');
+  };
   const [kind, setKind] = useState('json-feed'),
     [sourceId, setSourceId] = useState(''),
     [sourceName, setSourceName] = useState(''),
@@ -52,7 +61,8 @@ export default function SoftwareSourcesPanel() {
       setBusy(false);
     }
   };
-  const receive = (result, onData) => {
+  const receive = (result, onData, isCurrent = () => true) => {
+    if (!isCurrent()) return;
     if (result.needsConfirmation) {
       useAppStore.getState().addConfirmation({
         confirmationId: result.confirmationId,
@@ -60,17 +70,30 @@ export default function SoftwareSourcesPanel() {
         approvalDetails: result.approvalDetails,
         standalone: true,
         onSettled: (settled) => {
-          if (settled?.data) {
+          if (!isCurrent()) return;
+          setNotice('');
+          setFailure('');
+          if (settled?.success === false || settled?.data?.success === false) {
+            setFailure(
+              settled.error?.message ||
+                settled.data?.message ||
+                'The software action failed. No successful installation has been verified.',
+            );
+          } else if (settled?.success === true && settled.data) {
             setNotice(settled.data.message || 'The software action returned a result.');
             onData?.(settled.data);
-          } else setNotice('The request was declined or could not be completed.');
+          } else if (settled?.success === true) {
+            setNotice('The request was declined. No software action was executed.');
+          } else {
+            setFailure('The software action returned no result. Try the action again.');
+          }
           refresh().catch(() => {});
         },
       });
       setNotice('Review this exact action in the approval dialog.');
       return;
     }
-    if (result.success !== true)
+    if (result.success !== true || result.data?.success === false)
       throw new Error(
         result.error?.message || result.data?.message || 'The software operation was not verified.',
       );
@@ -79,8 +102,11 @@ export default function SoftwareSourcesPanel() {
       setNotice(result.data.message || 'Ready for review.');
     }
   };
-  const discover = (online) =>
-    act(async () =>
+  const discover = (online) => {
+    const revision = ++queryRevision.current;
+    setFound(null);
+    setPlan(null);
+    return act(async () =>
       receive(
         await window.softwareAPI.discover(
           { operation, product, ...(version.trim() ? { version: version.trim() } : {}) },
@@ -90,16 +116,41 @@ export default function SoftwareSourcesPanel() {
           setFound(data);
           setPlan(null);
         },
+        () => queryRevision.current === revision,
       ),
     );
-  const select = (candidate) =>
-    act(async () => {
-      if (found.requiresChoice)
-        await window.softwareAPI.choose(found.discoveryId, candidate.candidateId);
-      receive(await window.softwareAPI.resolve(candidate.candidateId), (data) =>
-        setPlan(data.plan),
+  };
+  const select = (candidate) => {
+    const revision = queryRevision.current;
+    return act(async () => {
+      setPlan(null);
+      if (found.requiresChoice) {
+        const choice = await window.softwareAPI.choose(found.discoveryId, candidate.candidateId);
+        if (choice?.success !== true || choice.data?.success === false)
+          throw new Error(
+            choice?.error?.message ||
+              choice?.data?.message ||
+              'The software selection was not accepted. Search for the product again.',
+          );
+      }
+      if (queryRevision.current !== revision) return;
+      receive(
+        await window.softwareAPI.resolve(candidate.candidateId),
+        (data) => setPlan(data.plan),
+        () => queryRevision.current === revision,
       );
     });
+  };
+  const requestPlanAction = (action) => {
+    const revision = queryRevision.current;
+    return act(async () =>
+      receive(
+        await window.softwareAPI.requestAction(action, plan.planId),
+        action === 'download' ? (data) => data.plan && setPlan(data.plan) : undefined,
+        () => queryRevision.current === revision,
+      ),
+    );
+  };
   const enroll = (event) => {
     event.preventDefault();
     act(async () => {
@@ -216,7 +267,7 @@ export default function SoftwareSourcesPanel() {
             className={input}
             maxLength={180}
             value={product}
-            onChange={(event) => setProduct(event.target.value)}
+            onChange={(event) => changeQuery(setProduct, event.target.value)}
           />
         </label>
         <div className="grid grid-cols-2 gap-2">
@@ -225,7 +276,7 @@ export default function SoftwareSourcesPanel() {
             <select
               className={input}
               value={operation}
-              onChange={(event) => setOperation(event.target.value)}
+              onChange={(event) => changeQuery(setOperation, event.target.value)}
             >
               {['install', 'download', 'update', 'reinstall'].map((value) => (
                 <option key={value}>{value}</option>
@@ -238,7 +289,7 @@ export default function SoftwareSourcesPanel() {
               className={input}
               maxLength={80}
               value={version}
-              onChange={(event) => setVersion(event.target.value)}
+              onChange={(event) => changeQuery(setVersion, event.target.value)}
             />
           </label>
         </div>
@@ -265,8 +316,10 @@ export default function SoftwareSourcesPanel() {
             disabled={busy || !product.trim()}
             onClick={() =>
               act(async () => {
+                const revision = queryRevision.current;
                 const result = await window.softwareAPI.pickInstaller(product);
-                if (!result.cancelled) {
+                if (!result.cancelled && queryRevision.current === revision) {
+                  setFound(null);
                   setPlan(result.plan);
                   setNotice(result.message);
                 }
@@ -276,6 +329,21 @@ export default function SoftwareSourcesPanel() {
             Choose signed local installer
           </button>
         </div>
+        {found?.requiresOnline && (
+          <div className="rounded-lg border border-blue-500/20 p-3 text-xs">
+            <p>
+              Check online providers for an installable package before using a user-assisted page.
+            </p>
+            <button
+              type="button"
+              className={`${button} mt-2`}
+              disabled={busy || !product.trim()}
+              onClick={() => discover(true)}
+            >
+              Search online installation sources
+            </button>
+          </div>
+        )}
         {found?.failures?.map((item, index) => (
           <p key={index} className="text-xs text-amber-300">
             {item.providerId}: {item.message}
@@ -309,27 +377,36 @@ export default function SoftwareSourcesPanel() {
             </p>
             <div className="flex flex-wrap gap-2">
               {plan.protocol === 'handoff' ? (
-                <button
-                  type="button"
-                  className={button}
-                  onClick={() => act(() => window.softwareAPI.reveal(plan.planId))}
-                >
-                  Open official user-assisted page
-                </button>
+                <>
+                  <p className="w-full text-amber-300">
+                    This source provides a page for you to complete installation. No installer has
+                    run. Search online sources for an installable package or choose a signed local
+                    installer.
+                  </p>
+                  <button
+                    type="button"
+                    className={button}
+                    disabled={busy}
+                    onClick={() => act(() => window.softwareAPI.reveal(plan.planId))}
+                  >
+                    Open official user-assisted page
+                  </button>
+                  <button
+                    type="button"
+                    className={button}
+                    disabled={busy || !product.trim()}
+                    onClick={() => discover(true)}
+                  >
+                    Search online installation sources
+                  </button>
+                </>
               ) : (
                 <>
                   <button
                     type="button"
                     className={button}
                     disabled={busy}
-                    onClick={() =>
-                      act(async () =>
-                        receive(
-                          await window.softwareAPI.requestAction('download', plan.planId),
-                          (data) => data.plan && setPlan(data.plan),
-                        ),
-                      )
-                    }
+                    onClick={() => requestPlanAction('download')}
                   >
                     Review download/copy
                   </button>
@@ -338,11 +415,7 @@ export default function SoftwareSourcesPanel() {
                       type="button"
                       className={button}
                       disabled={busy}
-                      onClick={() =>
-                        act(async () =>
-                          receive(await window.softwareAPI.requestAction('install', plan.planId)),
-                        )
-                      }
+                      onClick={() => requestPlanAction('install')}
                     >
                       Review installation
                     </button>
@@ -351,11 +424,7 @@ export default function SoftwareSourcesPanel() {
                     type="button"
                     className={button}
                     disabled={busy}
-                    onClick={() =>
-                      act(async () =>
-                        receive(await window.softwareAPI.requestAction('verify', plan.planId)),
-                      )
-                    }
+                    onClick={() => requestPlanAction('verify')}
                   >
                     Check installed identity
                   </button>

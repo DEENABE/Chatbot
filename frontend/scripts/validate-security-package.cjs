@@ -63,6 +63,23 @@ function validateSecurityPackage(output, frontend = path.resolve(__dirname, '..'
       throw new Error('Missing or stale desktop resource: ' + name);
   }
   const backendFiles = [
+    'src/orchestrator/CalculatorTask.js',
+    'src/lib/localServiceUrl.js',
+    'src/middleware/localOrigin.js',
+    'src/services/localModelPolicy.js',
+    'src/services/gpuProfile.js',
+    'src/services/inferenceTransport.js',
+    'src/services/statsMetrics.js',
+    'src/routes/stats.js',
+    'src/services/modelRegistry.js',
+    'src/coding/CodingModelAdapter.js',
+    'src/services/ollamaService.js',
+    'src/services/vectorService.js',
+    'src/orchestrator/RepairTask.js',
+    'src/orchestrator/DiagnosticRepair.js',
+    'src/ai/Orchestrator.js',
+    'src/ai/desktopChat.js',
+    'src/routes/repair.js',
     'src/config.js',
     'src/app.js',
     'src/server.js',

@@ -4,6 +4,7 @@ import { isSupportedPair, LANGUAGES } from './languageRegistry.js';
 import { applyGlossary } from './glossary.js';
 import { postProcessTranslation } from './translationPostProcess.js';
 import { resolveGeneralModel } from './modelRouter.js';
+import { fetchInference } from './inferenceTransport.js';
 
 /**
  * @module services/translationService
@@ -175,8 +176,9 @@ async function callOllamaTranslator({ text, sourceLanguage, targetLanguage, user
     // Same one-at-a-time rule as chat: the local model serves one request at a time.
     return await inferenceGate.run(
       async () => {
-        const response = await fetch(`${config.ollamaUrl}/api/chat`, {
+        const response = await fetchInference(`${config.ollamaUrl}/api/chat`, {
           method: 'POST',
+          redirect: 'error',
           headers: { 'Content-Type': 'application/json' },
           signal,
           body: JSON.stringify({
@@ -241,6 +243,7 @@ async function callIndicTrans2({ text, sourceLanguage, targetLanguage }) {
   try {
     response = await fetch(`${config.translate.serviceUrl}/translate`, {
       method: 'POST',
+      redirect: 'error',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         source_lang: sourceLanguage,

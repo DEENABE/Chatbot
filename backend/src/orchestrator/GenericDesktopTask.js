@@ -43,6 +43,15 @@ export function genericDesktopTask(message) {
     m = text.match(
       /^(?:open|launch|start|run)\s+(?:my\s+|the\s+)?(.+?)\s+((?:go to|navigate to|show)\s+.+)$/i,
     );
+  let implicitGoal = false;
+  // Natural app commands often omit "and": "run VLC play the movie".
+  // Keep the app name separate from the goal before registry resolution.
+  if (!m) {
+    m = text.match(
+      /^(?:(?:can|could|would) you\s+)?(?:please\s+)?(?:open|launch|start|run)\s+(?:my\s+|the\s+)?(.+?)\s+((?:add|calculate|type|write|enter|paste|play|pause|search|find|click|select|press|scroll|save|draw|create)\s+.+)$/i,
+    );
+    implicitGoal = !!m;
+  }
   if (!m) {
     const reverse = text.match(
       /^((?:create|add|open|find|search|select|click|type|enter|calculate|play|pause)\s+.+?)\s+(?:in|using)\s+(.+)$/i,
@@ -54,7 +63,7 @@ export function genericDesktopTask(message) {
     goal = m[2].trim();
   if (!query || query.includes('&&') || query.length > 200 || /[\\/:;|<>`$\x00-\x1f]/.test(query))
     return null;
-  return { query, goal, task: text };
+  return { query, goal, task: text, ...(implicitGoal ? { implicitGoal: true } : {}) };
 }
 export const desktopSnapshot = (data) =>
   data?.snapshot?.status === 'UI_OBSERVED'

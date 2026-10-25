@@ -47,7 +47,8 @@ for (const name of ['src', 'scripts']) {
   if (fs.existsSync(path.join(backendSrc, name)))
     fs.cpSync(path.join(backendSrc, name), target, {
       recursive: true,
-      filter: (entry) => !/\.(?:test|spec)\.(?:js|mjs|cjs)$|model-route-smoke\.mjs$/.test(entry),
+      filter: (entry) =>
+        !/\.(?:test|spec)\.(?:js|mjs|cjs)$|model-route-smoke\.mjs$|\.before-[^\\/]+$/.test(entry),
     });
 }
 fs.copyFileSync(path.join(backendSrc, 'package.json'), path.join(out, 'package.json'));

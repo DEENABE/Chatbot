@@ -9,10 +9,14 @@ const apiCandidate = apiArgument?.slice('--chanakya-api-base='.length);
 const apiBaseUrl = /^http:\/\/127\.0\.0\.1:\d{1,5}\/api$/.test(apiCandidate || '')
   ? apiCandidate
   : 'http://127.0.0.1:3001/api';
+const clientArgument = process.argv.find((value) => value.startsWith('--chanakya-api-client='));
+const clientCandidate = clientArgument?.slice('--chanakya-api-client='.length);
+const apiClientKey = /^[a-f0-9]{64}$/.test(clientCandidate || '') ? clientCandidate : '';
 
 contextBridge.exposeInMainWorld('electronAPI', {
   isElectron: () => true,
   getApiBaseUrl: () => apiBaseUrl,
+  getApiClientKey: () => apiClientKey,
   captureScreen: () => ipcRenderer.invoke('capture-screen'),
   getScreenSources: () => ipcRenderer.invoke('get-screen-sources'),
   toggleExpand: (expand) => ipcRenderer.invoke('window-toggle-expand', expand),
@@ -133,5 +137,10 @@ contextBridge.exposeInMainWorld('toolEngine', {
     const subscription = (_event, data) => callback(data);
     ipcRenderer.on('tool:confirmation-required', subscription);
     return () => ipcRenderer.removeListener('tool:confirmation-required', subscription);
+  },
+  onProgress: (callback) => {
+    const subscription = (_event, data) => callback(data);
+    ipcRenderer.on('tool:progress', subscription);
+    return () => ipcRenderer.removeListener('tool:progress', subscription);
   },
 });

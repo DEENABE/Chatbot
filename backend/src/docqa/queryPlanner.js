@@ -11,6 +11,7 @@
 //   2. the local LLM — only for questions the rules cannot fully explain. Its plan
 //      is then repaired against the real columns/values (repairPlan) before running.
 import { config } from '../config.js';
+import { fetchInference } from '../services/inferenceTransport.js';
 import { toNumber, toDate, normalizeName } from './valueUtils.js';
 import { compileQuestion, profileTable, repairPlan, normText } from './questionCompiler.js';
 
@@ -651,7 +652,8 @@ async function ollamaJson({ model, system, user, signal, numCtx, keepAlive }) {
   const timeout = AbortSignal.timeout(seconds * 1000);
   const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
   const request = (withThinkOff) =>
-    fetch(`${config.ollamaUrl}/api/chat`, {
+    fetchInference(`${config.ollamaUrl}/api/chat`, {
+      redirect: 'error',
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       signal: combined,
@@ -664,23 +666,27 @@ async function ollamaJson({ model, system, user, signal, numCtx, keepAlive }) {
         ...(withThinkOff ? { think: false } : {}),
         // Match the chat call's num_ctx/keep_alive when given: a different num_ctx makes Ollama reload the model.
         keep_alive: keepAlive || config.ollamaKeepAlive,
-        options: { temperature: 0, num_ctx: numCtx || 4096, num_predict: 256 },
+        options: { temperature: 0, num_ctx: numCtx || 4096, num_predict: 512 },
         messages: [
           { role: 'system', content: system },
           { role: 'user', content: user },
         ],
       }),
     });
-  const thinkOff = /qwen3/i.test(model);
-  let response = await request(thinkOff);
-  if (!response.ok && thinkOff && response.status === 400) response = await request(false);
+  // Every thinking model (Qwen3, Gemma 4, DeepSeek-R1, ...) otherwise spends the whole num_predict budget on hidden
+  // reasoning and returns an empty message. Models without a thinking mode reject `think` with 400: retry without it.
+  let response = await request(true);
+  if (!response.ok && response.status === 400) response = await request(false);
   if (!response.ok) throw new Error(`Ollama ${response.status}`);
   const data = await response.json();
   const content = String(data?.message?.content || '')
     .replace(/<think>[\s\S]*?<\/think>/g, '')
     .trim();
-  const jsonText = content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1);
-  return JSON.parse(jsonText);
+  const start = content.indexOf('{');
+  const end = content.lastIndexOf('}');
+  if (start < 0 || end <= start)
+    throw new Error(content ? 'planner reply was not JSON' : 'planner reply was empty');
+  return JSON.parse(content.slice(start, end + 1));
 }
 
 function hintsFor(compiled) {

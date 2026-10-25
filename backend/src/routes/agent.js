@@ -5,6 +5,10 @@ import { AGENT_DEFAULT_MODEL } from '../agent/agentBrain.js';
 import { requireAuth } from '../middleware/auth.js';
 import { memoryRequest } from '../memory/runtime.js';
 import { boundedInt } from '../lib/validate.js';
+import { routeChatModel } from '../services/modelRouter.js';
+import { modelRuntime } from '../services/modelRuntime.js';
+import { inferenceGate } from '../services/inferenceGate.js';
+import { isSpoolerIntent } from '../orchestrator/WindowsRepairCapability.js';
 
 export const agentRouter = Router();
 
@@ -30,7 +34,7 @@ const MAX_STEPS_CEILING = 50;
 agentRouter.post('/', requireAuth, memoryRequest, async (request, response) => {
   const { goal, model = AGENT_DEFAULT_MODEL, maxSteps } = request.body || {};
 
-  if (!goal || !String(goal).trim()) {
+  if (typeof goal !== 'string' || !goal.trim()) {
     return response.status(400).json({ error: 'A "goal" describing the problem is required.' });
   }
   if (String(goal).length > MAX_GOAL_LENGTH) {
@@ -58,14 +62,27 @@ agentRouter.post('/', requireAuth, memoryRequest, async (request, response) => {
   const send = (event) => response.write(`${JSON.stringify(event)}\n`);
 
   try {
-    await runAgent({
+    const options = {
       userId: request.userId,
       goal: String(goal).trim(),
       model,
       maxSteps: boundedMaxSteps,
       signal,
       onEvent: send,
-    });
+    };
+    if (isSpoolerIntent(goal)) await runAgent(options);
+    else {
+      const routing = await routeChatModel({
+        userId: request.userId,
+        requestedModel: model,
+        computerRequest: { requiresTools: true },
+        agentId: 'windows-repair',
+      });
+      await inferenceGate.run(
+        () => modelRuntime.run(routing, () => runAgent({ ...options, model: routing.model })),
+        { signal },
+      );
+    }
   } catch (error) {
     send({ type: 'error', payload: { message: error.message } });
   } finally {

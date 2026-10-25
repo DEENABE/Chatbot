@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { readNdjson } from './ndjson.js';
 
 export const API_BASE =
   window.electronAPI?.getApiBaseUrl?.() ||
@@ -40,9 +41,11 @@ export async function clearSession() {
 }
 
 export const api = axios.create({ baseURL: API_BASE, timeout: 120000 });
+const apiClientKey = window.electronAPI?.getApiClientKey?.() || '';
 
 // Attach the session token to every request
 api.interceptors.request.use(async (config) => {
+  if (apiClientKey) config.headers['X-Chanakya-Client'] = apiClientKey;
   const token = await getToken();
   if (token) {
     config.headers['Authorization'] = `Bearer ${token}`;
@@ -73,6 +76,7 @@ export async function streamChat(
 ) {
   const token = await getToken();
   const headers = { 'Content-Type': 'application/json' };
+  if (apiClientKey) headers['X-Chanakya-Client'] = apiClientKey;
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
@@ -99,27 +103,10 @@ export async function streamChat(
     throw new Error('Chat response body is empty');
   }
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
   let finished = false;
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      let event;
-      try {
-        event = JSON.parse(line);
-      } catch {
-        throw new Error(
-          'The local server returned an incomplete stream. Restart the backend and try again.',
-        );
-      }
+  await readNdjson(
+    response,
+    (event) => {
       if (event.type === 'done') finished = true;
       if (event.type === 'token') onToken(event.text);
       if (event.type === 'sources') onSources(event.sources);
@@ -129,8 +116,9 @@ export async function streamChat(
       if (event.type === 'tool_call' && onToolCall) onToolCall(event.toolCall);
       if (event.type === 'done') onDone(event.message, event.conversationId);
       if (event.type === 'error') throw new Error(event.error);
-    }
-  }
+    },
+    { signal },
+  );
   // A stream that just stops (backend restarted, connection dropped) used to leave an empty bubble.
   if (!finished && !signal?.aborted)
     throw new Error('The response ended before the model finished. Please ask again.');
@@ -147,6 +135,7 @@ export async function streamAgent(payload, handlers) {
 async function streamNdjson(url, payload, { onEvent, signal }) {
   const token = await getToken();
   const headers = { 'Content-Type': 'application/json' };
+  if (apiClientKey) headers['X-Chanakya-Client'] = apiClientKey;
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
@@ -172,34 +161,19 @@ async function streamNdjson(url, payload, { onEvent, signal }) {
     throw new Error('Agent response body is empty');
   }
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      let event;
-      try {
-        event = JSON.parse(line);
-      } catch {
-        continue;
-      }
+  let finished = false;
+  await readNdjson(
+    response,
+    (event) => {
+      if (['final', 'error', 'aborted'].includes(event.type)) finished = true;
       onEvent(event);
-    }
-  }
-  if (buffer.trim()) {
-    try {
-      onEvent(JSON.parse(buffer));
-    } catch {
-      /* ignore trailing */
-    }
-  }
+    },
+    { signal },
+  );
+  if (!finished)
+    throw new Error(
+      'The diagnostic stream ended before a final result. Check Diagnostics before retrying.',
+    );
 }
 
 // Auth API calls
@@ -258,6 +232,34 @@ export const workspaces = {
     api.post(`/workspaces/${encodeURIComponent(id)}/index`, data, { timeout: 600000 }),
   pause: (id) => api.post(`/workspaces/${encodeURIComponent(id)}/pause`),
   removeIndex: (id) => api.delete(`/workspaces/${encodeURIComponent(id)}/index`),
+};
+
+// Coding operations stay in the authenticated local backend; renderer code
+// never receives filesystem handles or a shell execution bridge.
+export const coding = {
+  models: (signal) => api.get('/coding/models', { signal }),
+  tasks: (signal) => api.get('/coding/tasks', { signal }),
+  tree: (workspaceId, signal) =>
+    api.get(`/coding/workspaces/${encodeURIComponent(workspaceId)}/tree`, { signal }),
+  file: (workspaceId, path, signal) =>
+    api.get(`/coding/workspaces/${encodeURIComponent(workspaceId)}/file`, {
+      params: { path },
+      signal,
+    }),
+  authorize: (workspaceId, write = true) =>
+    api.post(`/coding/workspaces/${encodeURIComponent(workspaceId)}/authorize`, { write }),
+  start: (payload) => api.post('/coding/tasks', payload),
+  task: (taskId, signal) => api.get(`/coding/tasks/${encodeURIComponent(taskId)}`, { signal }),
+  approve: (taskId, approvalId, approved) =>
+    api.post(`/coding/tasks/${encodeURIComponent(taskId)}/approval`, { approvalId, approved }),
+  cancel: (taskId) => api.post(`/coding/tasks/${encodeURIComponent(taskId)}/cancel`),
+  tool: (workspaceId, tool, params = {}) =>
+    api.post(`/coding/workspaces/${encodeURIComponent(workspaceId)}/tools`, { tool, params }),
+  approveTool: (workspaceId, approvalId, approved) =>
+    api.post(
+      `/coding/workspaces/${encodeURIComponent(workspaceId)}/approvals/${encodeURIComponent(approvalId)}`,
+      { approved },
+    ),
 };
 
 // Models API

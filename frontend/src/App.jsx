@@ -18,10 +18,29 @@ export default function App() {
   const setInputText = useAppStore((state) => state.setInputText);
   const showClipboardToast = useAppStore((state) => state.showClipboardToast);
   const addConfirmation = useAppStore((state) => state.addConfirmation);
+  const [executionProgress, setExecutionProgress] = React.useState({});
+  const progressUserId = useAppStore((state) => state.user?.id);
+  useEffect(() => setExecutionProgress({}), [progressUserId]);
   const accentColor = useAppStore((state) => state.settings.accentColor) || '#3b82f6';
 
   // Per-request keepAlive settings control residency. Collapsing the GUI must
   // never unload Ollama models used by indexing or another local application.
+
+  useEffect(
+    () =>
+      window.toolEngine?.onProgress?.((progress) => {
+        const userId = useAppStore.getState().user?.id;
+        if (!userId || !progress.scope?.startsWith(`renderer:${userId}-`) || !progress.requestId)
+          return;
+        setExecutionProgress((previous) => {
+          const next = { ...previous };
+          if (progress.stage === 'complete') delete next[progress.requestId];
+          else next[progress.requestId] = progress.message;
+          return Object.fromEntries(Object.entries(next).slice(-8));
+        });
+      }),
+    [],
+  );
 
   useEffect(() => {
     checkAuth();
@@ -100,6 +119,17 @@ export default function App() {
         <AppChoiceModal />
         <SoftwareChoiceModal />
         <ConfirmationModal />
+        {Object.values(executionProgress).length > 0 && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-xl border border-blue-400/30 bg-stone-950 px-4 py-3 text-sm text-stone-200 shadow-lg"
+          >
+            {Object.entries(executionProgress).map(([id, message]) => (
+              <p key={id}>{message}</p>
+            ))}
+          </div>
+        )}
       </div>
     </Suspense>
   );

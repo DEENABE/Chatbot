@@ -21,7 +21,12 @@ import { nextSoftwareDecision } from '../../../backend/src/orchestrator/Software
 export function createChatExecution(task, options = {}) {
   return new ExecutionController(task, {
     mode: 'chat',
-    maxSteps: computerTask(task)?.software || computerTask(task)?.astra ? 48 : 10,
+    maxSteps:
+      computerTask(task)?.software || computerTask(task)?.astra
+        ? 48
+        : computerTask(task)?.genericDesktop
+          ? 24
+          : 10,
     maxRetries: 2,
     save: (value) =>
       localStorage.setItem(`agent-checkpoint:${value.state.sessionId}`, serializeState(value)),

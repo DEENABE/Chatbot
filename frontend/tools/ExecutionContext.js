@@ -2,6 +2,13 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import * as childProcess from 'node:child_process';
 
 export const executionContext = new AsyncLocalStorage();
+export function reportExecutionProgress(stage, message) {
+  try {
+    executionContext.getStore()?.onProgress?.({ stage, message });
+  } catch {
+    // Closing the UI must not change the outcome of an approved operation.
+  }
+}
 const ownedHelpers = new Set();
 function trackHelper(child, options) {
   // User-requested GUI apps remain open. Track only hidden, non-detached helpers.

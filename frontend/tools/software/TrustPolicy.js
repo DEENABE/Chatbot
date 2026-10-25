@@ -11,6 +11,24 @@ export const normalizePublisher = (value) => {
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]/gu, '');
 };
+// Catalogs often use a brand while signed files/registrations use its legal company name.
+// Limit this equivalence to repository-bound payloads and package-manager inventory.
+export const samePublisher = (actual, expected, { allowLegalSuffix = false } = {}) => {
+  if (!normalizePublisher(actual) || !normalizePublisher(expected)) return false;
+  if (normalizePublisher(actual) === normalizePublisher(expected)) return true;
+  if (!allowLegalSuffix) return false;
+  const company = (value) => {
+    const text = /(?:^|,\s*)(?:CN|O)=/i.test(String(value || ''))
+      ? signerPublisher(value)
+      : String(value || '');
+    return normalizePublisher(
+      text
+        .trim()
+        .replace(/(?:[\s,.]+(?:incorporated|inc|corporation|corp|limited|ltd|llc)\.?)+$/i, ''),
+    );
+  };
+  return Boolean(company(actual)) && company(actual) === company(expected);
+};
 export function signerPublisher(subject) {
   const match =
     /(?:^|,\s*)O=(?:"([^"]+)"|((?:\\.|[^,])+))/i.exec(String(subject || '')) ||
@@ -211,6 +229,31 @@ export class TrustPolicy {
     return url;
   }
   verifyInstaller(plan, metadata) {
+    return this.#verifyPayload(plan, metadata);
+  }
+  verifyRepositoryInstaller(plan, metadata) {
+    if (
+      plan.protocol !== 'package-manager' ||
+      plan.source.kind !== 'package-manager' ||
+      !['platform-repository', 'operator-approved'].includes(plan.source.evidence) ||
+      !plan.source.repository ||
+      !plan.installer.source ||
+      !plan.source.providerId ||
+      !plan.installer.manager ||
+      !plan.product.id ||
+      !plan.installer.packageId ||
+      plan.installer.manager !== plan.source.providerId ||
+      plan.installer.packageId !== plan.product.id ||
+      plan.installer.payloadFormat !== plan.installer.format ||
+      !/^[a-f0-9]{64}$/i.test(plan.installer.sha256 || '')
+    )
+      throw softwareFailure(
+        'PACKAGE_IDENTITY_UNVERIFIED',
+        'Repository verification requires an exact package, repository, and published payload digest.',
+      );
+    return this.#verifyPayload(plan, metadata, { repositoryPayload: true });
+  }
+  #verifyPayload(plan, metadata, { repositoryPayload = false } = {}) {
     this.assertPlan(plan);
     if (!metadata || metadata.format !== plan.installer.format)
       throw softwareFailure(
@@ -232,7 +275,11 @@ export class TrustPolicy {
       );
     const actualPublisher =
       metadata.publisher || signerPublisher(metadata.signerSubject || metadata.signer);
-    if (normalizePublisher(actualPublisher) !== normalizePublisher(plan.product.publisher))
+    if (
+      !samePublisher(actualPublisher, plan.product.publisher, {
+        allowLegalSuffix: repositoryPayload,
+      })
+    )
       throw softwareFailure(
         'PUBLISHER_MISMATCH',
         `The installer signer does not match the expected publisher ${plan.product.publisher}.`,
@@ -253,7 +300,7 @@ export class TrustPolicy {
         'SIGNER_MISMATCH',
         'The installer certificate does not match this approved source.',
       );
-    if (!metadata.productName && !metadata.packageIdentity)
+    if (!repositoryPayload && !metadata.productName && !metadata.packageIdentity)
       throw softwareFailure(
         'PACKAGE_IDENTITY_UNVERIFIED',
         'The signed file does not expose an independently verifiable product identity.',
@@ -272,12 +319,16 @@ export class TrustPolicy {
       .normalize('NFKC')
       .toLowerCase()
       .replace(/[^\p{L}\p{N}]/gu, '');
-    if ((!expectedIdentity || ['exe', 'msi'].includes(metadata.format)) && name !== expectedName)
+    if (
+      !repositoryPayload &&
+      (!expectedIdentity || ['exe', 'msi'].includes(metadata.format)) &&
+      name !== expectedName
+    )
       throw softwareFailure(
         'PACKAGE_IDENTITY_MISMATCH',
         "The signed installer's product name differs from the approved software identity.",
       );
-    if (!sameVersion(metadata.productVersion, plan.product.version))
+    if (!repositoryPayload && !sameVersion(metadata.productVersion, plan.product.version))
       throw softwareFailure(
         'VERSION_MISMATCH',
         'The signed installer version differs from the approved version.',
@@ -292,7 +343,8 @@ export class TrustPolicy {
       );
     if (
       !compatibleArchitecture(metadata.architecture, this.architecture) ||
-      (plan.architecture &&
+      (!(repositoryPayload && metadata.format === 'exe') &&
+        plan.architecture &&
         !['any', 'unknown', 'neutral'].includes(plan.architecture) &&
         metadata.architecture &&
         !['any', 'unknown', 'neutral', plan.architecture].includes(metadata.architecture))

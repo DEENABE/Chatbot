@@ -286,6 +286,7 @@ chatRouter.post('/', requireAuth, async (request, response) => {
     });
     routing = await routeChatModel({
       userId,
+      requestedModel: model,
       computerRequest,
       hasAttachments,
       hasImages,
@@ -755,11 +756,9 @@ chatRouter.post('/', requireAuth, async (request, response) => {
           let emittedToolCall = false;
           const turnStartedAt = Date.now();
           let firstTokenAt = 0;
-          // Never let a stuck/slow model run forever: stop after CHAT_TIMEOUT_SECONDS
-          // (default 4 min) with a clear message instead of an endless spinner.
-          const limitSeconds = Number(process.env.CHAT_TIMEOUT_SECONDS || 240);
-          const timeoutSignal = AbortSignal.timeout(limitSeconds * 1000);
-          const generationSignal = AbortSignal.any([signal, timeoutSignal]);
+          // A slow model is allowed to finish. streamChat stops a stalled one (no output for
+          // CHAT_FIRST_TOKEN_TIMEOUT_SECONDS before the first token, CHAT_IDLE_TIMEOUT_SECONDS between tokens)
+          // with a clear message instead of an endless spinner; there is no limit on total generation time.
           const runChat = (withTools, chatMessages = messages) =>
             streamChat({
               model,
@@ -767,9 +766,9 @@ chatRouter.post('/', requireAuth, async (request, response) => {
               keepAlive,
               // The table above is already the answer; only a short sentence follows it.
               options: lookupPrefix ? { ...routing.options, num_predict: 200 } : routing.options,
-              ...(routing.capabilities.includes('thinking') ? { think: false } : {}),
+              ...(routing.capabilities.includes('thinking') ? { think: routing.thinking } : {}),
               tools: withTools ? tools : [],
-              signal: generationSignal,
+              signal,
               onToken: (text) => {
                 if (!firstTokenAt) {
                   firstTokenAt = Date.now();
@@ -861,18 +860,25 @@ chatRouter.post('/', requireAuth, async (request, response) => {
       /aborted due to timeout|timed? ?out/i.test(String(error?.message));
     send({
       type: 'error',
-      error: timedOut
-        ? `The model took longer than ${process.env.CHAT_TIMEOUT_SECONDS || 240}s and was stopped. Try a smaller/faster model, or ask a narrower question.`
-        : /Cannot reach Ollama|fetch failed/i.test(error?.message || '')
-          ? 'The local model service is unavailable. Start Ollama and try again.'
-          : /^Ollama \d/i.test(error?.message || '')
-            ? 'The local model could not complete this request. Choose another installed model in Settings or retry.'
-            : Number.isInteger(error?.status) ||
-                /^No installed|^The General route|^The authenticated desktop|^Execution blocked/i.test(
-                  error?.message || '',
-                )
-              ? error.message
-              : 'This response could not be completed. Try again or check Diagnostics.',
+      error:
+        error?.code === 'MODEL_STALLED'
+          ? error.message
+          : timedOut
+            ? 'The request timed out before the model could finish. Try again, or choose a smaller/faster model in Settings → Models.'
+            : /Cannot reach Ollama|fetch failed/i.test(error?.message || '')
+              ? 'The local model service is unavailable. Start Ollama and try again.'
+              : /^Ollama stream ended|^Ollama returned (?:invalid|incomplete|oversized)/i.test(
+                    error?.message || '',
+                  )
+                ? error.message
+                : /^Ollama \d/i.test(error?.message || '')
+                  ? 'The local model could not complete this request. Choose another installed model in Settings or retry.'
+                  : Number.isInteger(error?.status) ||
+                      /^No installed|^The General route|^The authenticated desktop|^Execution blocked/i.test(
+                        error?.message || '',
+                      )
+                    ? error.message
+                    : 'This response could not be completed. Try again or check Diagnostics.',
     });
   } finally {
     response.end();

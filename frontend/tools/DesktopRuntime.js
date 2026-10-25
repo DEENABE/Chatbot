@@ -57,3 +57,30 @@ export function helperScriptPath(name) {
   return target;
 }
 export const powerShellPath = () => desktopPaths().powershellPath;
+
+export function desktopHelperEnvironment() {
+  // PowerShell 7's inherited module directories can shadow Windows PowerShell
+  // modules and make native commands such as Get-FileHash fail to load.
+  return {
+    ...process.env,
+    PSModulePath: path.join(path.dirname(powerShellPath()), 'Modules'),
+  };
+}
+
+// Windows PowerShell can default to Restricted even when the parent shell uses
+// RemoteSigned. Scope the policy to our allowlisted local helper process; keep
+// downloaded-script signature checks and machine/user policy settings intact.
+export function desktopHelperArguments(name, { apartment, args = [] } = {}) {
+  if (apartment !== undefined && !['STA', 'MTA'].includes(apartment))
+    throw new Error('Unsupported desktop helper apartment.');
+  return [
+    '-NoProfile',
+    '-NonInteractive',
+    '-ExecutionPolicy',
+    'RemoteSigned',
+    ...(apartment ? [`-${apartment}`] : []),
+    '-File',
+    helperScriptPath(name),
+    ...args,
+  ];
+}

@@ -6,6 +6,7 @@ import {
   Brain,
   ChevronRight,
   Clock,
+  Code2,
   FileText,
   Folder,
   FolderOpen,
@@ -30,6 +31,7 @@ import { presets } from '../animations/presets.js';
 // what is shown and announced.
 const NAV_ITEMS = [
   { id: 'chat', label: 'Chat', title: 'Chat', icon: MessageSquare },
+  { id: 'coding', label: 'Code', title: 'Code', icon: Code2 },
   { id: 'workspace', label: 'Workspace', title: 'Workspace files', icon: FolderOpen },
   { id: 'history', label: 'History', title: 'History', icon: Clock },
   { id: 'settings', label: 'Settings', title: 'Settings', icon: Settings },
@@ -39,6 +41,7 @@ const NAV_ITEMS = [
 // sections of the Workspace page (stores/useNavStore.js WORKSPACE_TABS).
 const WORKSPACE_LINKS = [
   { id: 'files', label: 'Files', hint: 'Folders indexed for chat', icon: FolderOpen },
+  { id: 'coding', label: 'Coding', hint: 'Local coding tasks and project changes', icon: Code2 },
   { id: 'knowledge', label: 'Knowledge', hint: 'Documents every chat can use', icon: Library },
   { id: 'memories', label: 'Memories', hint: 'What Chanakya remembers', icon: Brain },
   { id: 'translator', label: 'Translator', hint: 'Offline translation', icon: Languages },

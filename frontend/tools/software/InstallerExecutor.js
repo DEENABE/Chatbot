@@ -7,7 +7,12 @@ import https from 'node:https';
 import crypto from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
 import { Transform } from 'node:stream';
-import { spawn, executionContext, checkCancellation } from '../ExecutionContext.js';
+import {
+  spawn,
+  executionContext,
+  checkCancellation,
+  reportExecutionProgress,
+} from '../ExecutionContext.js';
 import { powerShellPath } from '../DesktopRuntime.js';
 import {
   inspectInstaller,
@@ -17,12 +22,15 @@ import {
 import {
   TrustPolicy,
   normalizePublisher,
+  samePublisher,
   sameVersion,
   versionAtLeast,
   softwareFailure,
 } from './TrustPolicy.js';
 
-const LIMIT = 800 * 1024 * 1024;
+// Full application distributions can exceed 800 MiB. Keep header, stream, and
+// local-copy limits consistent while retaining a finite per-installer bound.
+const LIMIT = 2 * 1024 * 1024 * 1024;
 const PRIVATE_V4 =
   /^(?:0\.|10\.|127\.|169\.254\.|172\.(?:1[6-9]|2\d|3[01])\.|192\.168\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|192\.0\.(?:0|2)\.|198\.(?:1[89]|51\.100)\.|203\.0\.113\.|2(?:2[4-9]|[3-5]\d)\.)/;
 export const privateInstallerAddress = (address) => {
@@ -398,6 +406,7 @@ export class InstallerExecutor {
     return { plan, metadata };
   }
   async download(plan) {
+    reportExecutionProgress('downloading', `Downloading and checking ${plan.product.name}…`);
     checkCancellation();
     this.trust.assertPlan(plan);
     if (plan.protocol === 'handoff')
@@ -493,6 +502,7 @@ export class InstallerExecutor {
     }
   }
   async verify(plan, { before } = {}) {
+    reportExecutionProgress('verifying', `Checking the installed version of ${plan.product.name}…`);
     this.trust.assertPlan(plan);
     checkCancellation();
     let entries = [];
@@ -533,8 +543,9 @@ export class InstallerExecutor {
               entry.packageId || entry.packageIdentity || entry.packageFamilyName || entry.id || '',
             ).toLowerCase() === String(packageId).toLowerCase()
           : normalizeName(entry.productName || entry.name) === normalizeName(plan.product.name)) &&
-        normalizePublisher(entry.publisher || entry.manufacturer) ===
-          normalizePublisher(plan.product.publisher) &&
+        samePublisher(entry.publisher || entry.manufacturer, plan.product.publisher, {
+          allowLegalSuffix: plan.protocol === 'package-manager',
+        }) &&
         sameVersion(entry.version || entry.productVersion, plan.product.version) &&
         Boolean(entry.version || entry.productVersion || (!plan.product.version && packageId)),
     );
@@ -641,6 +652,7 @@ export class InstallerExecutor {
     }
     const started = this.now(),
       adapter = plan.protocol === 'package-manager' ? this.adapter(plan) : null;
+    reportExecutionProgress('installing', `Installing ${plan.product.name}…`);
     const r = adapter ? await adapter.execute(plan) : await this.run(plan);
     if (r.uncertain)
       return {

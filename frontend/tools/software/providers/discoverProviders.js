@@ -13,7 +13,8 @@ export async function runSourceProcess(executable, args, { timeout = 30_000 } = 
     let child,
       out = '',
       timedOut = false,
-      settled = false;
+      settled = false,
+      exitDrain;
     try {
       child = spawn(executable, args, {
         windowsHide: true,
@@ -32,6 +33,7 @@ export async function runSourceProcess(executable, args, { timeout = 30_000 } = 
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      clearTimeout(exitDrain);
       signal?.removeEventListener('abort', abort);
       if (failure) reject(failure);
       else resolve(result);
@@ -67,6 +69,16 @@ export async function runSourceProcess(executable, args, { timeout = 30_000 } = 
     };
     child.stdout.on('data', feed);
     child.stderr.on('data', feed);
+    // An installer descendant can retain the output handles after WinGet has
+    // exited. Drain its final output, then return its actual exit result.
+    child.once('exit', (code) => {
+      if (settled) return;
+      exitDrain = setTimeout(() => {
+        child.stdout.destroy();
+        child.stderr.destroy();
+        finish({ code, out, timedOut });
+      }, 100);
+    });
     child.once('error', (failure) =>
       finish(
         failure.code === 'ENOENT' ? { code: null, out: '', missing: true } : null,
@@ -268,6 +280,13 @@ export async function discoverDefaultProviders(options = {}) {
       message: failure.message,
     });
   }
+  if (!managers.some((manager) => manager.manager === 'winget') && !diagnostics.length)
+    diagnostics.push({
+      providerId: 'winget',
+      status: 'MANAGER_UNAVAILABLE',
+      message:
+        'Windows Package Manager was not found. Install or repair Microsoft App Installer, refresh providers, or choose a signed local installer.',
+    });
   for (const manager of managers.slice(0, 4)) {
     if (manager.manager !== 'winget') {
       diagnostics.push({

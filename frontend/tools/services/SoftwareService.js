@@ -2,7 +2,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { BaseToolService } from '../BaseToolService.js';
-import { executionContext, checkCancellation } from '../ExecutionContext.js';
+import {
+  executionContext,
+  checkCancellation,
+  reportExecutionProgress,
+} from '../ExecutionContext.js';
 import { SoftwarePlanStore, softwareOwner } from '../software/SoftwarePlanStore.js';
 import { SoftwareResolver } from '../software/SoftwareResolver.js';
 import {
@@ -316,12 +320,13 @@ export class SoftwareService extends BaseToolService {
         'NETWORK_APPROVAL_REQUIRED',
         'An online software lookup needs explicit user approval.',
       );
-    const { registry } = await this.environment(),
+    const { registry, diagnostics = [] } = await this.environment(),
       found = await registry.searchAll(query, {
         networkAllowed: online,
         signal: executionContext.getStore()?.signal,
         scope: scope(),
       });
+    const failures = [...diagnostics, ...(found.failures || [])];
     const ranked = this.resolver.rank(query, found.candidates),
       discoveryId = randomUUID();
     const handoffs = ranked.candidates
@@ -358,7 +363,7 @@ export class SoftwareService extends BaseToolService {
       requiresChoice: ranked.requiresChoice,
       selectedCandidateId,
       requiresOnline: !online && found.requiresOnline,
-      failures: found.failures || [],
+      failures,
       status: ranked.requiresChoice
         ? 'SOFTWARE_SELECTION_REQUIRED'
         : candidates.length
@@ -370,11 +375,20 @@ export class SoftwareService extends BaseToolService {
       success: true,
       ...data,
       message: candidates.length
-        ? ranked.requiresChoice
-          ? 'Several products or publishers match. Choose the exact identity.'
-          : 'Matching software sources were found. Installation still requires approval.'
+        ? candidates.every((candidate) => candidate.handoff)
+          ? this.handoffMessage(failures)
+          : ranked.requiresChoice
+            ? 'Several products or publishers match. Choose the exact identity.'
+            : 'Matching software sources were found. Installation still requires approval.'
         : `No verified offline${online ? ' or approved online' : ''} method was found.${data.requiresOnline ? ' Approve online discovery or add an approved source.' : ' Select a signed offline installer or register an authorized publisher repository.'}`,
     };
+  }
+  handoffMessage(failures = []) {
+    const reasons = failures
+      .slice(0, 3)
+      .map((failure) => `${failure.providerId}: ${failure.message || failure.status}`)
+      .join(' ');
+    return `No verified installation package was found in the available sources.${reasons ? ` ${reasons}` : ''} Search online installation sources, open the official page, or choose a signed local installer.`;
   }
   chooseCandidate(discoveryId, candidateId) {
     this.configured();
@@ -451,7 +465,7 @@ export class SoftwareService extends BaseToolService {
       plan: fields(plan),
       message:
         plan.protocol === 'handoff'
-          ? 'This registered source requires its official user-assisted workflow. No installer was executed.'
+          ? this.handoffMessage(discovery.failures)
           : 'A validated product-specific plan is ready for review.',
     };
   }
@@ -495,6 +509,7 @@ export class SoftwareService extends BaseToolService {
     }
   }
   async perform(action, planId) {
+    reportExecutionProgress('preparing', 'Checking the approved software plan…');
     const plan = this.activePlan(planId);
     this.assertRegisteredSource(plan);
     const { executor } = await this.environment();
@@ -805,7 +820,17 @@ export class SoftwareService extends BaseToolService {
           'DOWNLOAD_ONLY_PLAN',
           'This plan authorizes a download only. Request a new installation plan.',
         );
-      details = { ...fields(plan), operation: action, requestedOperation: plan.operation };
+      details = {
+        ...fields(plan),
+        operation: action,
+        requestedOperation: plan.operation,
+        executionMode:
+          action !== 'install'
+            ? 'Download only; the installer will not run'
+            : plan.protocol === 'package-manager'
+              ? 'Automatic installation; Windows may ask for administrator approval'
+              : 'Publisher installer; it may require your input',
+      };
       digest = planDigest(plan);
     } else if (action === 'discoverOnline') {
       const query = sanitizeSoftwareQuery(params.query);

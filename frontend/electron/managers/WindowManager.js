@@ -1,7 +1,7 @@
 import { BrowserWindow, screen, shell } from 'electron';
 import path from 'path';
 import { getPreloadPath, isPacked, rootDir } from '../utils/pathHelper.js';
-import { getBackendApiBaseUrl } from '../utils/runtimeEndpoint.js';
+import { getBackendApiBaseUrl, getApiClientKey } from '../utils/runtimeEndpoint.js';
 import {
   BUBBLE_SIZE,
   CHAT_WIDTH,
@@ -49,7 +49,10 @@ export function createWindow() {
       nodeIntegration: false,
       sandbox: true,
       preload: getPreloadPath(),
-      additionalArguments: [`--chanakya-api-base=${getBackendApiBaseUrl()}`],
+      additionalArguments: [
+        `--chanakya-api-base=${getBackendApiBaseUrl()}`,
+        `--chanakya-api-client=${getApiClientKey()}`,
+      ],
     },
   });
 

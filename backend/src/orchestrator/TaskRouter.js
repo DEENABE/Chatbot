@@ -17,6 +17,7 @@
 import { computerTask, compoundAppTask } from './ComputerTaskPolicy.js';
 import { genericDesktopTask } from './GenericDesktopTask.js';
 import { completeJSON, DEFAULT_MODEL } from '../ai/llmClient.js';
+import { codingTask } from '../coding/CodingTaskRouter.js';
 
 // ---------------------------------------------------------------------------
 // Milestone 1 task definitions
@@ -60,8 +61,10 @@ const SIMPLE_OVERRIDES = [
  * @param {string} task
  * @returns {{ mode: 'simple'|'agentic', taskType: TaskType, confidence: number, via: 'keyword'|'llm' }}
  */
-function keywordRoute(task) {
+function keywordRoute(task, { workspaceId } = {}) {
   const text = String(task || '').trim();
+  const coding = codingTask(text, { workspaceId });
+  if (coding) return coding;
   if (computerTask(text)?.software)
     return { mode: 'agentic', taskType: 'software_management', confidence: 1, via: 'keyword' };
   if (computerTask(text)?.call?.tool === 'app')
@@ -140,9 +143,9 @@ Reply with JSON only: {"mode": "simple"|"agentic", "taskType": "open_application
  * @param {AbortSignal} [opts.signal]
  * @returns {Promise<{ mode: 'simple'|'agentic', taskType: TaskType, confidence: number, via: 'keyword'|'llm' }>}
  */
-export async function routeTask(task, { model = DEFAULT_MODEL, signal } = {}) {
+export async function routeTask(task, { model = DEFAULT_MODEL, signal, workspaceId } = {}) {
   // Fast keyword pass.
-  const quick = keywordRoute(task);
+  const quick = keywordRoute(task, { workspaceId });
   if (quick) return quick;
 
   // LLM fallback for ambiguous tasks.

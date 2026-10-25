@@ -1,15 +1,27 @@
-import React from 'react';
-import { Activity, Brain, FolderOpen, Info, Languages, Library, ShieldCheck } from 'lucide-react';
+import React, { Suspense } from 'react';
+import {
+  Activity,
+  Brain,
+  Code2,
+  FolderOpen,
+  Info,
+  Languages,
+  Library,
+  ShieldCheck,
+} from 'lucide-react';
 import { useAppStore } from '../stores/useAppStore.js';
 import { useNavStore } from '../stores/useNavStore.js';
 import ChatArea from '../chat/ChatArea.jsx';
 import DiagnosticLog from '../settings/DiagnosticLog.jsx';
+
+const CodingPanel = React.lazy(() => import('../coding/CodingPanel.jsx'));
 
 // Everything that is "about your stuff" rather than "the conversation" lives
 // here: local folders, saved knowledge, memories, the translator, app
 // permissions and diagnostics. `panel` is the ChatArea view that renders it.
 const SECTIONS = [
   { id: 'files', label: 'Files', icon: FolderOpen, panel: 'workspace' },
+  { id: 'coding', label: 'Coding', icon: Code2 },
   { id: 'knowledge', label: 'Knowledge', icon: Library, panel: 'documents' },
   { id: 'memories', label: 'Memories', icon: Brain, panel: 'memories' },
   { id: 'translator', label: 'Translator', icon: Languages, panel: 'translator' },
@@ -68,7 +80,11 @@ export default function WorkspaceHub() {
             </span>
           </div>
         )}
-        {section.id === 'diagnostics' ? (
+        {section.id === 'coding' ? (
+          <Suspense fallback={<p className="p-4 text-xs text-stone-400">Loading Coding Agent…</p>}>
+            <CodingPanel />
+          </Suspense>
+        ) : section.id === 'diagnostics' ? (
           <div className="min-h-0 flex-1 overflow-y-auto">
             <ChatArea activeTab="diagnostics" />
             <DiagnosticLog />

@@ -40,6 +40,7 @@ export default function ConfirmationModal() {
               Version: currentConf.approvalDetails.software.version || 'Unknown',
               Edition: currentConf.approvalDetails.software.edition || 'Not specified',
               Action: currentConf.approvalDetails.software.operation,
+              'Install mode': currentConf.approvalDetails.software.executionMode,
               Source: currentConf.approvalDetails.software.source,
               Architecture: currentConf.approvalDetails.software.architecture || 'Not specified',
               'Download size': currentConf.approvalDetails.software.size

@@ -3,13 +3,22 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { parseWingetTable, classifyInstall } from '../../services/WingetService.js';
-import { checkCancellation } from '../../ExecutionContext.js';
+import { checkCancellation, reportExecutionProgress } from '../../ExecutionContext.js';
 import { downloadTrustedInstaller } from '../InstallerExecutor.js';
 import { inspectInstaller } from '../InstallerMetadata.js';
-import { TrustPolicy } from '../TrustPolicy.js';
+import { TrustPolicy, samePublisher, sameVersion } from '../TrustPolicy.js';
+import { identityScore } from '../SoftwareResolver.js';
 import { error, normalizeIdentity, safeHttpsUrl, validateInstallerPlan } from '../contracts.js';
 
 const PACKAGE_ID = /^[A-Za-z0-9][A-Za-z0-9._+-]{1,127}$/;
+const effectiveArchitecture = (query) =>
+  ['x64', 'x86', 'arm64'].includes(query?.architecture)
+    ? query.architecture
+    : process.arch === 'arm64'
+      ? 'arm64'
+      : process.arch === 'ia32'
+        ? 'x86'
+        : 'x64';
 const sourceArgs = (name) => [
   '--source',
   name,
@@ -109,8 +118,9 @@ export class WingetProvider {
     if (!PACKAGE_ID.test(id)) throw error('INVALID_PACKAGE_ID', 'Invalid exact package identity.');
     const args = ['show', '--id', id, '--exact', ...sourceArgs(this.source.Name)];
     if (query.version) args.push('--version', query.version);
-    if (query.architecture && query.architecture !== 'auto')
-      args.push('--architecture', query.architecture);
+    // Select the same architecture during discovery that the pinned install uses.
+    // Console metadata may omit Architecture even when its default payload is x86.
+    args.push('--architecture', effectiveArchitecture(query));
     const result = await this.run(this.executable, args, { timeout: 30_000 });
     if (result.missing || result.timedOut || result.code !== 0)
       throw error(
@@ -153,13 +163,7 @@ export class WingetProvider {
       ? identity.architecture === 'neutral'
         ? 'any'
         : identity.architecture
-      : query.architecture && query.architecture !== 'auto'
-        ? query.architecture
-        : process.arch === 'arm64'
-          ? 'arm64'
-          : process.arch === 'ia32'
-            ? 'x86'
-            : 'x64';
+      : effectiveArchitecture(query);
     if (
       this.authorization &&
       !this.authorization.publishers.some(
@@ -222,25 +226,53 @@ export class WingetProvider {
   async search(query) {
     checkCancellation();
     if (query.scope === 'operating-system') return [];
-    const result = await this.run(
-      this.executable,
-      ['search', '--query', query.product, ...sourceArgs(this.source.Name), '--count', '15'],
-      { timeout: 35_000 },
-    );
-    if (result.missing || result.timedOut)
-      throw error(
-        result.missing ? 'MANAGER_UNAVAILABLE' : 'SOURCE_TIMEOUT',
-        'This package manager is unavailable or its repository timed out.',
+    const search = async (text) => {
+      checkCancellation();
+      const result = await this.run(
+        this.executable,
+        ['search', '--query', text, ...sourceArgs(this.source.Name), '--count', '15'],
+        { timeout: 35_000 },
       );
-    const rows = parseWingetTable(result.out).slice(0, 8);
-    if (result.code !== 0 && !rows.length)
-      throw error(
-        'SOURCE_SEARCH_FAILED',
-        'The repository search failed or requires user authentication. Try another approved source or the Store interface.',
-      );
+      checkCancellation();
+      if (result.missing || result.timedOut)
+        throw error(
+          result.missing ? 'MANAGER_UNAVAILABLE' : 'SOURCE_TIMEOUT',
+          'This package manager is unavailable or its repository timed out.',
+        );
+      const rows = parseWingetTable(result.out).slice(0, 15);
+      // No matching packages is a normal search result, not a source/authentication failure.
+      if (result.code !== 0 && !rows.length && result.code >>> 0 !== 0x8a150014)
+        throw error(
+          'SOURCE_SEARCH_FAILED',
+          'The repository search failed or requires user authentication. Try another approved source or the Store interface.',
+        );
+      return rows;
+    };
+    const rows = await search(query.product);
+    if (!rows.some((row) => identityScore(query, row) >= 45)) {
+      // WinGet searches substrings. Requested words may be separated by extra words
+      // in a catalog title, so search a bounded set of query tokens as well. IDs
+      // still come only from this repository; the full query ranks their identities.
+      const tokens = [...new Set(normalizeIdentity(query.product).split(' ').filter(Boolean))]
+        .filter((token) => token !== normalizeIdentity(query.product) && token.length >= 2)
+        .sort((a, b) => b.length - a.length)
+        .slice(0, 3);
+      for (const token of tokens) rows.push(...(await search(token)));
+    }
+    const seen = new Set();
+    const relevant = rows
+      .filter((row) => {
+        const id = row.id.toLowerCase();
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return identityScore(query, row) >= 45;
+      })
+      .sort((a, b) => identityScore(query, b) - identityScore(query, a))
+      .slice(0, 8);
     const candidates = [],
       failures = [];
-    for (const row of rows) {
+    for (const row of relevant) {
+      checkCancellation();
       try {
         const identity = await this.show(row.id, query),
           resolvedPlan = this.plan(identity, query);
@@ -254,6 +286,7 @@ export class WingetProvider {
           resolvedPlan,
         });
       } catch (failure) {
+        checkCancellation();
         if (failure.name === 'AbortError') throw failure;
         failures.push(failure);
       }
@@ -266,7 +299,7 @@ export class WingetProvider {
       throw error('ONLINE_RESOLUTION_REQUIRED', 'Repeat an approved manager lookup.');
     return candidate.resolvedPlan;
   }
-  async prepare(plan) {
+  assertSource(plan) {
     if (
       plan.source.providerId !== this.id ||
       plan.installer.manager !== this.id ||
@@ -278,6 +311,9 @@ export class WingetProvider {
         'PACKAGE_SOURCE_CHANGED',
         'The package source differs from the approved repository.',
       );
+  }
+  async prepare(plan) {
+    this.assertSource(plan);
     const refreshed = this.plan(
       await this.show(plan.product.id, {
         operation: plan.operation,
@@ -302,6 +338,7 @@ export class WingetProvider {
     return { ...refreshed.product, sha256: refreshed.installer.sha256, source: this.source.Name };
   }
   async download(plan) {
+    reportExecutionProgress('downloading', `Downloading and checking ${plan.product.name}…`);
     await this.prepare(plan);
     const payload = {
         ...structuredClone(plan),
@@ -312,7 +349,7 @@ export class WingetProvider {
     try {
       const received = await this.downloadFile(payload, directory, { trust });
       const metadata = await this.inspect(received.file || received.path, payload.installer.format);
-      trust.verifyInstaller(payload, metadata);
+      trust.verifyRepositoryInstaller(payload, metadata);
       if (metadata.inspectionIncomplete || metadata.dependencies?.length)
         throw error(
           'PACKAGE_INSPECTION_INCOMPLETE',
@@ -358,7 +395,7 @@ export class WingetProvider {
         ...plan,
         installer: { ...plan.installer, format: plan.installer.payloadFormat },
       };
-      new TrustPolicy().verifyInstaller(
+      new TrustPolicy().verifyRepositoryInstaller(
         payload,
         await this.inspect(plan.installer.path, plan.installer.payloadFormat),
       );
@@ -375,10 +412,14 @@ export class WingetProvider {
       plan.product.version,
       '--architecture',
       plan.architecture,
-      '--interactive',
+      '--silent',
       ...sourceArgs(this.source.Name),
     ];
     if (plan.operation === 'reinstall') args.push('--force');
+    reportExecutionProgress(
+      'installing',
+      `Installing ${plan.product.name}; approve a Windows administrator prompt if shown…`,
+    );
     const result = await this.run(this.executable, args, { timeout: 20 * 60_000 });
     const outcome = classifyInstall({ ...result, text: result.out });
     return {
@@ -389,35 +430,29 @@ export class WingetProvider {
     };
   }
   async inventory(plan) {
+    this.assertSource(plan);
     const result = await this.run(
       this.executable,
-      [
-        'list',
-        '--id',
-        plan.product.id,
-        '--exact',
-        '--disable-interactivity',
-        '--accept-source-agreements',
-      ],
+      ['list', '--id', plan.product.id, '--exact', ...sourceArgs(plan.installer.source)],
       { timeout: 40_000 },
     );
     if (result.code !== 0 || result.missing || result.timedOut) return [];
     const rows = parseWingetTable(result.out).filter(
       (item) =>
         item.id.toLowerCase() === plan.product.id.toLowerCase() &&
-        item.version === plan.product.version,
+        sameVersion(item.version, plan.product.version),
     );
     if (!rows.length || typeof this.installedInventory !== 'function') return [];
     const installed = await this.installedInventory(plan);
     return rows.flatMap((row) =>
-      (Array.isArray(installed) ? installed : installed?.apps || [])
+      (Array.isArray(installed) ? installed : installed?.entries || installed?.apps || [])
         .filter(
           (entry) =>
-            normalizeIdentity(entry.productName || entry.name) ===
-              normalizeIdentity(plan.product.name) &&
-            normalizeIdentity(entry.publisher || entry.manufacturer) ===
-              normalizeIdentity(plan.product.publisher) &&
-            entry.version === plan.product.version,
+            normalizeIdentity(entry.productName || entry.name) === normalizeIdentity(row.name) &&
+            samePublisher(entry.publisher || entry.manufacturer, plan.product.publisher, {
+              allowLegalSuffix: true,
+            }) &&
+            sameVersion(entry.version, plan.product.version),
         )
         .map((entry) => ({ ...entry, packageId: row.id })),
     );

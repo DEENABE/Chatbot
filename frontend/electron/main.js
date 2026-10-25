@@ -50,7 +50,12 @@ if (!gotSingleInstanceLock) {
     // never intended to load (see the navigation guards in WindowManager.js)
     // could still silently receive mic/camera access just by asking.
     session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
-      const isOwnPage = webContents.getURL().startsWith('file://');
+      const ownWindow = WindowManager.getMainWindow();
+      const isOwnPage =
+        ownWindow &&
+        !ownWindow.isDestroyed() &&
+        ownWindow.webContents === webContents &&
+        webContents.getURL().startsWith('file://');
       callback(isOwnPage && permission === 'media');
     });
 

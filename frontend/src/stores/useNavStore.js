@@ -7,9 +7,10 @@
 // Chat so a demo or a fresh start never lands on a settings page.
 import { create } from 'zustand';
 
-export const NAV_TABS = ['chat', 'workspace', 'history', 'settings'];
+export const NAV_TABS = ['chat', 'coding', 'workspace', 'history', 'settings'];
 export const WORKSPACE_TABS = [
   'files',
+  'coding',
   'knowledge',
   'memories',
   'translator',

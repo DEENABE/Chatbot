@@ -7,6 +7,7 @@ import {
 } from '../services/chatExecution.js';
 import { appChoiceEntry, resumeWithChoice, matchTypedAppChoice } from '../services/appChoice.js';
 import * as apiService from '../services/api.js';
+import { repairTask } from '../../../backend/src/orchestrator/RepairTask.js';
 import { validateAttachment, MAX_ATTACHMENTS, shouldLoadChatTools } from '../utils/attachments.js';
 
 import { mapToolsToOllamaSchema } from '../services/toolSchemas.js';
@@ -1093,7 +1094,7 @@ export const useAppStore = create((set, get) => ({
   isGenerating: false,
   activeSources: [],
 
-  _streamAutoRepair: async (goal, chatId, abortController) => {
+  _streamAutoRepair: async (goal, chatId, abortController, userMessageId) => {
     const assistantMsg = {
       id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2),
       chatId,
@@ -1110,7 +1111,7 @@ export const useAppStore = create((set, get) => ({
 
     try {
       await apiService.streamRepair(
-        { goal, model: get().selectedModelId, conversationId: chatId },
+        { goal, conversationId: chatId, userMessageId },
         {
           signal: abortController.signal,
           onEvent: (event) => {
@@ -1154,9 +1155,9 @@ export const useAppStore = create((set, get) => ({
                   break;
                 }
                 append(
-                  `\n\n### ${p.resolved ? '✅ Resolved' : '⚠️ Not fully resolved'}\n${p.answer}\n${p.recommendation ? `\n**👉 Recommendation:** ${p.recommendation}\n` : ''}`,
+                  `\n\n### ${p.resolved ? '✅ Resolved' : p.scope === 'diagnostics_only' && p.success ? 'Diagnostics completed' : '⚠️ Not fully resolved'}\n${p.answer || p.summary || 'The result could not be verified.'}\n${p.recommendation ? `\n**👉 Recommendation:** ${p.recommendation}\n` : ''}`,
                 );
-                if (p.sessionId)
+                if (p.sessionId && p.scope !== 'diagnostics_only')
                   set({
                     pendingRepairFeedback: { sessionId: p.sessionId, chatId },
                   });
@@ -1265,12 +1266,8 @@ export const useAppStore = create((set, get) => ({
     let needsHistorySync = false;
 
     // Auto-Repair mode: run the autonomous diagnose-and-fix agent instead of chat.
-    if (
-      (get().autoRepairMode || /\b(spooler|printer|printing|print service)\b/i.test(content)) &&
-      !continuation &&
-      !attachments.length
-    ) {
-      await get()._streamAutoRepair(content, chatId, chatAbortController);
+    if ((get().autoRepairMode || repairTask(content)) && !continuation && !attachments.length) {
+      await get()._streamAutoRepair(content, chatId, chatAbortController, tempUserMessage.id);
       get()._endRun(chatId, chatAbortController);
       return;
     }
@@ -1354,7 +1351,8 @@ export const useAppStore = create((set, get) => ({
             message: execution.state.task, // Preserve the original goal on continuation.
             history: chatHistory,
             tools: ollamaTools,
-            model: get().selectedModelId,
+            // Model routes are configured in Settings. The first tag from /models is not a user pin.
+            model: null,
             conversationId: chatId,
             workspaceId: get().activeWorkspaceId,
             userMessageId: execution.userMessageId,
@@ -1838,12 +1836,17 @@ export const useAppStore = create((set, get) => ({
 
   // Performance dashboard
   metrics: {
-    cpu: 0,
-    ram: 0,
-    gpu: 0,
-    temperature: 0,
-    disk: 0,
-    electronMemory: 0,
+    cpu: null,
+    ram: null,
+    gpu: null,
+    temperature: null,
+    disk: null,
+    electronMemory: null,
+    backendMemoryBytes: null,
+    diskRoot: '',
+    hardware: null,
+    acceleration: null,
+    gpuUnavailableReason: 'GPU utilization is not measured.',
     tokensPerSec: 0,
     latency: 0,
   },
@@ -1859,9 +1862,27 @@ export const useAppStore = create((set, get) => ({
           temperature: response.data.temperature,
           disk: response.data.disk,
           electronMemory: response.data.electronMemory,
+          backendMemoryBytes: response.data.backendMemoryBytes,
+          diskRoot: response.data.diskRoot || '',
+          hardware: response.data.hardware || null,
+          acceleration: response.data.acceleration || null,
+          gpuUnavailableReason:
+            response.data.gpuUnavailableReason || 'GPU utilization is not measured.',
         },
       }));
     } catch (err) {
+      set((state) => ({
+        metrics: {
+          ...state.metrics,
+          cpu: null,
+          ram: null,
+          gpu: null,
+          temperature: null,
+          disk: null,
+          electronMemory: null,
+          backendMemoryBytes: null,
+        },
+      }));
       console.warn('Failed to poll stats:', err);
     }
   },

@@ -100,6 +100,17 @@ function singleSoftwareDecision({
       : !found.requiresChoice
         ? found.selectedCandidateId
         : null;
+    if (
+      !humanChoice &&
+      last.toolName === 'software_discover' &&
+      found.requiresOnline === true &&
+      !candidates.some((candidate) => !candidate.handoff)
+    )
+      return call(
+        'discoverOnline',
+        { query: admission.query },
+        'Requesting approval to search eligible online installation sources',
+      );
     if (handle(selected) && candidates.some((candidate) => candidate.candidateId === selected))
       return call('resolve', { candidateId: selected }, 'Resolving a validated installation plan');
     if (found.requiresChoice || candidates.length > 1)

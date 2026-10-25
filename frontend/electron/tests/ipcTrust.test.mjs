@@ -40,7 +40,13 @@ app.whenReady().then(async () => {
   });
 
   check("the tracked window's own webContents is recognized as trusted", () => {
-    assert.equal(isTrustedSender({ sender: trustedWindow.webContents }), true);
+    assert.equal(
+      isTrustedSender({
+        sender: trustedWindow.webContents,
+        senderFrame: trustedWindow.webContents.mainFrame,
+      }),
+      true,
+    );
   });
 
   check("a second, real but untracked window's webContents is not trusted", () => {
@@ -52,7 +58,10 @@ app.whenReady().then(async () => {
       ran: true,
       sender: event.sender,
     }));
-    const result = handler({ sender: trustedWindow.webContents });
+    const result = handler({
+      sender: trustedWindow.webContents,
+      senderFrame: trustedWindow.webContents.mainFrame,
+    });
     assert.equal(result.ran, true);
   });
 
@@ -70,6 +79,11 @@ app.whenReady().then(async () => {
     );
     assert.equal(result.success, false);
     assert.equal(result.error.code, 'UNTRUSTED_SENDER');
+  });
+
+  check('subframes and missing frame identities never gain the main window IPC authority', () => {
+    assert.equal(isTrustedSender({ sender: trustedWindow.webContents, senderFrame: {} }), false);
+    assert.equal(isTrustedSender({ sender: trustedWindow.webContents }), false);
   });
 
   check('a destroyed tracked window is never treated as trusted', () => {

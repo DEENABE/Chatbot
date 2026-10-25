@@ -3,16 +3,25 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const frontend = path.resolve(__dirname, '..');
-const releaseOutput = require('./release-output.cjs').resolveReleaseOutput(
-  frontend,
-  process.argv.slice(2),
+let preflight;
+try {
+  preflight = require('./build-preflight.cjs').checkBuildRequirements(
+    frontend,
+    process.argv.slice(2),
+  );
+} catch (error) {
+  console.error('[build] ' + error.message);
+  process.exit(1);
+}
+const { output: releaseOutput, root } = preflight;
+console.log(
+  `[build] Preflight passed: Node ${preflight.nodeVersion}, Electron ${preflight.electronVersion}, isolated native dependencies ready.`,
 );
-const root = path.dirname(frontend);
-const config = require('../package.json');
-const electronPackage = require(path.join(root, 'node_modules', 'electron', 'package.json'));
-if (config.build.electronVersion !== electronPackage.version)
-  throw new Error('Installed Electron differs from the pinned build version');
-const electron = path.join(root, 'node_modules', 'electron', 'dist', 'electron.exe');
+console.log('[build] GPU and Ollama are not required to build the installer.');
+if (preflight.check) {
+  console.log('[build] Check completed; no source copies or installer build were performed.');
+  process.exit(0);
+}
 const env = {
   ...process.env,
   CHANAKYA_CLEAN_PACKAGE: '1',
@@ -37,18 +46,9 @@ if (fs.existsSync(outDir) && fs.readdirSync(outDir).length)
   );
 
 run(process.execPath, [path.join(__dirname, 'prepare-backend.cjs')]);
-const runtime = path.join(frontend, 'backend-runtime', 'package.json');
-run(
-  electron,
-  [
-    '-e',
-    `const r=require('node:module').createRequire(${JSON.stringify(runtime)});const Database=r('better-sqlite3');const db=new Database(':memory:');db.close();r('@lancedb/lancedb');console.log('Packaged backend native dependencies passed');`,
-  ],
-  { env: { ...env, ELECTRON_RUN_AS_NODE: '1' } },
-);
-run(process.execPath, [path.join(root, 'node_modules', 'vite', 'bin', 'vite.js'), 'build']);
+run(process.execPath, [preflight.vite, 'build']);
 run(process.execPath, [
-  path.join(root, 'node_modules', 'electron-builder', 'cli.js'),
+  preflight.builder,
   '--win',
   '--publish=never',
   '--config.directories.output=' + releaseOutput.name,

@@ -21,6 +21,7 @@
 import { config } from '../config.js';
 import { LANGUAGES } from './languageRegistry.js';
 import { resolveGeneralModel } from './modelRouter.js';
+import { fetchInference } from './inferenceTransport.js';
 
 function buildInstruction(targetLanguage) {
   const languageName = LANGUAGES[targetLanguage]?.label || targetLanguage;
@@ -61,8 +62,9 @@ export async function postProcessTranslation({ text, targetLanguage, userId = nu
     options: { temperature: 0, num_ctx: 8192 },
   };
 
-  const response = await fetch(`${config.ollamaUrl}/api/chat`, {
+  const response = await fetchInference(`${config.ollamaUrl}/api/chat`, {
     method: 'POST',
+    redirect: 'error',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(config.translate.postProcessingTimeoutMs),

@@ -43,7 +43,7 @@ User question ──► similarity search ──► cited context ──► Olla
    ollama pull llama3
    ```
 
-   Other supported chat models are `mistral`, `qwen3`, `deepseek-r1`, and `gemma3`.
+   Models are discovered from the local Ollama installation. Choose General and Windows Agent models in Settings → Models; computer actions require a model that declares tool support.
 
 ## Install and run
 
@@ -54,6 +54,12 @@ npm run dev
 ```
 
 Open `http://localhost:5173`. The local API listens only on `127.0.0.1:3001` and Vite proxies `/api` during development.
+
+## Coding workspace
+
+Open **Code** in the sidebar or use the **Chat / Code** switch in the header. Connect an existing project folder, choose an installed model with tool support, and authorize workspace changes. Describe a task in the conversation; follow-up messages retain the previous task context. The adjacent panel provides a file explorer, source code, recorded diffs, action results, validation results and checkpoints. Narrow windows switch between the conversation and code using the **Chat / Code** tabs.
+
+Failed tasks display the error and a **Retry task** action. Configuration changes and checkpoint restores retain their separate approvals. Project command execution still requires a verified confinement provider; use your terminal for dependency installation, builds and tests when the runtime reports that execution is unavailable. A completed file edit does not claim that a build or test passed.
 
 ## Production build
 
@@ -104,15 +110,15 @@ For a stricter deployment, limit filesystem permissions on `backend/storage`, us
 
 Copy `.env.example` to `.env` and adjust:
 
-| Variable           | Default                  |
-| ------------------ | ------------------------ |
-| `PORT`             | `3001`                   |
-| `OLLAMA_URL`       | `http://127.0.0.1:11434` |
-| `DEFAULT_MODEL`    | `llama3`                 |
-| `EMBEDDING_MODEL`  | `nomic-embed-text`       |
-| `MAX_FILE_SIZE_MB` | `25`                     |
-| `RAG_TOP_K`        | `5`                      |
-| `FRONTEND_ORIGIN`  | `http://localhost:5173`  |
+| Variable           | Default                                      |
+| ------------------ | -------------------------------------------- |
+| `PORT`             | `3001`                                       |
+| `OLLAMA_URL`       | `http://127.0.0.1:11434`                     |
+| `DEFAULT_MODEL`    | empty; choose an installed model in Settings |
+| `EMBEDDING_MODEL`  | `nomic-embed-text`                           |
+| `MAX_FILE_SIZE_MB` | `25`                                         |
+| `RAG_TOP_K`        | `5`                                          |
+| `FRONTEND_ORIGIN`  | `http://localhost:5173`                      |
 
 ## Translator (IndicTrans2)
 
@@ -167,3 +173,5 @@ npm run electron:release -w frontend
 ```
 
 The release command reuses the existing isolated offline backend dependencies and creates a fresh timestamped release-desktop output. It refuses to overwrite older release files or package user storage. Installed mutable data lives under Electron userData/backend-data, with copy-only legacy migration. No model/dependency download is implicit.
+
+The 24 October reliability and security fixes, verification results, and repair capability limits are documented in [REPAIR_REPORT.md](REPAIR_REPORT.md). Thinking is enabled by default for capable models and can be changed in Settings → Models. Installed desktop requests now also carry an independent per-launch client key.

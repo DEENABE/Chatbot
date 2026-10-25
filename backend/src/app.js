@@ -11,6 +11,7 @@ import { historyRouter } from './routes/history.js';
 import { transcribeRouter } from './routes/transcribe.js';
 import { documentsRouter } from './routes/documents.js';
 import { workspaceRouter } from './routes/workspaces.js';
+import { codingRouter } from './routes/coding.js';
 import { authRouter } from './routes/auth.js';
 import { memoryRouter } from './routes/memory.js';
 import { statsRouter } from './routes/stats.js';
@@ -19,6 +20,11 @@ import { repairRouter } from './routes/repair.js';
 import { orchestrateRouter } from './routes/orchestrate.js';
 import { translateRouter } from './routes/translate.js';
 import { askLimiter } from './middleware/rateLimiter.js';
+import {
+  isAllowedLocalOrigin,
+  isLoopbackHost,
+  hasDesktopClientKey,
+} from './middleware/localOrigin.js';
 
 export const app = express();
 app.disable('x-powered-by');
@@ -29,6 +35,14 @@ app.disable('x-powered-by');
 // tied to one server-side log line without needing to log anything sensitive
 // about the request itself.
 app.use((request, response, next) => {
+  if (
+    request.path.startsWith('/api/') &&
+    request.headers.origin === 'null' &&
+    process.env.CHANAKYA_DESKTOP_CHILD === '1' &&
+    request.method !== 'OPTIONS' &&
+    !hasDesktopClientKey(request.headers['x-chanakya-client'], process.env.CHANAKYA_CLIENT_SECRET)
+  )
+    return response.status(403).json({ error: 'Desktop API client authentication required.' });
   request.id = randomUUID();
   response.setHeader('X-Request-Id', request.id);
   next();
@@ -78,24 +92,25 @@ app.use(
   }),
 );
 
+app.use((request, response, next) => {
+  if (
+    !isLoopbackHost(request.headers.host) ||
+    !isAllowedLocalOrigin(request.headers.origin, {
+      frontendOrigin: config.frontendOrigin,
+      desktop: process.env.CHANAKYA_DESKTOP_CHILD === '1',
+      localPort: request.socket.localPort,
+    })
+  )
+    return response
+      .status(403)
+      .json({ error: 'This browser origin is not allowed to access the local API.' });
+  next();
+});
+
 app.use(
   cors({
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-      // A file://-loaded page (the packaged Electron renderer, always —
-      // `loadFile()` is the only load path this app has) is an opaque
-      // origin per RFC 6454 §6.2, and browsers serialize that as the
-      // literal string "null" in the Origin header — NOT "file://...".
-      // `origin.startsWith('file://')` never matches anything a real
-      // browser sends; confirmed empirically (a preflight from the real
-      // packaged app got no Access-Control-Allow-Origin header at all,
-      // silently blocking every request before it reached the server).
-      const allowed =
-        /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
-        origin === 'null' ||
-        origin.startsWith('file://');
-      callback(null, allowed);
-    },
+    // The middleware above rejects disallowed origins before any API handler runs.
+    origin: true,
     credentials: true,
   }),
 );
@@ -115,6 +130,7 @@ app.use('/api/history', historyRouter);
 app.use('/api/transcribe', transcribeRouter);
 app.use('/api/documents', documentsRouter);
 app.use('/api/workspaces', workspaceRouter);
+app.use('/api/coding', askLimiter, codingRouter);
 app.use('/api/memory', memoryRouter);
 app.use('/api/stats', statsRouter);
 app.use('/api/agent', askLimiter, agentRouter);

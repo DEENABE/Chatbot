@@ -256,7 +256,7 @@ export function describeAssignments(preferences, models) {
  * agent's recommended family AND declares what the agent needs; when it is false the agent uses the best installed
  * model instead, and nothing is downloaded.
  */
-export function describeAgents(preferences, models) {
+export function describeAgents(preferences, models, hardware) {
   return Object.values(AGENT_PROFILES).map((profile) => {
     const assignments = profile.routes.map((route) => {
       try {
@@ -264,6 +264,7 @@ export function describeAgents(preferences, models) {
           models,
           preferences: preferences || undefined,
           agentId: profile.id,
+          hardware,
           ...(route === 'windows' ? { computerRequest: { requiresTools: true } } : {}),
         });
         return {

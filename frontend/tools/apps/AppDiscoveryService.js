@@ -1,4 +1,8 @@
-import { helperScriptPath, powerShellPath } from '../DesktopRuntime.js';
+import {
+  desktopHelperArguments,
+  desktopHelperEnvironment,
+  powerShellPath,
+} from '../DesktopRuntime.js';
 import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -166,15 +170,12 @@ export class AppDiscoveryService {
       raw = await new Promise((resolve, reject) =>
         execFile(
           powerShellPath(),
-          [
-            '-NoProfile',
-            '-NonInteractive',
-            '-File',
-            helperScriptPath('DiscoverApps.ps1'),
-            ...(query ? ['-Query', query] : []),
-          ],
+          desktopHelperArguments('DiscoverApps.ps1', {
+            args: query ? ['-Query', query] : [],
+          }),
           {
             windowsHide: true,
+            env: desktopHelperEnvironment(),
             timeout: 40000,
             maxBuffer: 8 * 1024 * 1024,
             encoding: 'utf8',

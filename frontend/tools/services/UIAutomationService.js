@@ -1,4 +1,8 @@
-import { helperScriptPath, powerShellPath } from '../DesktopRuntime.js';
+import {
+  desktopHelperArguments,
+  desktopHelperEnvironment,
+  powerShellPath,
+} from '../DesktopRuntime.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BaseToolService } from '../BaseToolService.js';
@@ -217,15 +221,12 @@ export class UIAutomationService extends BaseToolService {
     return new Promise((resolve, reject) => {
       const child = execFile(
         powerShellPath(),
-        [
-          '-NoProfile',
-          '-NonInteractive',
-          script === 'DesktopUI.ps1' ? '-MTA' : '-STA',
-          '-File',
-          helperScriptPath(script),
-        ],
+        desktopHelperArguments(script, {
+          apartment: script === 'DesktopUI.ps1' ? 'MTA' : 'STA',
+        }),
         {
           windowsHide: true,
+          env: desktopHelperEnvironment(),
           timeout: script === 'DesktopUI.ps1' ? 45000 : 20000,
           maxBuffer: input.action === 'capture' ? 24 * 1024 * 1024 : 256 * 1024,
           encoding: 'utf8',

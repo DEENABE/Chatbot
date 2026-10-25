@@ -19,6 +19,7 @@ import {
 import { InputValidator } from '../InputValidator.js';
 import { primitiveNames, primitiveSchemas, primitiveDescriptions } from '../apps/PrimitiveTools.js';
 import { LocalVisionAdapter } from '../apps/LocalVisionAdapter.js';
+import { ensureDirectory } from '../ensureDirectory.js';
 import {
   validateSavePath,
   findSaveDialog,
@@ -896,7 +897,7 @@ export class GenericDesktopService extends BaseToolService {
           'FILE_EXISTS',
           `${file} already exists. Ask again with "overwrite" to replace it.`,
         );
-      await this.files.mkdir(path.win32.dirname(file), { recursive: true });
+      await ensureDirectory(path.win32.dirname(file), { files: this.files, flavour: path.win32 });
       const started = Date.now();
 
       // 1. Open Save As: an already open dialog, else Ctrl+Shift+S (Save As in most apps), else Ctrl+S (untitled documents).

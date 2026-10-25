@@ -6,6 +6,12 @@ import { addFeedback, getSessions, exportTrainingData } from '../ai/RepairLogger
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { memoryRequest } from '../memory/runtime.js';
 import { boundedInt } from '../lib/validate.js';
+import { routeChatModel } from '../services/modelRouter.js';
+import { modelRuntime } from '../services/modelRuntime.js';
+import { inferenceGate } from '../services/inferenceGate.js';
+import { repairTask } from '../orchestrator/RepairTask.js';
+import { appendHistory } from '../services/historyService.js';
+import { isValidUuid } from '../lib/validateUuid.js';
 
 export const repairRouter = Router();
 
@@ -66,9 +72,15 @@ repairRouter.get('/dataset', requireAdmin, (_request, response) => {
  *   intent | plan | agent | thought | command | output | blocked | final | error | aborted
  */
 repairRouter.post('/', memoryRequest, async (request, response) => {
-  const { goal, model = DEFAULT_MODEL, maxSteps } = request.body || {};
+  const {
+    goal,
+    model = DEFAULT_MODEL,
+    maxSteps,
+    conversationId,
+    userMessageId,
+  } = request.body || {};
 
-  if (!goal || !String(goal).trim()) {
+  if (typeof goal !== 'string' || !goal.trim()) {
     return response.status(400).json({ error: 'A "goal" describing the problem is required.' });
   }
   if (String(goal).length > MAX_GOAL_LENGTH) {
@@ -76,8 +88,19 @@ repairRouter.post('/', memoryRequest, async (request, response) => {
       .status(400)
       .json({ error: `goal must be ${MAX_GOAL_LENGTH} characters or fewer.` });
   }
+  if (
+    (conversationId !== undefined && !isValidUuid(conversationId)) ||
+    (userMessageId !== undefined && !isValidUuid(userMessageId))
+  )
+    return response.status(400).json({ error: 'Invalid repair conversation identity.' });
   let boundedMaxSteps;
   try {
+    if (conversationId)
+      await appendHistory(
+        { conversationId, role: 'user', content: goal.trim(), userMessageId },
+        request.userId,
+      );
+    let result;
     boundedMaxSteps = boundedInt(maxSteps, 'maxSteps', {
       min: 1,
       max: MAX_STEPS_CEILING,
@@ -96,14 +119,37 @@ repairRouter.post('/', memoryRequest, async (request, response) => {
   const send = (event) => response.write(`${JSON.stringify(event)}\n`);
 
   try {
-    await runRepair({
+    const options = {
       goal: String(goal).trim(),
       model,
       maxSteps: boundedMaxSteps,
       signal,
       userId: request.userId,
       onEvent: send,
-    });
+    };
+    const domain = repairTask(goal)?.domain;
+    if (domain && domain !== 'spooler') {
+      let routing;
+      try {
+        routing = await routeChatModel({
+          userId: request.userId,
+          requestedModel: model,
+          computerRequest: { requiresTools: true },
+          agentId: 'windows-repair',
+        });
+      } catch {
+        /* fixed diagnostics still work offline */
+      }
+      const run = () => runRepair({ ...options, model: routing?.model || '' });
+      if (routing)
+        result = await inferenceGate.run(() => modelRuntime.run(routing, run), { signal });
+      else result = await run();
+    } else result = await runRepair(options);
+    if (conversationId && !signal.aborted && (result?.answer || result?.summary))
+      await appendHistory(
+        { conversationId, role: 'assistant', content: result.answer || result.summary },
+        request.userId,
+      );
   } catch (error) {
     send({ type: 'error', payload: { message: error.message } });
   } finally {

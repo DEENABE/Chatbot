@@ -17,6 +17,9 @@ import { protectedSoftwareKey } from '../services/SoftwareKey.js';
 
 let ledger;
 let bridge;
+const executionProgressFor = (event) => (progress) => {
+  if (!event.sender.isDestroyed()) event.sender.send('tool:progress', progress);
+};
 function getLedger() {
   if (!ledger) {
     configureDesktopRuntime({
@@ -246,6 +249,7 @@ export function registerToolIPCHandlers() {
         event.sender,
         {
           humanApproved: true,
+          onProgress: executionProgressFor(event),
           modelRoute: getLedger().router?.gate.getRecord(request.params?.confirmationId)?.metadata
             ?.authorization?.modelRoute,
           taskId: getLedger().router?.gate.getRecord(request.params?.confirmationId)?.metadata
@@ -388,6 +392,7 @@ export function registerToolIPCHandlers() {
         event.sender,
         {
           modelRoute: authority?.route,
+          onProgress: executionProgressFor(event),
           proposalId: authority?.toolCallId,
           proposalOwner: authority?.userId,
           ...(inventory ? { origin: 'operator' } : {}),

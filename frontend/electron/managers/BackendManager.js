@@ -1,10 +1,11 @@
 import { spawn, execFileSync } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { getBackendPath, isPacked } from '../utils/pathHelper.js';
 import { logger } from '../utils/logger.js';
 import { prepareRuntimeStorage } from '../utils/runtimeStorage.js';
-import { setBackendEndpoint } from '../utils/runtimeEndpoint.js';
+import { setBackendEndpoint, setApiClientKey } from '../utils/runtimeEndpoint.js';
 import { redactDiagnostics } from '../utils/redactDiagnostics.js';
 
 let backendProcess = null;
@@ -17,11 +18,14 @@ export async function startBackend(app, toolBridge) {
     throw new Error('The local backend is already starting or running.');
   stopping = false;
   const serverPath = getBackendPath();
+  const apiClientKey = randomBytes(32).toString('hex');
+  setApiClientKey(apiClientKey);
   const env = {
     ...process.env,
     PORT: '0',
     HOST: '127.0.0.1',
     CHANAKYA_DESKTOP_CHILD: '1',
+    CHANAKYA_CLIENT_SECRET: apiClientKey,
     ELECTRON_RUN_AS_NODE: '1',
   };
   delete env.TOOL_ENGINE_INTERNAL_URL;
@@ -67,7 +71,7 @@ export async function startBackend(app, toolBridge) {
       reject(error);
     };
     child.stdout.on('data', (data) => {
-      logStream?.write(`[STDOUT] ${redactDiagnostics(data, [toolBridge?.secret])}`);
+      logStream?.write(`[STDOUT] ${redactDiagnostics(data, [toolBridge?.secret, apiClientKey])}`);
       buffer += data.toString();
       const lines = buffer.split(/\r?\n/);
       buffer = lines.pop() || '';
@@ -89,7 +93,7 @@ export async function startBackend(app, toolBridge) {
       }
     });
     child.stderr.on('data', (data) =>
-      logStream?.write(`[STDERR] ${redactDiagnostics(data, [toolBridge?.secret])}`),
+      logStream?.write(`[STDERR] ${redactDiagnostics(data, [toolBridge?.secret, apiClientKey])}`),
     );
     child.once('error', (error) =>
       fail(new Error(`Could not start the local service (${error.code || 'process error'}).`)),

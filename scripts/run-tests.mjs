@@ -28,9 +28,15 @@ for (const name of [
 ])
   walk(path.join(root, name));
 if (!files.length) throw new Error('No component tests found.');
-const result = spawnSync(process.execPath, ['--test', ...files], {
-  cwd: root,
-  stdio: 'inherit',
-  windowsHide: true,
-});
+// Windows helper/process tests use real native runtimes; serial admission avoids startup starvation on desktop PCs.
+const concurrency = process.platform === 'win32' ? '1' : '4';
+const result = spawnSync(
+  process.execPath,
+  ['--test', `--test-concurrency=${concurrency}`, ...files],
+  {
+    cwd: root,
+    stdio: 'inherit',
+    windowsHide: true,
+  },
+);
 process.exit(result.status ?? 1);

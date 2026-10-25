@@ -82,6 +82,7 @@ export class SoftwareResolver {
       }));
     ranked.sort(
       (a, b) =>
+        Number(!!a.handoff) - Number(!!b.handoff) ||
         b.score - a.score ||
         compareVersions(b.version, a.version) ||
         a.providerId.localeCompare(b.providerId),

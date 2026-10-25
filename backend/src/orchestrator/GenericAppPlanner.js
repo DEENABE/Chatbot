@@ -227,7 +227,7 @@ export async function nextDesktopDecision({
       })),
     }),
     snapshot,
-    model: process.env.DESKTOP_MODEL || model,
+    model,
     signal,
     think: false,
     history,

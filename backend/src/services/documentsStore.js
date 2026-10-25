@@ -147,7 +147,7 @@ export function knowledgeDocumentIds(userId) {
 
 export async function deleteDocument(documentId, userId) {
   // Only app-owned indexes/metadata are removed; originals are never unlinked.
-  deleteDocumentStructure(documentId, userId);
   await deleteChunks(documentId, userId);
+  deleteDocumentStructure(documentId, userId);
   db.prepare('DELETE FROM documents WHERE id = ? AND userId = ?').run(documentId, userId);
 }

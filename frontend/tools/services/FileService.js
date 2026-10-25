@@ -12,6 +12,7 @@ import path from 'path';
 import { spawn } from '../ExecutionContext.js';
 import { BaseToolService } from '../BaseToolService.js';
 import { executionContext } from '../ExecutionContext.js';
+import { ensureDirectory } from '../ensureDirectory.js';
 
 /** Maximum file size allowed for reading (10 MB). */
 const MAX_READ_SIZE = 10 * 1024 * 1024;
@@ -449,7 +450,7 @@ export class FileService extends BaseToolService {
     const encoding = params.encoding || 'utf-8';
 
     // Ensure parent directory exists
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await ensureDirectory(path.dirname(filePath));
 
     await fs.writeFile(filePath, params.content, { encoding });
 
@@ -570,7 +571,7 @@ export class FileService extends BaseToolService {
       await fs.cp(source, destination, { recursive: true });
     } else {
       // Ensure destination parent exists
-      await fs.mkdir(path.dirname(destination), { recursive: true });
+      await ensureDirectory(path.dirname(destination));
       await fs.copyFile(source, destination);
     }
 
@@ -592,7 +593,7 @@ export class FileService extends BaseToolService {
     assertNotProtectedPath(destination);
 
     // Ensure destination parent exists
-    await fs.mkdir(path.dirname(destination), { recursive: true });
+    await ensureDirectory(path.dirname(destination));
 
     await fs.rename(source, destination);
 

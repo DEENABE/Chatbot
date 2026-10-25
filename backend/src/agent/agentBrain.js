@@ -11,6 +11,7 @@
  */
 
 import { config } from '../config.js';
+import { fetchInference } from '../services/inferenceTransport.js';
 
 /**
  * Model used for agent reasoning. Overridable per request or via AGENT_MODEL.
@@ -90,7 +91,8 @@ export async function decideNextStep({
     );
   let response;
   try {
-    response = await fetch(`${config.ollamaUrl}/api/generate`, {
+    response = await fetchInference(`${config.ollamaUrl}/api/generate`, {
+      redirect: 'error',
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       signal,

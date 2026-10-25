@@ -234,7 +234,14 @@ export function transition(state, phase, patch = {}) {
   return record(state, { ...patch, phase }, 'transition');
 }
 function preparePlan(state, patch) {
-  if (state.phase === 'decide' && currentStep(state)?.status !== 'done')
+  // Advancing the last completed step leaves the cursor just past the plan.
+  // A coding loop can then append its next action without inventing a retry.
+  if (
+    state.phase === 'decide' &&
+    (currentStep(state)
+      ? currentStep(state).status !== 'done'
+      : state.plan.some((step) => step.status !== 'done'))
+  )
     throw new Error('Failed step requires replan');
   const seen = new Set(state.attempts.map((a) => a.request.toolCallId));
   const withinPlan = new Set();

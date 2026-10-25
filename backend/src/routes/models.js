@@ -17,6 +17,7 @@ import {
 } from '../services/modelRegistry.js';
 import { requireAuth } from '../middleware/auth.js';
 import { memoryManager } from '../memory/runtime.js';
+import { getHardwareProfile, inferencePlanForHardware } from '../services/gpuProfile.js';
 
 export const modelsRouter = Router();
 
@@ -35,13 +36,33 @@ modelsRouter.get('/loaded', async (_request, response) => {
 
 modelsRouter.get('/settings', requireAuth, async (request, response) => {
   try {
-    const models = await discoverModels();
+    const [models, hardware] = await Promise.all([
+      discoverModels(),
+      getHardwareProfile({ residency: listLoadedModels }),
+    ]);
+    const preferences = modelPreferencesRepository().get(request.userId);
     response.json({
-      preferences: modelPreferencesRepository().get(request.userId),
+      preferences,
       models,
+      hardware,
+      automatic: inferencePlanForHardware(hardware, { contextWindow: preferences.contextWindow }),
     });
   } catch (error) {
     response.status(error.status || 503).json({ error: error.message });
+  }
+});
+
+modelsRouter.get('/hardware', requireAuth, async (_request, response) => {
+  try {
+    const hardware = await getHardwareProfile({ residency: listLoadedModels });
+    response.setHeader('Cache-Control', 'no-store');
+    response.json({ hardware, automatic: inferencePlanForHardware(hardware) });
+  } catch {
+    response
+      .status(503)
+      .json({
+        error: 'Hardware details are unavailable. Automatic CPU-safe inference remains enabled.',
+      });
   }
 });
 
@@ -83,13 +104,16 @@ modelsRouter.put('/settings', requireAuth, async (request, response) => {
 // that disappeared). Nothing here downloads, deletes or replaces a model.
 let lastForcedRefresh = 0;
 async function registryPayload(request, { refresh }) {
-  const registry = await getModelRegistry({ refresh });
+  const [registry, hardware] = await Promise.all([
+    getModelRegistry({ refresh }),
+    getHardwareProfile({ residency: listLoadedModels }),
+  ]);
   let assignments = null;
   let agents = null;
   try {
     const preferences = modelPreferencesRepository().get(request.userId);
     assignments = describeAssignments(preferences, registry.models);
-    agents = describeAgents(preferences, registry.models);
+    agents = describeAgents(preferences, registry.models, hardware);
   } catch {
     /* Preferences are optional context for this view. */
   }
@@ -102,6 +126,7 @@ async function registryPayload(request, { refresh }) {
       suggestion: EMBEDDING_CANDIDATE,
     },
     host: hostMemory(),
+    hardware,
   };
 }
 

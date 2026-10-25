@@ -80,7 +80,6 @@ coverage/
 
 # ─── Editor / OS ────────────────────────────────────────────────
 .vscode/*
-!.vscode/extensions.json
 .idea/
 *.swp
 *.swo
@@ -172,15 +171,17 @@ _cleanup_archive/
 # Desktop release outputs and isolated QA artifacts
 frontend/release-desktop*/
 .qa/
+.tmp/
 .astra-tmp/
 docs/
 indictrans-service
 demo-data
 test
 tests*
+!backend/tests/
+!frontend/electron/tests/
+!frontend/tools/tests/
 
-.mjs*
-.cjs*
 
 # Offline translator pack builds (about 5 GB each, see indictrans-service/README.md)
 translator-pack/

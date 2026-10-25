@@ -73,7 +73,12 @@ async function drive(c, deps, { model, signal, onEvent, confirmationId }) {
     const phase = c.state.phase;
     if (phase === 'idle') {
       const route = await deps.routeTask(task, { model, signal });
-      if (route.mode === 'simple') c.stop('error', 'Use chat mode for this request.');
+      if (route.taskType === 'coding')
+        c.stop(
+          'error',
+          'Open Workspace → Coding and select an authorized project workspace to run this task.',
+        );
+      else if (route.mode === 'simple') c.stop('error', 'Use chat mode for this request.');
       else c.move('plan');
     } else if ((phase === 'plan' && !c.state.plan.length) || phase === 'replan') {
       const plan =
@@ -288,6 +293,11 @@ export async function runOrchestrator({
     const route = await deps.routeTask(task, { model, signal: lease.signal });
     onEvent({ type: 'router_decision', payload: route });
     if (lease.signal.aborted) c.stop('cancelled', 'aborted');
+    else if (route.taskType === 'coding')
+      c.stop(
+        'error',
+        'Open Workspace → Coding and select an authorized project workspace to run this task.',
+      );
     else if (route.mode === 'simple') c.stop('error', 'Use chat mode for this request.');
     else {
       c.move('plan');

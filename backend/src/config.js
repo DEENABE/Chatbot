@@ -1,13 +1,14 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import 'dotenv/config';
+import { localServiceUrl } from './lib/localServiceUrl.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const ollamaUrl = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
-const ollamaHost = new URL(ollamaUrl).hostname;
-if (!['127.0.0.1', 'localhost', '::1', '[::1]'].includes(ollamaHost)) {
-  throw new Error('OLLAMA_URL must point to localhost. Chanakya AI refuses remote AI endpoints.');
-}
+const ollamaUrl = localServiceUrl(process.env.OLLAMA_URL || 'http://127.0.0.1:11434', 'OLLAMA_URL');
+const seconds = (value, fallback) => {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 1 && n <= 3600 ? Math.round(n * 1000) : fallback * 1000;
+};
 
 // Development retains its existing data. Electron passes a writable per-user
 // root for installed builds; mutable data never goes under resources/ASAR.
@@ -15,9 +16,10 @@ const appDataPath = path.resolve(process.env.APP_DATA_PATH || root);
 const host = process.env.HOST || '127.0.0.1';
 if (!['127.0.0.1', 'localhost', '::1'].includes(host))
   throw new Error('HOST must be loopback for the local desktop API.');
-const translationUrl = process.env.INDICTRANS_SERVICE_URL || 'http://127.0.0.1:8100';
-if (!['127.0.0.1', 'localhost', '::1', '[::1]'].includes(new URL(translationUrl).hostname))
-  throw new Error('INDICTRANS_SERVICE_URL must point to localhost.');
+const translationUrl = localServiceUrl(
+  process.env.INDICTRANS_SERVICE_URL || 'http://127.0.0.1:8100',
+  'INDICTRANS_SERVICE_URL',
+);
 
 export const config = {
   // The one canonical persistent-data root everything else in this file
@@ -36,13 +38,7 @@ export const config = {
   // routes; this closes that off.
   host,
   ollamaUrl,
-  // No built-in chat model. Models are discovered from the local Ollama at run time (services/modelRouter.js,
-  // services/modelRegistry.js) and chosen in Settings → Models or automatically from their declared capabilities.
-  // DEFAULT_MODEL only pins a tag for background jobs that have no signed-in user; empty means "decide at run time".
   defaultModel: process.env.DEFAULT_MODEL || '',
-  // Not a chat model: this is the vector format of the existing document index. Changing it changes the embedding
-  // dimension, so documents indexed with another model would stop matching until they are re-indexed. Override with
-  // EMBEDDING_MODEL only together with a re-index; Settings → Models shows whether it is installed.
   embeddingModel: process.env.EMBEDDING_MODEL || 'nomic-embed-text',
   maxFileSize: Number(process.env.MAX_FILE_SIZE_MB || 25) * 1024 * 1024,
   ragTopK: Number(process.env.RAG_TOP_K || 5),
@@ -50,7 +46,12 @@ export const config = {
   // RAM/VRAM sooner when idle (at the cost of a reload on the next request).
   // e.g. '5m' (responsive), '30s' (aggressive), '0' (unload immediately).
   ollamaKeepAlive: process.env.OLLAMA_KEEP_ALIVE || '5m',
-  frontendOrigin: process.env.FRONTEND_ORIGIN || 'http://localhost:5173',
+  modelFirstOutputTimeoutMs: seconds(process.env.CHAT_FIRST_TOKEN_TIMEOUT_SECONDS, 900),
+  modelIdleTimeoutMs: seconds(process.env.CHAT_IDLE_TIMEOUT_SECONDS, 300),
+  frontendOrigin: localServiceUrl(
+    process.env.FRONTEND_ORIGIN || 'http://localhost:5173',
+    'FRONTEND_ORIGIN',
+  ),
   uploadDir: path.join(appDataPath, 'storage', 'uploads'),
   vectorDir: path.join(appDataPath, 'storage', 'lancedb'),
   dbFile: path.join(appDataPath, 'storage', 'db.sqlite'),
@@ -67,9 +68,11 @@ export const config = {
   //
   // Earlier in this app's history the translator called Ollama/Qwen
   // directly (no IndicTrans2 involved) — that history is why
-  // Earlier the translator used a fixed Qwen tag. It no longer names a model:
-  // TRANSLATION_POST_PROCESSING_MODEL / TRANSLATION_FALLBACK_MODEL / DEFAULT_MODEL may pin an installed tag,
-  // otherwise the General-route model that is actually installed is used (modelRouter.resolveGeneralModel).
+  // postProcessingModel below still defaults through DEFAULT_MODEL/'qwen3.5:9b'
+  // the same way the old direct-translation model selection did: Qwen
+  // measurably outperformed llama3 on Indic-language output quality
+  // (llama3 hallucinated content on simple phrases), and that same quality
+  // gap is just as relevant to a fluency-polish pass over Indic text.
   translate: {
     maxChars: Number(process.env.TRANSLATE_MAX_CHARS || 5000),
 

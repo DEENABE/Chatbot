@@ -298,6 +298,18 @@ export class ExecutionLedger {
               requestId,
               idempotencyKey,
               toolCallId,
+              onProgress: ({ stage, message }) => {
+                try {
+                  trusted.onProgress?.({
+                    scope,
+                    requestId,
+                    toolCallId,
+                    taskId,
+                    stage: String(stage).slice(0, 40),
+                    message: String(message).slice(0, 500),
+                  });
+                } catch {}
+              },
             },
             async () => {
               controller.signal.throwIfAborted();
@@ -338,6 +350,9 @@ export class ExecutionLedger {
     } finally {
       clearTimeout(timer);
       this.active.delete(activeId);
+      try {
+        trusted.onProgress?.({ scope, requestId, toolCallId, stage: 'complete', message: '' });
+      } catch {}
     }
   }
 }

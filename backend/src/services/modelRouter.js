@@ -1,7 +1,13 @@
 import os from 'node:os';
-import { listInstalledModels, showModel } from './ollamaService.js';
+import { listInstalledModels, showModel, listLoadedModels } from './ollamaService.js';
 import { getDb } from '../db/connection.js';
 import { agentProfile, hintRank } from './agentProfiles.js';
+import { isRemoteModel } from './localModelPolicy.js';
+import {
+  getHardwareProfile,
+  getCachedHardwareProfile,
+  inferencePlanForHardware,
+} from './gpuProfile.js';
 
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
 const TAG = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/;
@@ -10,6 +16,7 @@ export const DEFAULT_MODEL_PREFERENCES = Object.freeze({
   windowsModel: '',
   keepAlive: '30s',
   contextWindow: 8192,
+  thinking: true,
   // Explicit per-agent choices ({ "document-intelligence": "some-tag", ... }). Empty = decided automatically.
   agentModels: Object.freeze({}),
 });
@@ -33,6 +40,7 @@ export function normalizeDiscoveredModel(item, detail = {}) {
     item.details?.context_length;
   return {
     id: item.name,
+    remote: isRemoteModel(item) || isRemoteModel(detail),
     label: item.name,
     installed: true,
     family: detail.details?.family || item.details?.family || 'unknown',
@@ -93,14 +101,15 @@ export async function discoverModels({
     for (let index = 0; index < installed.length; index += 3) {
       const batch = await Promise.all(
         installed.slice(index, index + 3).map(async (item) => {
-          if (!TAG.test(item.name || '')) return null;
+          if (!TAG.test(item.name || '') || isRemoteModel(item)) return null;
           let detail = null;
           try {
             detail = await show(item.name);
           } catch {
             detail = null;
           }
-          if (detail && typeof detail === 'object') return normalizeDiscoveredModel(item, detail);
+          if (detail && typeof detail === 'object')
+            return isRemoteModel(detail) ? null : normalizeDiscoveredModel(item, detail);
           const fresh = normalizeDiscoveredModel(item, {});
           const earlier = lastVerified.get(fresh.id);
           if (earlier && fresh.digest && earlier.digest === fresh.digest)
@@ -178,6 +187,8 @@ export function validateModelPreferences(value, models) {
   const preferences = { ...DEFAULT_MODEL_PREFERENCES, ...value };
   if (!KEEP_ALIVE.has(preferences.keepAlive))
     throw fail('Choose a supported model keep-alive duration.');
+  if (typeof preferences.thinking !== 'boolean')
+    throw fail('Thinking must be enabled or disabled.');
   if (
     !Number.isSafeInteger(preferences.contextWindow) ||
     preferences.contextWindow < 2048 ||
@@ -191,7 +202,9 @@ export function validateModelPreferences(value, models) {
     if (preferences[key] === '') continue;
     const selected = models.find((item) => item.id === preferences[key]);
     if (
-      !selected?.capabilities.includes('completion') ||
+      !selected ||
+      isRemoteModel(selected) ||
+      !selected.capabilities.includes('completion') ||
       !selected.capabilities.includes(capability)
     )
       throw fail(
@@ -211,7 +224,11 @@ export function validateModelPreferences(value, models) {
     // if the model cannot call tools.
     const needs = profile.routes.includes('general') ? ['completion'] : profile.requires;
     const selected = models.find((item) => item.id === tag);
-    if (!selected || !needs.every((cap) => selected.capabilities.includes(cap)))
+    if (
+      !selected ||
+      isRemoteModel(selected) ||
+      !needs.every((cap) => selected.capabilities.includes(cap))
+    )
       throw fail(
         `${profile.label} requires an installed model with ${needs.join(' and ')} capability.`,
       );
@@ -222,6 +239,8 @@ export function validateModelPreferences(value, models) {
 }
 
 const order = (a, b) => (a === b ? 0 : a < b ? -1 : 1);
+const CODE_MODEL = /coder|codellama|starcoder|codestral|codegemma|devstral/i;
+export const codeModelRank = (item) => (CODE_MODEL.test(`${item.id} ${item.family}`) ? 1 : 0);
 
 export function selectModelRoute({
   models,
@@ -233,6 +252,7 @@ export function selectModelRoute({
   agentId,
   totalMemory = os.totalmem(),
   freeMemory = os.freemem(),
+  hardware,
 }) {
   const route = computerRequest ? 'windows' : 'general';
   // An agent can refine WHICH model runs on a route; it can never change the route (and so never grant tools).
@@ -240,9 +260,28 @@ export function selectModelRoute({
   const agent = profile && profile.routes.includes(route) ? profile : null;
   const required = route === 'windows' ? ['completion', 'tools'] : ['completion'];
   if (hasImages) required.push('vision');
-  const eligible = models.filter((item) =>
-    required.every((cap) => item.capabilities.includes(cap)),
+  const eligible = models.filter(
+    (item) => !isRemoteModel(item) && required.every((cap) => item.capabilities.includes(cap)),
   );
+  const hardwarePlan = hardware
+    ? inferencePlanForHardware(hardware, {
+        contextWindow: preferences.contextWindow || 8192,
+      })
+    : null;
+  const withinBudget = (item) =>
+    !hardwarePlan || !item.size || item.size <= hardwarePlan.modelBudgetBytes;
+  const fitting = eligible.filter(withinBudget);
+  const observedGpu =
+    hardware?.acceleration?.verified && ['gpu', 'mixed'].includes(hardware.acceleration?.mode);
+  const preferSmall =
+    hardware &&
+    (hardware.acceleration?.mode === 'cpu' || (!observedGpu && !hardwarePlan.gpuModelBudgetBytes));
+  const gpuFitRank = (item) =>
+    hardwarePlan?.gpuModelBudgetBytes && !preferSmall
+      ? item.size > 0 && item.size <= hardwarePlan.gpuModelBudgetBytes
+        ? 0
+        : 1
+      : 0;
   const routePin =
     preferences[route === 'windows' ? 'windowsModel' : 'generalModel'] || requestedModel;
   const agentPin = agent ? preferences.agentModels?.[agent.id] || '' : '';
@@ -253,41 +292,76 @@ export function selectModelRoute({
   let selected;
   let source = 'auto';
   for (const tag of pins) {
-    selected = eligible.find((item) => matches(item, tag));
+    selected = fitting.find((item) => matches(item, tag));
     if (selected) {
       source = tag === agentPin ? 'pinned-agent' : 'pinned';
       break;
     }
   }
   const fallback = !!desired && !(selected && matches(selected, desired));
+  // A code-specialised model (qwen2.5-coder, codellama, ...) matches the "qwen" hint but follows chat, tool and repair
+  // instructions poorly and refuses ordinary requests, so it ranks after general models. When reasoning is on, a
+  // model that declares thinking is preferred next. Neither rule can make an ineligible model eligible.
+  const thinkingRank = (item) =>
+    preferences.thinking !== false && item.capabilities.includes('thinking') ? 0 : 1;
   // Prefer the agent's recommended families (when any is installed AND declares the needed capabilities), then
   // discovered Qwen capabilities, then the smallest local completion model. Never assume a tag exists.
-  const ranked = [...eligible].sort(
+  const ranked = [...fitting].sort(
     (a, b) =>
+      gpuFitRank(a) - gpuFitRank(b) ||
+      codeModelRank(a) - codeModelRank(b) ||
+      (preferSmall || (gpuFitRank(a) === 1 && gpuFitRank(b) === 1)
+        ? (a.size || Number.MAX_SAFE_INTEGER) - (b.size || Number.MAX_SAFE_INTEGER)
+        : 0) ||
       order(hintRank(agent, a), hintRank(agent, b)) ||
+      thinkingRank(a) - thinkingRank(b) ||
       Number(/^qwen/i.test(b.family) || /^qwen/i.test(b.id)) -
         Number(/^qwen/i.test(a.family) || /^qwen/i.test(a.id)) ||
       a.size - b.size,
   );
   if (!selected) {
     selected = ranked[0];
-    if (selected && Number.isFinite(hintRank(agent, selected))) source = 'auto-hint';
+    if (selected && preferSmall) source = 'auto-hardware';
+    else if (selected && Number.isFinite(hintRank(agent, selected))) source = 'auto-hint';
   }
+  if (!selected && eligible.length && hardwarePlan)
+    throw fail(
+      'No installed local model with the required capabilities fits the available memory estimate. Close other memory-heavy apps or install a smaller local model. No computer action was performed.',
+      503,
+    );
   if (!selected)
     throw fail(
       `No installed local model supports ${required.join(' and ')} for the ${route === 'windows' ? 'Windows Agent' : 'General'} route. No computer action was performed.`,
       503,
     );
-  const contextWindow = Math.min(preferences.contextWindow || 8192, selected.contextWindow || 8192);
+  const requestedContext = Math.min(
+    preferences.contextWindow || 8192,
+    selected.contextWindow || 8192,
+  );
+  const inference = hardware
+    ? inferencePlanForHardware(hardware, {
+        contextWindow: requestedContext,
+        modelSizeBytes: selected.size,
+        modelContextWindow: selected.contextWindow || 8192,
+        modelId: selected.id,
+      })
+    : null;
+  const contextWindow = inference?.contextWindow || requestedContext;
   const generalCandidates = models
-    .filter((item) => item.capabilities.includes('completion'))
+    .filter(
+      (item) =>
+        !isRemoteModel(item) && item.capabilities.includes('completion') && withinBudget(item),
+    )
     .sort(
       (a, b) =>
+        codeModelRank(a) - codeModelRank(b) ||
         Number(/^qwen/i.test(b.family) || /^qwen/i.test(b.id)) -
           Number(/^qwen/i.test(a.family) || /^qwen/i.test(a.id)) || a.size - b.size,
     );
   const general =
     generalCandidates.find((item) => item.id === preferences.generalModel) || generalCandidates[0];
+  const resourceFallback =
+    desired && eligible.some((item) => matches(item, desired) && !withinBudget(item));
   // Disk size is not a VRAM estimate. Report actual host memory and use short residency by default.
   return {
     route,
@@ -295,20 +369,24 @@ export function selectModelRoute({
     generalModel: general?.id || null,
     fallback,
     reason: fallback
-      ? `Selected model ${desired} is unavailable or incompatible; using installed ${selected.id}.`
+      ? resourceFallback
+        ? `Selected model ${desired} exceeds this computer's available memory estimate; using installed ${selected.id}.`
+        : `Selected model ${desired} is unavailable or incompatible; using installed ${selected.id}.`
       : hasAttachments && !computerRequest
         ? 'Attached documents use the General route.'
         : route === 'windows'
           ? 'This task requires approved computer tools.'
           : 'General chat uses no computer tools.',
-    options: { num_ctx: contextWindow },
+    options: inference?.options || { num_ctx: contextWindow },
+    ...(hardware ? { hardware, inference } : {}),
     keepAlive: preferences.keepAlive || '30s',
     memory: {
-      totalBytes: totalMemory,
-      freeBytes: freeMemory,
+      totalBytes: hardware?.memory?.totalBytes ?? totalMemory,
+      freeBytes: hardware?.memory?.freeBytes ?? freeMemory,
       modelDiskBytes: selected.size,
     },
     capabilities: selected.capabilities,
+    thinking: preferences.thinking !== false,
     // Agent routing (additive): which agent asked, how the model was chosen, and the next-best eligible model.
     agentId: agent?.id || null,
     selection: source,
@@ -320,17 +398,22 @@ export function selectModelRoute({
           ? `${agent.label}: using the model you chose for this agent (${selected.id}).`
           : source === 'pinned'
             ? `${agent.label}: using the ${route === 'windows' ? 'Windows Agent' : 'General'} model you chose (${selected.id}).`
-            : source === 'auto-hint'
-              ? `${agent.label}: ${selected.id} matches the recommended family (${agent.recommended}).`
-              : `${agent.label}: no installed model matches the recommended family (${agent.recommended}); using ${selected.id}.`
+            : source === 'auto-hardware'
+              ? `${agent.label}: using ${selected.id} for this computer's available CPU and memory.`
+              : source === 'auto-hint'
+                ? `${agent.label}: ${selected.id} matches the recommended family (${agent.recommended}).`
+                : `${agent.label}: no installed model matches the recommended family (${agent.recommended}); using ${selected.id}.`
       : null,
   };
 }
 
 export async function routeChatModel(options) {
-  const models = await discoverModels();
+  const [models, hardware] = await Promise.all([
+    discoverModels(),
+    getHardwareProfile({ residency: listLoadedModels }),
+  ]);
   const preferences = modelPreferencesRepository().get(options.userId);
-  return selectModelRoute({ ...options, models, preferences });
+  return selectModelRoute({ ...options, models, preferences, hardware });
 }
 
 /**
@@ -343,16 +426,24 @@ export async function resolveGeneralModel({
   userId = null,
   discover = discoverModels,
   preferencesFor = (id) => modelPreferencesRepository().get(id),
+  hardware,
 } = {}) {
   const models = await discover();
+  const localHardware = hardware || getCachedHardwareProfile();
   const wanted = String(configured || '').trim();
   if (wanted) {
     const pinned = models.find(
       (item) =>
         (item.id === wanted || item.id === `${wanted}:latest`) &&
+        !isRemoteModel(item) &&
         item.capabilities.includes('completion'),
     );
-    if (pinned) return pinned.id;
+    if (
+      pinned &&
+      inferencePlanForHardware(localHardware, { modelSizeBytes: pinned.size, modelId: pinned.id })
+        .modelFitsEstimate
+    )
+      return pinned.id;
   }
   let preferences = DEFAULT_MODEL_PREFERENCES;
   if (userId) {
@@ -362,5 +453,5 @@ export async function resolveGeneralModel({
       preferences = DEFAULT_MODEL_PREFERENCES;
     }
   }
-  return selectModelRoute({ models, preferences }).model;
+  return selectModelRoute({ models, preferences, hardware: localHardware }).model;
 }

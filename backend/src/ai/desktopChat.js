@@ -1,6 +1,8 @@
 import { config } from '../config.js';
 import { DEFAULT_MODEL } from './llmClient.js';
 import { modelRuntime, routedModelOr } from '../services/modelRuntime.js';
+import { getCachedHardwareProfile, inferencePlanForHardware } from '../services/gpuProfile.js';
+import { fetchInference } from '../services/inferenceTransport.js';
 import {
   desktopToolsForSnapshot,
   compactDesktopTool,
@@ -30,6 +32,18 @@ export async function nextDesktopTool({
   const deadline = AbortSignal.timeout(Math.max(1000, Math.min(timeoutMs, 600000)));
   const combined = signal ? AbortSignal.any([signal, deadline]) : deadline;
   const messages = [{ role: 'system', content: DESKTOP_TOOL_SYSTEM }];
+  const routing = modelRuntime.getStore();
+  const reasoning = routing?.capabilities?.includes('thinking') && routing.thinking !== false;
+  const hardware = routing?.hardware || getCachedHardwareProfile();
+  const configuredContext = inferencePlanForHardware(hardware, {
+    contextWindow: routing?.options?.num_ctx || 8192,
+    modelSizeBytes: routing?.memory?.modelDiskBytes || 0,
+    modelId: model,
+  }).contextWindow;
+  const outputBudget = Math.min(
+    reasoning ? 2048 : 512,
+    Math.max(256, Math.floor(configuredContext / 4)),
+  );
   let previous;
   for (const h of history) {
     const snapshot = h.data?.snapshot || (h.data?.status === 'UI_OBSERVED' ? h.data : null);
@@ -90,8 +104,7 @@ export async function nextDesktopTool({
   // Do not silently truncate the system/task when an application exposes a
   // large UI. Grow context conservatively or reject before proposing an action.
   const estimatedTokens =
-    Math.ceil(Buffer.byteLength(JSON.stringify({ messages, tools }), 'utf8') / 2) + 512;
-  const configuredContext = modelRuntime.getStore()?.options?.num_ctx || 32768;
+    Math.ceil(Buffer.byteLength(JSON.stringify({ messages, tools }), 'utf8') / 2) + outputBudget;
   if (estimatedTokens > Math.min(32768, configuredContext))
     throw error(
       'The observed UI exceeds the local decision context budget. Narrow the view before continuing.',
@@ -107,25 +120,31 @@ export async function nextDesktopTool({
           : 32768;
   let response;
   const started = Date.now();
+  const payload = {
+    model,
+    messages,
+    tools,
+    stream: false,
+    think: !!reasoning,
+    keep_alive: modelRuntime.getStore()?.keepAlive ?? config.ollamaKeepAlive,
+    options: {
+      temperature: 0,
+      num_ctx: Math.min(numCtx, configuredContext),
+      num_predict: outputBudget,
+    },
+  };
   try {
-    response = await fetchImpl(`${config.ollamaUrl}/api/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: combined,
-      body: JSON.stringify({
-        model,
-        messages,
-        tools,
-        stream: false,
-        think: false,
-        keep_alive: modelRuntime.getStore()?.keepAlive ?? config.ollamaKeepAlive,
-        options: {
-          temperature: 0,
-          num_ctx: Math.min(numCtx, configuredContext),
-          num_predict: 256,
-        },
-      }),
-    });
+    response = await fetchInference(
+      `${config.ollamaUrl}/api/chat`,
+      {
+        method: 'POST',
+        redirect: 'error',
+        headers: { 'Content-Type': 'application/json' },
+        signal: combined,
+        body: JSON.stringify(payload),
+      },
+      { fetchImpl, hardware, requiredContext: estimatedTokens },
+    );
   } catch (e) {
     if (signal?.aborted) throw signal.reason;
     if (deadline.aborted)
@@ -133,6 +152,7 @@ export async function nextDesktopTool({
         'The local model exceeded its desktop decision deadline. No action was executed.',
         'MODEL_TIMEOUT',
       );
+    if (['MODEL_CONTEXT_TOO_LARGE', 'MODEL_MEMORY_INSUFFICIENT'].includes(e.code)) throw e;
     throw error(
       'The local model could not be reached. No action was executed.',
       'MODEL_UNAVAILABLE',
@@ -143,8 +163,8 @@ export async function nextDesktopTool({
       `Local Ollama returned ${response.status}.`,
       response.status === 404 ? 'MODEL_NOT_FOUND' : 'MODEL_UNAVAILABLE',
     );
-  const body = await response.json(),
-    calls = body.message?.tool_calls;
+  const body = await response.json();
+  let calls = body.message?.tool_calls;
   if (process.env.CHANAKYA_DEBUG_MODEL === '1')
     console.warn(
       '[desktop model]',
@@ -158,8 +178,67 @@ export async function nextDesktopTool({
         outputMs: body.eval_duration / 1e6,
       }),
     );
-  if (!Array.isArray(calls) || calls.length !== 1)
-    throw error('The model must choose exactly one tool.');
+  if (!Array.isArray(calls) || calls.length === 0) {
+    // Some local models declare tools but answer in plain text. Ask once for
+    // the same fixed action as JSON; it passes the identical catalog, argument,
+    // grounding, permission and verification checks below and in the executor.
+    const retryMessages = [
+      {
+        role: 'system',
+        content:
+          DESKTOP_TOOL_SYSTEM +
+          '\nReturn only JSON: {"name":"<offered function>","arguments":{...}}. Choose one offered function. Do not report an action as completed without evidence.',
+      },
+      {
+        role: 'user',
+        content: JSON.stringify({
+          USER_TASK_AND_OBSERVATION: current,
+          OFFERED_FUNCTIONS: tools.map((tool) => tool.function),
+        }),
+      },
+    ];
+    const retryTokens =
+      Math.ceil(Buffer.byteLength(JSON.stringify(retryMessages), 'utf8') / 2) + 512;
+    if (retryTokens > Math.min(32768, configuredContext))
+      throw error(
+        'The observed UI exceeds the local decision context budget.',
+        'MODEL_CONTEXT_TOO_LARGE',
+      );
+    const retry = await fetchInference(
+      `${config.ollamaUrl}/api/chat`,
+      {
+        method: 'POST',
+        redirect: 'error',
+        headers: { 'Content-Type': 'application/json' },
+        signal: combined,
+        body: JSON.stringify({
+          ...payload,
+          messages: retryMessages,
+          tools: [],
+          format: 'json',
+          think: false,
+          options: { ...payload.options, num_predict: 512 },
+        }),
+      },
+      { fetchImpl, hardware, requiredContext: retryTokens },
+    );
+    if (!retry.ok) throw error(`Local Ollama returned ${retry.status}.`, 'MODEL_UNAVAILABLE');
+    let proposal;
+    try {
+      const reply = await retry.json();
+      proposal = JSON.parse(
+        String(reply.message?.content || '')
+          .trim()
+          .replace(/^```(?:json)?\s*|\s*```$/g, ''),
+      );
+    } catch {
+      throw error(
+        'The local planner did not return a valid desktop action. No action was executed.',
+      );
+    }
+    calls = [{ function: proposal }];
+  }
+  if (calls.length !== 1) throw error('The model must choose exactly one tool.');
   const call = calls[0].function;
   let name = call?.name;
   let args = call?.arguments;

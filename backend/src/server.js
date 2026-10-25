@@ -5,6 +5,8 @@ import { getDb } from './db/connection.js';
 import { recordOwnPid, clearOwnPid } from './lib/portGuard.js';
 import { ensureIndicTransRunning, stopOwnedIndicTrans } from './services/indictransProcess.js';
 import { logStartupDiagnostics, logDatabaseInitialized } from './lib/storageDiagnostics.js';
+import { getHardwareProfile } from './services/gpuProfile.js';
+import { listLoadedModels } from './services/ollamaService.js';
 
 // Printed before the database is even opened, so the path is on record
 // even if getDb() itself fails — "where is this trying to read/write"
@@ -34,6 +36,18 @@ const server = app.listen(port, config.host, () => {
     `Chat models: discovered from local Ollama at run time${config.defaultModel ? ` (DEFAULT_MODEL=${config.defaultModel})` : ''} | Embed model: ${config.embeddingModel}`,
   );
   checkIndicTransHealth();
+  // Detect this host on every launch without delaying the desktop readiness handshake.
+  getHardwareProfile({ residency: listLoadedModels })
+    .then((hardware) => {
+      console.log(
+        `Automatic hardware: ${hardware.cpu.logicalCores} CPU threads, ${Math.round(hardware.memory.totalBytes / 1024 ** 3)} GB RAM, ${hardware.gpus.map((gpu) => gpu.name).join(', ') || 'CPU-safe mode'}; Ollama placement: ${hardware.acceleration.mode}.`,
+      );
+    })
+    .catch(() =>
+      console.warn(
+        'Hardware discovery is unavailable; conservative CPU-safe settings remain active.',
+      ),
+    );
 });
 
 // EADDRINUSE is the exact "port already in use" failure this whole file

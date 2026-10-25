@@ -4,6 +4,7 @@ import { genericDesktopTask } from './GenericDesktopTask.js';
 import { freeformDesktopTask, setInstalledApps } from './FreeformDesktopTask.js';
 import { astraTask } from './AstraTask.js';
 import { softwareTask } from './SoftwareTask.js';
+import { calculatorTask } from './CalculatorTask.js';
 export { setInstalledApps };
 import { sameTarget, targetEvidence } from './ApplicationGoal.js';
 export function compoundAppTask(message) {
@@ -21,17 +22,51 @@ const SETTING_NOUN =
   '(?:dark\\s*(?:mode|theme)|light\\s*(?:mode|theme)|night\\s*mode|(?:screen\\s*)?brightness|volume|sound|audio|speakers?|mute|unmute|wi-?fi|wireless|bluetooth|mic(?:rophone)?(?:\\s*(?:mute|volume|level))?|transparency|(?:file\\s*)?extensions|hidden\\s*(?:files|items|folders)|notifications|clipboard\\s*history|(?:screen|display|monitor)\\s*(?:timeout|off)|sleep\\s*(?:timeout|timer|after)|(?:mouse|pointer|cursor)\\s*(?:speed|sensitivity|precision|acceleration)|(?:air|aero)plane\\s*mode|flight\\s*mode|scroll(?:ing)?\\s*(?:speed|lines)|double[- ]?click\\s*(?:speed|time)|key(?:board)?\\s*repeat(?:\\s*(?:rate|speed|delay))?|power\\s*(?:mode|plan|button)|performance\\s*mode|lid(?:\\s*(?:close|closing))?(?:\\s*action)?|(?:primary|main)\\s*(?:mouse\\s*)?button|mouse\\s*buttons|left[- ]?handed|right[- ]?handed|(?:cursor|caret|text\\s*cursor)\\s*blink(?:\\s*(?:rate|speed))?|(?:12|24)[- ]?hour|clock\\s*format|time\\s*format|hibernat(?:e|ion)(?:\\s*(?:timeout|timer|after))?|(?:hard\\s*)?disk\\s*(?:timeout|sleep)|lock\\s*screen\\s*(?:timeout|display)|(?:pointer|mouse|cursor)\\s*trails|(?:menu|submenu)\\s*(?:show\\s*)?delay|(?:window\\s*)?animations?|reduce\\s*motion|window\\s*contents|snap\\s*(?:the\\s*)?(?:pointer|mouse|cursor)\\s*to\\s*(?:the\\s*)?default(?:\\s*button)?|hide\\s*(?:the\\s*)?(?:pointer|cursor|mouse)\\s*while\\s*typing|(?:pointer|mouse|cursor)\\s*location|usb\\s*(?:selective\\s*)?suspend|dim(?:\\s*(?:the\\s*)?(?:display|screen))?\\s*(?:timeout|after)|(?:max(?:imum)?\\s*)?(?:processor|cpu)\\s*(?:state|limit|speed|cap)|limit\\s*(?:the\\s*)?cpu|battery\\s*saver\\s*(?:threshold|level)|wake\\s*timers?|cooling\\s*(?:policy|mode)|text\\s*cursor\\s*(?:width|thickness)|caret\\s*width|horizontal\\s*scroll(?:ing)?(?:\\s*(?:chars|characters|speed))?|click\\s*lock|clicklock|underline\\s*(?:keyboard\\s*)?(?:shortcuts|access\\s*keys)|keyboard\\s*(?:cues|underlines)|(?:minimi[sz]e|maximi[sz]e)(?:\\s*(?:and|/)\\s*maximi[sz]e)?\\s*animations?|hybrid\\s*sleep|unattended\\s*sleep|(?:default|plan)\\s*brightness|battery\\s*saver\\s*brightness|(?:low|critical)\\s*battery\\s*(?:action|level)|battery\\s*(?:low|critical)\\s*(?:action|level)|(?:text\\s*)?(?:cursor|caret)\\s*(?:thicker|thinner|wider|narrower)|taskbar(?:\\s*(?:alignment|position|badges?|buttons?|icons?|to\\s*the\\s*(?:left|center|centre)))?|task\\s*view(?:\\s*button)?|(?:clock|taskbar\\s*clock)\\s*seconds|seconds\\s*(?:in|on)\\s*(?:the\\s*)?(?:taskbar\\s*)?clock|desktop\\s*icons|full\\s*path|(?:open|start)\\s*(?:file\\s*)?explorer\\s*(?:to|in|at)|compact\\s*(?:view|mode)|(?:item\\s*)?check\\s*boxes|thumbnails|recent\\s*(?:items|files|documents)|frequent\\s*folders|quick\\s*access|(?:classic|old|windows\\s*10)\\s*(?:right[- ]?click|context)\\s*menu|(?:accent|title\\s*bar)\\s*colou?r|advertising\\s*id|tips\\s*and\\s*suggestions|game\\s*mode|mono\\s*(?:audio|sound)|scroll\\s*bars?|notification\\s*sounds?|storage\\s*sense|adaptive\\s*brightness|auto(?:matic)?\\s*brightness|(?:camera|webcam|microphone|mic|location)\\s*(?:access|permission|services)|(?:sign[- ]?in|password)\\s*(?:on|at|after)\\s*(?:wake|resume|sleep)|(?:windows\\s*)?firewall|fast\\s*(?:startup|boot)|remote\\s*desktop|rdp|long\\s*(?:file\\s*)?paths?|(?:windows\\s*update\\s*)?active\\s*hours|wsl|windows\\s*subsystem\\s*for\\s*linux|virtual\\s*machine\\s*platform|hyper-?v|windows\\s*sandbox|aero\\s*shake|shake\\s*to\\s*minimi[sz]e)';
 const SETTING_VERB =
   '(?:turn|switch|toggle|set|change|enable|disable|increase|decrease|raise|lower|reduce|adjust|mute|unmute|dim|brighten|make|show|hide|stop|start|move|swap|use|limit|cap|restrict|underline|allow|block|deny)';
+// The Windows privacy switches people name loosely: "turn off location", "disable the camera", "gps off pannu".
+// They are matched only as a WHOLE short command (never inside a longer sentence), so "change the location of this
+// file" or "turn off the camera in zoom" are not taken for a system setting.
+const PRIVACY_SWITCH =
+  '(?:(?:the|my|your|windows|device|pc|laptop|computer)\\s+)*(?:location|gps|camera|webcam)(?:\\s*(?:services?|tracking|access|permissions?))?';
+const PRIVACY_WHERE =
+  '(?:\\s+(?:on|in|for)\\s+(?:(?:my|the|this)\\s+)?(?:pc|laptop|computer|system|machine|device|windows))?';
+const PRIVACY_TANGLISH_TAIL = '(?:pannu|pannunga|pannungal|panni vidu|aaki vidu|aakku|vidu)';
+const PRIVACY_COMMAND = new RegExp(
+  `^(?:(?:turn|switch|toggle|enable|disable|stop|block|allow|deny)\\s+(?:(?:on|off)\\s+)?${PRIVACY_SWITCH}(?:\\s+(?:on|off))?` +
+    `|${PRIVACY_SWITCH}(?:\\s+(?:ah|a|ai))?\\s+(?:on|off|enable|disable|block|allow)(?:\\s+${PRIVACY_TANGLISH_TAIL})?)${PRIVACY_WHERE}$`,
+  'i',
+);
+const commandText = (message) =>
+  String(message || '')
+    .trim()
+    .replace(/[.!?]+$/, '')
+    .replace(/^(?:(?:can|could|would|will) you\s+)?(?:please\s+)?/i, '')
+    .replace(/\s+please$/i, '');
+/**
+ * "turn off gps" -> the exact systemSettings call (location-access, enabled:false). Only for an unambiguous on/off
+ * privacy command ("toggle location" has no direction and stays with the model, which can read the current value).
+ * The call is a typed proposal: setConfirmed still asks the person first and the result is read back before any success.
+ */
+export function privacySettingCall(message) {
+  const t = commandText(message);
+  if (!t || t.length > 200 || !PRIVACY_COMMAND.test(t)) return null;
+  const words = t.replace(new RegExp(`${PRIVACY_WHERE}$`, 'i'), '');
+  const enabled = /\b(?:off|disable|stop|block|deny)\b/i.test(words)
+    ? false
+    : /\b(?:on|enable|allow)\b/i.test(words)
+      ? true
+      : null;
+  if (enabled === null) return null;
+  const id = /\b(?:camera|webcam)\b/i.test(words) ? 'camera-access' : 'location-access';
+  return { tool: 'systemSettings', action: 'setConfirmed', params: { id, enabled } };
+}
 /**
  * "turn on dark mode", "set volume to 30", "mute", "turn off bluetooth", "volume 30 aaki vidu": an imperative that
  * changes a Windows setting. Questions ("how do I turn on bluetooth") and "open ... settings" are not matched.
  */
 export function settingsChangeTask(message) {
-  const t = String(message || '')
-    .trim()
-    .replace(/[.!?]+$/, '')
-    .replace(/^(?:(?:can|could|would|will) you\s+)?(?:please\s+)?/i, '')
-    .replace(/\s+please$/i, '');
+  const t = commandText(message);
   if (!t || t.length > 200 || /\b(?:open|launch)\b/i.test(t)) return false;
+  if (PRIVACY_COMMAND.test(t)) return true;
   const noun = new RegExp(`\\b${SETTING_NOUN}\\b`, 'i');
   const found = noun.exec(t);
   // A request that names an application ("volume to 50 in vlc", "mute spotify") is that app's own control, not the
@@ -128,38 +163,8 @@ export function computerTask(message) {
   if (software) return { requiresTools: true, requiresSoftware: true, software };
   const browser = browserTask(text);
   if (browser) return { requiresTools: true, requiresBrowser: true, call: browser };
-  const spoken = text.match(
-    /(?:add|calculate) (zero|one|two|three|four|five|six|seven|eight|nine|ten|\d+) (?:and|plus) (zero|one|two|three|four|five|six|seven|eight|nine|ten|\d+)/i,
-  );
-  if (spoken && (/calculator/i.test(text) || /^(add|calculate) /i.test(text))) {
-    const numbers = [
-      'zero',
-      'one',
-      'two',
-      'three',
-      'four',
-      'five',
-      'six',
-      'seven',
-      'eight',
-      'nine',
-      'ten',
-    ];
-    const n = (w) =>
-      numbers.includes(w.toLowerCase()) ? numbers.indexOf(w.toLowerCase()) : Number(w);
-    return {
-      requiresTools: true,
-      requiresUI: true,
-      call: {
-        tool: 'uiAutomation',
-        action: 'calculate',
-        params: {
-          expression: `${n(spoken[1])}+${n(spoken[2])}`,
-          ...(!/calculator/i.test(text) ? { requireActive: true } : {}),
-        },
-      },
-    };
-  }
+  const calculation = calculatorTask(text);
+  if (calculation) return calculation;
   if (/^open settings and show bluetooth[.!]?$/i.test(text))
     return {
       requiresTools: true,
@@ -192,25 +197,9 @@ export function computerTask(message) {
     )
   )
     return null;
-  if (settingsChangeTask(text)) return { requiresTools: true, requiresSettings: true };
-  if (/\bcalculator\b/i.test(text) && /\d/.test(text)) {
-    const expression = text.match(
-      /(?<![\d.(+\-*/×÷])\d+(?:\.\d+)?\s*[+\-*/×÷]\s*\d+(?:\.\d+)?(?![\d.)])/u,
-    )?.[0];
-    if (
-      expression &&
-      !/[+\-*/×÷]\s*\d/.test(text.slice(text.indexOf(expression) + expression.length))
-    )
-      return {
-        requiresTools: true,
-        requiresUI: true,
-        call: {
-          tool: 'uiAutomation',
-          action: 'calculate',
-          params: { expression },
-        },
-      };
-    return { requiresTools: true, requiresUI: true };
+  if (settingsChangeTask(text)) {
+    const call = privacySettingCall(text);
+    return { requiresTools: true, requiresSettings: true, ...(call ? { call } : {}) };
   }
   // Multi-step application tasks (install if missing -> open -> type/compose -> save to a path -> other goals).
   const settingsGoal = settingsDesktopTask(text);
@@ -221,6 +210,9 @@ export function computerTask(message) {
       requiresUI: true,
       genericDesktop: settingsGoal.genericDesktop,
     };
+  const implicitDesktop = genericDesktopTask(text);
+  if (implicitDesktop?.implicitGoal)
+    return { requiresTools: true, requiresUI: true, genericDesktop: implicitDesktop };
   const astra = astraTask(text);
   if (astra) return { requiresTools: true, requiresUI: true, astra };
   // Notepad++ and other "notepad+..." editors are different applications from Windows Notepad.
@@ -288,7 +280,7 @@ export function currentToolEvidence(history) {
 export function executionOnlyReply(task, evidence) {
   const last = evidence.at(-1);
   if (!last)
-    return 'Execution blocked: the model did not call a computer tool. No computer action was performed.';
+    return 'No verified action could be selected for this request. Name the application and the action you want; no computer action was performed.';
   if (last.needsConfirmation)
     return last.confirmationMessage || 'Execution is waiting for your confirmation.';
   if (last.needsAppChoice)

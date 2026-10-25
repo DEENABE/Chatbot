@@ -19,7 +19,12 @@ import * as WindowManager from '../managers/WindowManager.js';
  */
 export function isTrustedSender(event) {
   const mainWindow = WindowManager.getMainWindow();
-  return !!mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents;
+  return (
+    !!mainWindow &&
+    !mainWindow.isDestroyed() &&
+    event.sender === mainWindow.webContents &&
+    event.senderFrame === mainWindow.webContents.mainFrame
+  );
 }
 
 /**

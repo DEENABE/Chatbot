@@ -83,6 +83,9 @@ export async function resolveWorkspaceFile(root, relativePath) {
     /^[a-z]:/i.test(relativePath)
   )
     throw failure('Invalid workspace file path.');
+  // Use the same canonical root for both containment checks. Windows may
+  // expand an 8.3 directory alias (for example ADMINI~1) in fs.realpath.
+  root = (await validateWorkspaceRoot(root)).root;
   const normalized = relativePath.replace(/[\\/]/g, path.sep);
   const target = path.resolve(root, normalized);
   if (!isWithin(root, target) || sensitive.test(target))

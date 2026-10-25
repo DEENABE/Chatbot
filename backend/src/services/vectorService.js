@@ -3,11 +3,22 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { config } from '../config.js';
-import { embed } from './ollamaService.js';
+import { embed, validateEmbeddings } from './ollamaService.js';
 import { isValidUuid } from '../lib/validateUuid.js';
 
 const TABLE_NAME = 'document_chunks';
 const connections = new Map();
+const writes = new Map();
+async function writeForUser(userId, operation) {
+  const previous = writes.get(userId) || Promise.resolve();
+  const current = previous.catch(() => {}).then(operation);
+  writes.set(userId, current);
+  try {
+    return await current;
+  } finally {
+    if (writes.get(userId) === current) writes.delete(userId);
+  }
+}
 
 async function db(userId) {
   // userId reaches a filesystem path below — every real caller is already
@@ -23,22 +34,33 @@ async function db(userId) {
   if (!database) {
     const storageDir = path.dirname(config.dbFile);
     const userVectorDir = path.join(storageDir, 'users', userId, 'lancedb');
-    await fs.mkdir(userVectorDir, { recursive: true });
-    database = await lancedb.connect(userVectorDir);
+    database = fs
+      .mkdir(userVectorDir, { recursive: true })
+      .then(() => lancedb.connect(userVectorDir));
     connections.set(userId, database);
+    database.catch(() => {
+      if (connections.get(userId) === database) connections.delete(userId);
+    });
   }
   return database;
 }
 
 export async function indexChunks({ documentId, filename, chunks }, userId, { signal } = {}) {
   if (!chunks.length) return 0;
+  if (!isValidUuid(documentId) || !isValidUuid(userId))
+    throw new Error('Invalid document indexing identity.');
   const vectors = [];
   // Larger batches = far fewer Ollama round-trips for big spreadsheets/folders.
-  const EMBED_BATCH = Number(process.env.EMBED_BATCH_SIZE || 48);
+  const requestedBatch = Number(process.env.EMBED_BATCH_SIZE || 48);
+  const EMBED_BATCH =
+    Number.isInteger(requestedBatch) && requestedBatch >= 1 && requestedBatch <= 128
+      ? requestedBatch
+      : 48;
   for (let i = 0; i < chunks.length; i += EMBED_BATCH) {
     signal?.throwIfAborted();
     vectors.push(...(await embed(chunks.slice(i, i + EMBED_BATCH), { signal })));
   }
+  validateEmbeddings(vectors, chunks.length);
   const rows = chunks.map((text, index) => ({
     id: randomUUID(),
     documentId,
@@ -48,15 +70,15 @@ export async function indexChunks({ documentId, filename, chunks }, userId, { si
     vector: vectors[index],
   }));
 
-  const connection = await db(userId);
-  signal?.throwIfAborted();
-  const names = await connection.tableNames();
-  if (names.includes(TABLE_NAME)) {
-    const table = await connection.openTable(TABLE_NAME);
-    await table.add(rows);
-  } else {
-    await connection.createTable(TABLE_NAME, rows);
-  }
+  await writeForUser(userId, async () => {
+    const connection = await db(userId);
+    signal?.throwIfAborted();
+    const names = await connection.tableNames();
+    if (names.includes(TABLE_NAME)) {
+      const table = await connection.openTable(TABLE_NAME);
+      await table.add(rows);
+    } else await connection.createTable(TABLE_NAME, rows);
+  });
   return rows.length;
 }
 
@@ -119,10 +141,9 @@ export async function deleteChunks(documentId, userId) {
   // same shape check as userId above, so a malformed id can't break out of
   // the intended filter instead of just matching nothing.
   if (!isValidUuid(documentId)) {
-    console.error(`[vector] Refusing to delete chunks for non-UUID documentId: ${documentId}`);
-    return;
+    throw new Error('Invalid document deletion identity.');
   }
-  try {
+  await writeForUser(userId, async () => {
     const connection = await db(userId);
     if (!(await connection.tableNames()).includes(TABLE_NAME)) return;
     const table = await connection.openTable(TABLE_NAME);
@@ -138,11 +159,11 @@ export async function deleteChunks(documentId, userId) {
     // column (safe to filter on directly — no case-folding ambiguity),
     // sidesteps the identifier-quoting bug entirely.
     const rows = await table.query().select(['id', 'documentId']).toArray();
-    const idsToDelete = rows.filter((row) => row.documentId === documentId).map((row) => row.id);
+    const idsToDelete = rows
+      .filter((row) => row.documentId === documentId && isValidUuid(row.id))
+      .map((row) => row.id);
     if (!idsToDelete.length) return;
     await table.delete(`id IN (${idsToDelete.map((id) => `'${id}'`).join(',')})`);
     console.log(`[vector] Deleted vector chunks for document: ${documentId}`);
-  } catch (err) {
-    console.error(`[vector] Failed to delete chunks for document ${documentId}:`, err.message);
-  }
+  });
 }

@@ -1,9 +1,13 @@
 import React, { useEffect, useState } from 'react';
+import { percentValue, executionModeLabel } from '../utils/metricsDisplay.js';
 import { ChevronDown, Circle, Settings, Minimize2, Square, X, BarChart2 } from 'lucide-react';
 import { useAppStore } from '../stores/useAppStore.js';
+import { useNavStore } from '../stores/useNavStore.js';
 import { presets } from '../animations/presets.js';
 
 export default function Topbar({ section = 'Chat' }) {
+  const tab = useNavStore((state) => state.tab);
+  const setTab = useNavStore((state) => state.setTab);
   const models = useAppStore((state) => state.models);
   const selectedModelId = useAppStore((state) => state.selectedModelId);
   const selectModel = useAppStore((state) => state.selectModel);
@@ -95,6 +99,27 @@ export default function Topbar({ section = 'Chat' }) {
         <p className="text-[10px] text-stone-500 truncate mt-0.5">{section}</p>
       </div>
 
+      {['chat', 'coding'].includes(tab) && (
+        <nav
+          aria-label="Assistant mode"
+          className="flex shrink-0 rounded-lg border border-white/10 bg-black/20 p-0.5"
+        >
+          {[
+            ['chat', 'Chat'],
+            ['coding', 'Code'],
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              aria-current={tab === id ? 'page' : undefined}
+              onClick={() => setTab(id)}
+              className={`rounded-md px-2.5 py-1.5 text-xs transition-colors ${tab === id ? 'bg-white/10 text-white' : 'text-stone-500 hover:text-white'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
+      )}
       {/* Model Selection and Controls */}
       <div className="flex shrink-0 items-center gap-1 sm:gap-2">
         {/* Performance Hover Diagnostics */}
@@ -115,19 +140,27 @@ export default function Topbar({ section = 'Chat' }) {
               </div>
               <div className="flex justify-between text-xs text-stone-400">
                 <span>CPU Load:</span>
-                <span className="font-semibold text-white">{metrics.cpu}%</span>
+                <span className="font-semibold text-white">{percentValue(metrics.cpu)}</span>
               </div>
               <div className="flex justify-between text-xs text-stone-400">
                 <span>RAM Usage:</span>
-                <span className="font-semibold text-white">{metrics.ram}%</span>
+                <span className="font-semibold text-white">{percentValue(metrics.ram)}</span>
               </div>
               <div className="flex justify-between text-xs text-stone-400">
                 <span>GPU Usage:</span>
-                <span className="font-semibold text-white">{metrics.gpu}%</span>
+                <span className="font-semibold text-white" title={metrics.gpuUnavailableReason}>
+                  {percentValue(metrics.gpu)}
+                </span>
               </div>
               <div className="flex justify-between text-xs text-stone-400">
                 <span>Disk Drive:</span>
-                <span className="font-semibold text-white">{metrics.disk}%</span>
+                <span className="font-semibold text-white">{percentValue(metrics.disk)}</span>
+              </div>
+              <div className="flex justify-between gap-2 text-[10px] text-stone-400">
+                <span>AI device:</span>
+                <span className="font-semibold text-white text-right">
+                  {executionModeLabel(metrics.acceleration)}
+                </span>
               </div>
               {metrics.tokensPerSec > 0 && (
                 <div className="border-t border-white/5 pt-1.5 mt-1.5 space-y-1">
@@ -150,7 +183,7 @@ export default function Topbar({ section = 'Chat' }) {
         </div>
 
         {/* Agent Persona dropdown */}
-        <div className="relative flex items-center">
+        <div className={`relative items-center ${tab === 'coding' ? 'hidden' : 'flex'}`}>
           <select
             value={selectedAgentProfile}
             onChange={(e) => selectAgentProfile(e.target.value)}
