@@ -3,6 +3,16 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const frontend = path.resolve(__dirname, '..');
+// Bring frontend/backend-runtime in line with backend/package.json first (installs only missing
+// packages, cache first, no install scripts). Skipped for --check and with CHANAKYA_NO_DEP_SYNC=1.
+if (!process.argv.slice(2).includes('--check') && process.env.CHANAKYA_NO_DEP_SYNC !== '1') {
+  try {
+    require('./sync-backend-runtime.cjs').syncBackendRuntime(frontend);
+  } catch (error) {
+    console.error('[build] ' + error.message);
+    process.exit(1);
+  }
+}
 let preflight;
 try {
   preflight = require('./build-preflight.cjs').checkBuildRequirements(

@@ -1,0 +1,5 @@
+[openinference_instrumentor]
+mcp = openinference.instrumentation.mcp:MCPInstrumentor
+
+[opentelemetry_instrumentor]
+mcp = openinference.instrumentation.mcp:MCPInstrumentor
