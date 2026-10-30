@@ -1,9 +1,20 @@
-import React, { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { User as UserIcon, Lock, ArrowRight, UserPlus, LogIn, Sparkles, Shield, Eye, EyeOff } from "lucide-react";
-import { useAppStore } from "../stores/useAppStore.js";
-import { presets } from "../animations/presets.js";
-import ChanakyaAvatar from "./ChanakyaAvatar.jsx";
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  User as UserIcon,
+  Lock,
+  ArrowRight,
+  UserPlus,
+  LogIn,
+  Sparkles,
+  Shield,
+  Eye,
+  EyeOff,
+} from 'lucide-react';
+import { useAppStore } from '../stores/useAppStore.js';
+import { presets } from '../animations/presets.js';
+import ChanakyaAvatar from './ChanakyaAvatar.jsx';
+import WindowControls from './WindowControls.jsx';
 
 // Mirrors authService.js's assertValidPassword / username-length rules so a
 // bad value is caught here, with an immediate, specific message, instead of
@@ -18,14 +29,14 @@ export default function LoginScreen() {
   // 'request' — enter the username, get a reset code generated.
   // 'confirm' — enter that code plus the new password.
   const [resetStep, setResetStep] = useState('request');
-  const [username, setUsername] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const [resetToken, setResetToken] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const [username, setUsername] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [resetToken, setResetToken] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState("");
-  const [info, setInfo] = useState("");
+  const [error, setError] = useState('');
+  const [info, setInfo] = useState('');
   const [loading, setLoading] = useState(false);
   const [focusedField, setFocusedField] = useState(null);
 
@@ -39,43 +50,45 @@ export default function LoginScreen() {
     setIsRegister(register);
     setIsReset(false);
     setResetStep('request');
-    setError("");
-    setInfo("");
+    setError('');
+    setInfo('');
     // Password (and the register-only fields) are cleared on every mode
     // switch — carrying a value over silently, e.g. a short password typed
     // while testing Sign In, produced a confusing generic 400 on Register
     // with no indication the password itself was the reason. Username is
     // kept: the common case is the same person continuing with the same
     // name between Sign In and Register.
-    setPassword("");
-    setConfirmPassword("");
-    setDisplayName("");
-    setResetToken("");
+    setPassword('');
+    setConfirmPassword('');
+    setDisplayName('');
+    setResetToken('');
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError("");
-    setInfo("");
+    setError('');
+    setInfo('');
     setLoading(true);
 
     try {
       if (isReset) {
         if (resetStep === 'request') {
           const message = await requestPasswordReset(username);
-          setInfo(message || 'If that account exists, a reset code has been generated on this device.');
+          setInfo(
+            message || 'If that account exists, a reset code has been generated on this device.',
+          );
           setResetStep('confirm');
         } else {
           if (password !== confirmPassword) {
-            throw new Error("New passwords do not match.");
+            throw new Error('New passwords do not match.');
           }
           await resetPasswordWithToken(resetToken, password);
-          setInfo("Password updated. Sign in with your new password.");
+          setInfo('Password updated. Sign in with your new password.');
           setIsReset(false);
           setResetStep('request');
-          setResetToken("");
-          setPassword("");
-          setConfirmPassword("");
+          setResetToken('');
+          setPassword('');
+          setConfirmPassword('');
         }
       } else if (isRegister) {
         const trimmedUsername = username.trim();
@@ -100,7 +113,7 @@ export default function LoginScreen() {
         await login(username, password);
       }
     } catch (err) {
-      setError(err.response?.data?.error || err.message || "Something went wrong");
+      setError(err.response?.data?.error || err.message || 'Something went wrong');
     } finally {
       setLoading(false);
     }
@@ -113,20 +126,34 @@ export default function LoginScreen() {
       {/* Animated background orbs */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <motion.div
-          animate={{ x: [0, 40, -20, 0], y: [0, -30, 40, 0], scale: [1, 1.15, 0.95, 1] }}
-          transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
+          animate={{
+            x: [0, 40, -20, 0],
+            y: [0, -30, 40, 0],
+            scale: [1, 1.15, 0.95, 1],
+          }}
+          transition={{ duration: 15, repeat: Infinity, ease: 'easeInOut' }}
           className="absolute -left-20 -top-20 h-[350px] w-[350px] rounded-full blur-3xl"
-          style={{ background: `radial-gradient(circle, ${accent}15 0%, transparent 70%)` }}
+          style={{
+            background: `radial-gradient(circle, ${accent}15 0%, transparent 70%)`,
+          }}
         />
         <motion.div
-          animate={{ x: [0, -30, 20, 0], y: [0, 40, -20, 0], scale: [1, 0.9, 1.1, 1] }}
-          transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
+          animate={{
+            x: [0, -30, 20, 0],
+            y: [0, 40, -20, 0],
+            scale: [1, 0.9, 1.1, 1],
+          }}
+          transition={{ duration: 20, repeat: Infinity, ease: 'easeInOut' }}
           className="absolute -bottom-20 -right-20 h-[400px] w-[400px] rounded-full blur-3xl"
-          style={{ background: `radial-gradient(circle, ${accent}10 0%, transparent 70%)` }}
+          style={{
+            background: `radial-gradient(circle, ${accent}10 0%, transparent 70%)`,
+          }}
         />
       </div>
 
       <div className="noise pointer-events-none absolute inset-0" />
+
+      <WindowControls className="absolute right-3 top-3 z-20" />
 
       {/* Login Card */}
       <motion.div
@@ -138,7 +165,7 @@ export default function LoginScreen() {
         {/* Top branding */}
         <div className="mb-6 text-center">
           <ChanakyaAvatar accentColor={accent} />
-          
+
           <h1 className="text-xl font-bold tracking-tight text-white uppercase tracking-wider">
             <span>Chanakya AI</span>
           </h1>
@@ -153,9 +180,11 @@ export default function LoginScreen() {
               onClick={() => switchMode(false)}
               className="flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-medium transition-all duration-300 cursor-pointer"
               style={{
-                background: !isRegister ? `linear-gradient(135deg, ${accent}30, ${accent}15)` : 'transparent',
+                background: !isRegister
+                  ? `linear-gradient(135deg, ${accent}30, ${accent}15)`
+                  : 'transparent',
                 color: !isRegister ? '#fff' : '#78716c',
-                boxShadow: !isRegister ? `0 4px 10px ${accent}15` : 'none'
+                boxShadow: !isRegister ? `0 4px 10px ${accent}15` : 'none',
               }}
             >
               <LogIn size={13} />
@@ -165,9 +194,11 @@ export default function LoginScreen() {
               onClick={() => switchMode(true)}
               className="flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-medium transition-all duration-300 cursor-pointer"
               style={{
-                background: isRegister ? `linear-gradient(135deg, ${accent}30, ${accent}15)` : 'transparent',
+                background: isRegister
+                  ? `linear-gradient(135deg, ${accent}30, ${accent}15)`
+                  : 'transparent',
                 color: isRegister ? '#fff' : '#78716c',
-                boxShadow: isRegister ? `0 4px 10px ${accent}15` : 'none'
+                boxShadow: isRegister ? `0 4px 10px ${accent}15` : 'none',
               }}
             >
               <UserPlus size={13} />
@@ -197,8 +228,9 @@ export default function LoginScreen() {
                     autoFocus
                     className="w-full rounded-xl border bg-[#09090a]/70 py-2 pl-9 pr-3 text-xs text-stone-200 placeholder-stone-600 outline-none transition-all focus:ring-1 focus:ring-opacity-20"
                     style={{
-                      borderColor: focusedField === 'username' ? accent : 'rgba(255, 255, 255, 0.08)',
-                      boxShadow: focusedField === 'username' ? `0 0 8px ${accent}30` : 'none'
+                      borderColor:
+                        focusedField === 'username' ? accent : 'rgba(255, 255, 255, 0.08)',
+                      boxShadow: focusedField === 'username' ? `0 0 8px ${accent}30` : 'none',
                     }}
                   />
                 </div>
@@ -230,8 +262,9 @@ export default function LoginScreen() {
                       autoFocus
                       className="w-full rounded-xl border bg-[#09090a]/70 py-2 pl-9 pr-3 text-xs text-stone-200 placeholder-stone-600 outline-none transition-all focus:ring-1 focus:ring-opacity-20"
                       style={{
-                        borderColor: focusedField === 'resetToken' ? accent : 'rgba(255, 255, 255, 0.08)',
-                        boxShadow: focusedField === 'resetToken' ? `0 0 8px ${accent}30` : 'none'
+                        borderColor:
+                          focusedField === 'resetToken' ? accent : 'rgba(255, 255, 255, 0.08)',
+                        boxShadow: focusedField === 'resetToken' ? `0 0 8px ${accent}30` : 'none',
                       }}
                     />
                   </div>
@@ -244,7 +277,7 @@ export default function LoginScreen() {
               {isRegister && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
+                  animate={{ opacity: 1, height: 'auto' }}
                   exit={{ opacity: 0, height: 0 }}
                   transition={{ duration: 0.2 }}
                 >
@@ -261,9 +294,10 @@ export default function LoginScreen() {
                       onBlur={() => setFocusedField(null)}
                       placeholder="Display Name"
                       className="w-full rounded-xl border bg-[#09090a]/70 py-2 pl-9 pr-3 text-xs text-stone-200 placeholder-stone-600 outline-none transition-all focus:ring-1 focus:ring-opacity-20"
-                      style={{ 
-                        borderColor: focusedField === 'display' ? accent : 'rgba(255, 255, 255, 0.08)',
-                        boxShadow: focusedField === 'display' ? `0 0 8px ${accent}30` : 'none'
+                      style={{
+                        borderColor:
+                          focusedField === 'display' ? accent : 'rgba(255, 255, 255, 0.08)',
+                        boxShadow: focusedField === 'display' ? `0 0 8px ${accent}30` : 'none',
                       }}
                     />
                   </div>
@@ -281,7 +315,7 @@ export default function LoginScreen() {
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-600" />
                   <input
-                    type={showPassword ? "text" : "password"}
+                    type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     onFocus={() => setFocusedField('password')}
@@ -290,8 +324,9 @@ export default function LoginScreen() {
                     required
                     className="w-full rounded-xl border bg-[#09090a]/70 py-2 pl-9 pr-9 text-xs text-stone-200 placeholder-stone-600 outline-none transition-all focus:ring-1 focus:ring-opacity-20"
                     style={{
-                      borderColor: focusedField === 'password' ? accent : 'rgba(255, 255, 255, 0.08)',
-                      boxShadow: focusedField === 'password' ? `0 0 8px ${accent}30` : 'none'
+                      borderColor:
+                        focusedField === 'password' ? accent : 'rgba(255, 255, 255, 0.08)',
+                      boxShadow: focusedField === 'password' ? `0 0 8px ${accent}30` : 'none',
                     }}
                   />
                   <button
@@ -303,7 +338,9 @@ export default function LoginScreen() {
                   </button>
                 </div>
                 {isRegister && (
-                  <p className="mt-1 text-[9px] text-stone-600">At least {MIN_PASSWORD_LENGTH} characters.</p>
+                  <p className="mt-1 text-[9px] text-stone-600">
+                    At least {MIN_PASSWORD_LENGTH} characters.
+                  </p>
                 )}
               </div>
             )}
@@ -323,7 +360,7 @@ export default function LoginScreen() {
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-600" />
                     <input
-                      type={showPassword ? "text" : "password"}
+                      type={showPassword ? 'text' : 'password'}
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       placeholder="Confirm New Password"
@@ -341,7 +378,12 @@ export default function LoginScreen() {
               <div className="flex justify-end -mt-1.5">
                 <button
                   type="button"
-                  onClick={() => { setIsReset(true); setResetStep('request'); setError(''); setInfo(''); }}
+                  onClick={() => {
+                    setIsReset(true);
+                    setResetStep('request');
+                    setError('');
+                    setInfo('');
+                  }}
                   className="text-[10px] text-stone-500 hover:text-stone-300 transition-colors cursor-pointer"
                 >
                   Forgot password?
@@ -382,7 +424,7 @@ export default function LoginScreen() {
               className="group flex w-full items-center justify-center gap-1.5 rounded-xl py-3 text-xs font-semibold text-black transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               style={{
                 background: `linear-gradient(135deg, ${accent}, ${accent}dd)`,
-                boxShadow: `0 4px 12px ${accent}25`
+                boxShadow: `0 4px 12px ${accent}25`,
               }}
             >
               {loading ? (
@@ -390,9 +432,16 @@ export default function LoginScreen() {
               ) : (
                 <>
                   {isReset
-                    ? (resetStep === 'request' ? "Send Reset Code" : "Reset Password")
-                    : isRegister ? "Create Account" : "Sign In"}
-                  <ArrowRight size={14} className="transition-transform group-hover:translate-x-0.5" />
+                    ? resetStep === 'request'
+                      ? 'Send Reset Code'
+                      : 'Reset Password'
+                    : isRegister
+                      ? 'Create Account'
+                      : 'Sign In'}
+                  <ArrowRight
+                    size={14}
+                    className="transition-transform group-hover:translate-x-0.5"
+                  />
                 </>
               )}
             </motion.button>

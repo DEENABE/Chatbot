@@ -1,18 +1,32 @@
-import { app, session } from 'electron';
+// Must run before any module that starts a child process.
+import './utils/hideConsoles.js';
+import { app, session, dialog } from 'electron';
 import * as WindowManager from './managers/WindowManager.js';
 import * as BackendManager from './managers/BackendManager.js';
 import * as WakewordManager from './managers/WakewordManager.js';
 import * as ClipboardManager from './managers/ClipboardManager.js';
 import * as ShortcutManager from './managers/ShortcutManager.js';
 import { waitForBackend } from './services/BackendHealth.js';
-import { HEALTH_CHECK_URL, BACKEND_PORT } from './utils/constants.js';
 import { logger } from './utils/logger.js';
+import { applyGpuSafeMode, installCrashGuard } from './utils/crashGuard.js';
+
+// Allows isolated QA profiles without touching the user's installed app data.
+if (process.env.CHANAKYA_USER_DATA_DIR) app.setPath('userData', process.env.CHANAKYA_USER_DATA_DIR);
+
+// Crashes go to <userData>/electron.log; GPU crashes switch on GPU safe mode next launch.
+applyGpuSafeMode(app);
+installCrashGuard(app, { getWindow: () => WindowManager.getMainWindow() });
 
 // IPC registration
 import { registerWindowIPCHandlers } from './ipc/window.ipc.js';
 import { registerSystemIPCHandlers } from './ipc/system.ipc.js';
+import { registerWorkspaceIPCHandlers } from './ipc/workspace.ipc.js';
 import { registerCaptureIPCHandlers } from './ipc/capture.ipc.js';
-import { registerToolIPCHandlers } from './ipc/tool.ipc.js';
+import {
+  registerToolIPCHandlers,
+  startInternalToolServer,
+  stopInternalToolServer,
+} from './ipc/tool.ipc.js';
 import { registerAuthIPCHandlers } from './ipc/auth.ipc.js';
 
 // Without this, launching the app a second time (double-clicking the icon
@@ -40,39 +54,41 @@ if (!gotSingleInstanceLock) {
     // exists in this process, so without the origin check a page this app
     // never intended to load (see the navigation guards in WindowManager.js)
     // could still silently receive mic/camera access just by asking.
-    session.defaultSession.setPermissionRequestHandler(
-      (webContents, permission, callback) => {
-        const isOwnPage = webContents.getURL().startsWith('file://');
-        callback(isOwnPage && permission === 'media');
-      }
-    );
+    session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+      const ownWindow = WindowManager.getMainWindow();
+      const isOwnPage =
+        ownWindow &&
+        !ownWindow.isDestroyed() &&
+        ownWindow.webContents === webContents &&
+        webContents.getURL().startsWith('file://');
+      callback(isOwnPage && permission === 'media');
+    });
 
     // Register IPC Handlers
     registerWindowIPCHandlers();
     registerSystemIPCHandlers();
+    registerWorkspaceIPCHandlers();
     registerCaptureIPCHandlers();
     registerToolIPCHandlers();
     registerAuthIPCHandlers();
 
-    // Previously: probe the health endpoint and, if anything answered,
-    // silently reuse it instead of spawning our own backend. That let an
-    // orphaned backend from a killed/crashed previous launch keep serving
-    // every future launch indefinitely, even across full rebuilds, because
-    // nothing ever verified it was running the CURRENT build's code —
-    // including, in practice, an old pre-migration backend that was still
-    // reading/writing the old JSON-file "database" instead of real SQLite,
-    // so accounts existed on one side and not the other depending on which
-    // stale process happened to answer. With the single-instance lock
-    // above, there's no legitimate reason for anything else to be on this
-    // port by the time we get here — reclaim it and always start fresh.
-    BackendManager.ensurePortFree(BACKEND_PORT);
-    BackendManager.startBackend(app);
+    // Start the internal loopback HTTP server so the backend Orchestrator can
+    // call ToolEngine actions directly without going through the renderer.
+    // The loopback URL and per-launch secret are passed only to the backend child.
+    const toolBridge = await startInternalToolServer(app).catch((err) => {
+      logger.warn('Internal tool server failed to start:', err.message);
+    });
 
     try {
-      await waitForBackend(HEALTH_CHECK_URL, 15000);
+      const backend = await BackendManager.startBackend(app, toolBridge);
+      await waitForBackend(`${backend.apiBaseUrl}/health`, 15000);
       logger.log('Backend is ready');
     } catch (err) {
-      logger.warn('Backend health check timed out:', err.message);
+      logger.error('Local service startup failed:', err.message);
+      dialog.showErrorBox('Chanakya AI could not start', err.message);
+      cleanUpProcesses();
+      app.quit();
+      return;
     }
 
     // Create main window
@@ -119,6 +135,7 @@ app.on('will-quit', () => {
 });
 
 function cleanUpProcesses() {
+  stopInternalToolServer();
   BackendManager.killBackend();
   WakewordManager.killWakeWordDetector();
   ClipboardManager.stopClipboardPolling();

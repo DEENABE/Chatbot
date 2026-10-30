@@ -1,0 +1,359 @@
+{
+  "version": 1,
+  "generatedAt": "2026-10-29T15:14:57.796Z",
+  "generator": {
+    "name": "architecture-docs/evidence.mjs",
+    "skillVersion": "0.3.0"
+  },
+  "codegraphSchemaVersion": 11,
+  "staleIndex": false,
+  "summary": {
+    "errors": 0,
+    "warns": 4,
+    "infos": 29,
+    "nodesChecked": 20,
+    "edgesChecked": 19,
+    "nodesSkipped": 13,
+    "edgesSkipped": 20
+  },
+  "findings": [
+    {
+      "kind": "skipped-node",
+      "severity": "info",
+      "message": "node has no path — not verifiable against the index",
+      "diagramId": "system-context",
+      "nodeId": "chanakya-ai"
+    },
+    {
+      "kind": "skipped-node",
+      "severity": "info",
+      "message": "path \"backend/src/db/schema.sql\" exists on disk but has no indexed files (non-code artifact?)",
+      "diagramId": "containers",
+      "nodeId": "sqlite-db"
+    },
+    {
+      "kind": "skipped-node",
+      "severity": "info",
+      "message": "path \"indictrans-service/\" exists on disk but has no indexed files (non-code artifact?)",
+      "diagramId": "containers",
+      "nodeId": "indictrans-service"
+    },
+    {
+      "kind": "skipped-node",
+      "severity": "info",
+      "message": "node has no path — not verifiable against the index",
+      "diagramId": "backend-components",
+      "nodeId": "model-routing"
+    },
+    {
+      "kind": "skipped-node",
+      "severity": "info",
+      "message": "node has no path — not verifiable against the index",
+      "diagramId": "backend-components",
+      "nodeId": "agent-runtimes"
+    },
+    {
+      "kind": "skipped-node",
+      "severity": "info",
+      "message": "node has no path — not verifiable against the index",
+      "diagramId": "backend-agents",
+      "nodeId": "windows-repair-agent"
+    },
+    {
+      "kind": "skipped-node",
+      "severity": "info",
+      "message": "node has no path — not verifiable against the index",
+      "diagramId": "backend-agents",
+      "nodeId": "app-control-agent"
+    },
+    {
+      "kind": "skipped-node",
+      "severity": "info",
+      "message": "node has no path — not verifiable against the index",
+      "diagramId": "backend-agents",
+      "nodeId": "execution-core"
+    },
+    {
+      "kind": "skipped-node",
+      "severity": "info",
+      "message": "node has no path — not verifiable against the index",
+      "diagramId": "electron-components",
+      "nodeId": "desktop-shell"
+    },
+    {
+      "kind": "skipped-edge",
+      "severity": "info",
+      "message": "edge desktop-user -> chanakya-ai (calls) is not statically verifiable (person/external/datastore endpoint or missing path)",
+      "edge": {
+        "diagramId": "system-context",
+        "sourceId": "desktop-user",
+        "targetId": "chanakya-ai",
+        "type": "calls"
+      }
+    },
+    {
+      "kind": "skipped-edge",
+      "severity": "info",
+      "message": "edge chanakya-ai -> ollama (calls) is not statically verifiable (person/external/datastore endpoint or missing path)",
+      "edge": {
+        "diagramId": "system-context",
+        "sourceId": "chanakya-ai",
+        "targetId": "ollama",
+        "type": "calls"
+      }
+    },
+    {
+      "kind": "skipped-edge",
+      "severity": "info",
+      "message": "edge chanakya-ai -> windows-os (calls) is not statically verifiable (person/external/datastore endpoint or missing path)",
+      "edge": {
+        "diagramId": "system-context",
+        "sourceId": "chanakya-ai",
+        "targetId": "windows-os",
+        "type": "calls"
+      }
+    },
+    {
+      "kind": "skipped-edge",
+      "severity": "info",
+      "message": "edge chanakya-ai -> software-sources (calls) is not statically verifiable (person/external/datastore endpoint or missing path)",
+      "edge": {
+        "diagramId": "system-context",
+        "sourceId": "chanakya-ai",
+        "targetId": "software-sources",
+        "type": "calls"
+      }
+    },
+    {
+      "kind": "skipped-edge",
+      "severity": "info",
+      "message": "edge backend-api -> sqlite-db (writes) is not statically verifiable (person/external/datastore endpoint or missing path)",
+      "edge": {
+        "diagramId": "containers",
+        "sourceId": "backend-api",
+        "targetId": "sqlite-db",
+        "type": "writes"
+      }
+    },
+    {
+      "kind": "skipped-edge",
+      "severity": "info",
+      "message": "edge backend-api -> lancedb-store (writes) is not statically verifiable (person/external/datastore endpoint or missing path)",
+      "edge": {
+        "diagramId": "containers",
+        "sourceId": "backend-api",
+        "targetId": "lancedb-store",
+        "type": "writes"
+      }
+    },
+    {
+      "kind": "skipped-edge",
+      "severity": "info",
+      "message": "edge backend-api -> ollama-server (calls) is not statically verifiable (person/external/datastore endpoint or missing path)",
+      "edge": {
+        "diagramId": "containers",
+        "sourceId": "backend-api",
+        "targetId": "ollama-server",
+        "type": "calls"
+      }
+    },
+    {
+      "kind": "unverified-edge",
+      "severity": "warn",
+      "message": "no CodeGraph symbol edges support backend-api -> indictrans-service (calls) — possible causes: runtime/HTTP boundary, config-driven wiring, or stale index",
+      "edge": {
+        "diagramId": "containers",
+        "sourceId": "backend-api",
+        "targetId": "indictrans-service",
+        "type": "calls"
+      }
+    },
+    {
+      "kind": "skipped-edge",
+      "severity": "info",
+      "message": "edge electron-main -> windows-desktop (calls) is not statically verifiable (person/external/datastore endpoint or missing path)",
+      "edge": {
+        "diagramId": "containers",
+        "sourceId": "electron-main",
+        "targetId": "windows-desktop",
+        "type": "calls"
+      }
+    },
+    {
+      "kind": "skipped-edge",
+      "severity": "info",
+      "message": "edge backend-api -> windows-desktop (calls) is not statically verifiable (person/external/datastore endpoint or missing path)",
+      "edge": {
+        "diagramId": "containers",
+        "sourceId": "backend-api",
+        "targetId": "windows-desktop",
+        "type": "calls"
+      }
+    },
+    {
+      "kind": "skipped-edge",
+      "severity": "info",
+      "message": "edge http-api -> model-routing (calls) is not statically verifiable (person/external/datastore endpoint or missing path)",
+      "edge": {
+        "diagramId": "backend-components",
+        "sourceId": "http-api",
+        "targetId": "model-routing",
+        "type": "calls"
+      }
+    },
+    {
+      "kind": "skipped-edge",
+      "severity": "info",
+      "message": "edge http-api -> agent-runtimes (calls) is not statically verifiable (person/external/datastore endpoint or missing path)",
+      "edge": {
+        "diagramId": "backend-components",
+        "sourceId": "http-api",
+        "targetId": "agent-runtimes",
+        "type": "calls"
+      }
+    },
+    {
+      "kind": "skipped-edge",
+      "severity": "info",
+      "message": "edge docqa-rag -> model-routing (calls) is not statically verifiable (person/external/datastore endpoint or missing path)",
+      "edge": {
+        "diagramId": "backend-components",
+        "sourceId": "docqa-rag",
+        "targetId": "model-routing",
+        "type": "calls"
+      }
+    },
+    {
+      "kind": "skipped-edge",
+      "severity": "info",
+      "message": "edge translation-client -> model-routing (calls) is not statically verifiable (person/external/datastore endpoint or missing path)",
+      "edge": {
+        "diagramId": "backend-components",
+        "sourceId": "translation-client",
+        "targetId": "model-routing",
+        "type": "calls"
+      }
+    },
+    {
+      "kind": "skipped-edge",
+      "severity": "info",
+      "message": "edge agent-runtimes -> model-routing (calls) is not statically verifiable (person/external/datastore endpoint or missing path)",
+      "edge": {
+        "diagramId": "backend-components",
+        "sourceId": "agent-runtimes",
+        "targetId": "model-routing",
+        "type": "calls"
+      }
+    },
+    {
+      "kind": "skipped-edge",
+      "severity": "info",
+      "message": "edge coding-agent -> execution-core (calls) is not statically verifiable (person/external/datastore endpoint or missing path)",
+      "edge": {
+        "diagramId": "backend-agents",
+        "sourceId": "coding-agent",
+        "targetId": "execution-core",
+        "type": "calls"
+      }
+    },
+    {
+      "kind": "skipped-edge",
+      "severity": "info",
+      "message": "edge windows-repair-agent -> execution-core (calls) is not statically verifiable (person/external/datastore endpoint or missing path)",
+      "edge": {
+        "diagramId": "backend-agents",
+        "sourceId": "windows-repair-agent",
+        "targetId": "execution-core",
+        "type": "calls"
+      }
+    },
+    {
+      "kind": "skipped-edge",
+      "severity": "info",
+      "message": "edge app-control-agent -> execution-core (calls) is not statically verifiable (person/external/datastore endpoint or missing path)",
+      "edge": {
+        "diagramId": "backend-agents",
+        "sourceId": "app-control-agent",
+        "targetId": "execution-core",
+        "type": "calls"
+      }
+    },
+    {
+      "kind": "skipped-edge",
+      "severity": "info",
+      "message": "edge windows-repair-agent -> tool-bridge-client (calls) is not statically verifiable (person/external/datastore endpoint or missing path)",
+      "edge": {
+        "diagramId": "backend-agents",
+        "sourceId": "windows-repair-agent",
+        "targetId": "tool-bridge-client",
+        "type": "calls"
+      }
+    },
+    {
+      "kind": "skipped-edge",
+      "severity": "info",
+      "message": "edge app-control-agent -> tool-bridge-client (calls) is not statically verifiable (person/external/datastore endpoint or missing path)",
+      "edge": {
+        "diagramId": "backend-agents",
+        "sourceId": "app-control-agent",
+        "targetId": "tool-bridge-client",
+        "type": "calls"
+      }
+    },
+    {
+      "kind": "skipped-edge",
+      "severity": "info",
+      "message": "edge ipc-handlers -> desktop-shell (calls) is not statically verifiable (person/external/datastore endpoint or missing path)",
+      "edge": {
+        "diagramId": "electron-components",
+        "sourceId": "ipc-handlers",
+        "targetId": "desktop-shell",
+        "type": "calls"
+      }
+    },
+    {
+      "kind": "unverified-edge",
+      "severity": "warn",
+      "message": "no CodeGraph symbol edges support tool-bridge-server -> tool-engine-router (calls) — possible causes: runtime/HTTP boundary, config-driven wiring, or stale index",
+      "edge": {
+        "diagramId": "electron-components",
+        "sourceId": "tool-bridge-server",
+        "targetId": "tool-engine-router",
+        "type": "calls"
+      }
+    },
+    {
+      "kind": "unverified-edge",
+      "severity": "warn",
+      "message": "no CodeGraph symbol edges support tool-bridge-server -> backend-manager (data-flow) — possible causes: runtime/HTTP boundary, config-driven wiring, or stale index",
+      "edge": {
+        "diagramId": "electron-components",
+        "sourceId": "tool-bridge-server",
+        "targetId": "backend-manager",
+        "type": "data-flow"
+      }
+    },
+    {
+      "kind": "undeclared-dependency",
+      "severity": "warn",
+      "message": "4 symbol edge(s) cross tool-services -> tool-security but the diagram declares no edge between them",
+      "edge": {
+        "diagramId": "electron-components",
+        "sourceId": "tool-services",
+        "targetId": "tool-security"
+      },
+      "evidence": {
+        "edgeKinds": {
+          "calls": 4
+        },
+        "heuristicCount": 0,
+        "files": [
+          "frontend/tools/services/BrowserAutomationService.js",
+          "frontend/tools/security/ToolPermissionPolicy.js",
+          "frontend/tools/services/SoftwareService.js",
+          "frontend/tools/security/ToolRegistry.js"
+        ]
+      }
+    }
+  ]
+}

@@ -78,31 +78,31 @@ export default function VoiceRecorder({ onTranscription, audioSource = 'mic' }) 
       let stream;
       if (audioSource === 'system' && isElectron) {
         const sources = await window.electronAPI.getScreenSources();
-        const screenSource = sources.find(src => src.id.startsWith('screen:')) || sources[0];
+        const screenSource = sources.find((src) => src.id.startsWith('screen:')) || sources[0];
         if (!screenSource) throw new Error('No system audio source found.');
 
         const rawStream = await navigator.mediaDevices.getUserMedia({
           audio: {
             mandatory: {
               chromeMediaSource: 'desktop',
-              chromeMediaSourceId: screenSource.id
-            }
+              chromeMediaSourceId: screenSource.id,
+            },
           },
           video: {
             mandatory: {
               chromeMediaSource: 'desktop',
-              chromeMediaSourceId: screenSource.id
-            }
-          }
+              chromeMediaSourceId: screenSource.id,
+            },
+          },
         });
-        
+
         // Keep audio track only
         const audioTracks = rawStream.getAudioTracks();
         if (audioTracks.length === 0) {
-          rawStream.getTracks().forEach(track => track.stop());
+          rawStream.getTracks().forEach((track) => track.stop());
           throw new Error('No system audio track detected.');
         }
-        rawStream.getVideoTracks().forEach(track => track.stop());
+        rawStream.getVideoTracks().forEach((track) => track.stop());
         stream = new MediaStream(audioTracks);
       } else {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -131,9 +131,9 @@ export default function VoiceRecorder({ onTranscription, audioSource = 'mic' }) 
       recorder.onstop = async () => {
         stopTimer();
         if (animationRef.current) cancelAnimationFrame(animationRef.current);
-        
+
         // Stop all media tracks
-        stream.getTracks().forEach(t => t.stop());
+        stream.getTracks().forEach((t) => t.stop());
         if (audioCtx) audioCtx.close().catch(() => {});
 
         if (chunksRef.current.length === 0) {
@@ -147,7 +147,7 @@ export default function VoiceRecorder({ onTranscription, audioSource = 'mic' }) 
           // MediaRecorder hands back WebM/Opus whatever we label the blob, so
           // the recording is decoded before either engine sees it.
           const recorded = new Blob(chunksRef.current, {
-            type: recorder.mimeType || 'audio/webm'
+            type: recorder.mimeType || 'audio/webm',
           });
 
           const { text } = await transcribe(recorded);
@@ -170,10 +170,9 @@ export default function VoiceRecorder({ onTranscription, audioSource = 'mic' }) 
       setIsRecording(true);
       setMicListening(true);
       startTimer();
-      
+
       // Start painting frequencies
       setTimeout(drawWaveform, 100);
-
     } catch (err) {
       console.error('Microphone capture failed:', err);
       alert('Microphone setup failed: ' + err.message);
@@ -263,14 +262,18 @@ export default function VoiceRecorder({ onTranscription, audioSource = 'mic' }) 
         ) : error ? (
           <span className="text-[11px] text-red-400 font-medium text-center px-2">{error}</span>
         ) : (
-          <span className="text-[11px] text-stone-500 font-medium">Ready to capture voice input</span>
+          <span className="text-[11px] text-stone-500 font-medium">
+            Ready to capture voice input
+          </span>
         )}
       </div>
 
       {/* Control Row */}
       <div className="flex items-center justify-between w-full">
         <div className="flex items-center gap-2">
-          <div className={`w-2.5 h-2.5 rounded-full ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-stone-600'}`} />
+          <div
+            className={`w-2.5 h-2.5 rounded-full ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-stone-600'}`}
+          />
           <span className="text-[10px] font-bold text-stone-400 tracking-wider uppercase">
             {isRecording ? `REC (${formatTimer(timer)})` : 'OFFLINE mic'}
           </span>

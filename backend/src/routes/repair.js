@@ -1,9 +1,17 @@
+import { executionRequestSignal } from '../orchestrator/requestSignal.js';
 import { Router } from 'express';
 import { runRepair } from '../ai/Orchestrator.js';
 import { DEFAULT_MODEL } from '../ai/llmClient.js';
 import { addFeedback, getSessions, exportTrainingData } from '../ai/RepairLogger.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
+import { memoryRequest } from '../memory/runtime.js';
 import { boundedInt } from '../lib/validate.js';
+import { routeChatModel } from '../services/modelRouter.js';
+import { modelRuntime } from '../services/modelRuntime.js';
+import { inferenceGate } from '../services/inferenceGate.js';
+import { repairTask } from '../orchestrator/RepairTask.js';
+import { appendHistory } from '../services/historyService.js';
+import { isValidUuid } from '../lib/validateUuid.js';
 
 export const repairRouter = Router();
 
@@ -23,11 +31,18 @@ repairRouter.use(requireAuth);
 // session that belongs to a different account (Step 17: sessionId IDOR).
 repairRouter.post('/feedback', (request, response) => {
   const { sessionId, worked, note } = request.body || {};
-  if (!sessionId || typeof sessionId !== 'string' || sessionId.length > 200 || typeof worked !== 'boolean') {
+  if (
+    !sessionId ||
+    typeof sessionId !== 'string' ||
+    sessionId.length > 200 ||
+    typeof worked !== 'boolean'
+  ) {
     return response.status(400).json({ error: 'sessionId and boolean "worked" are required.' });
   }
   if (note !== undefined && (typeof note !== 'string' || note.length > MAX_NOTE_LENGTH)) {
-    return response.status(400).json({ error: `note must be a string of ${MAX_NOTE_LENGTH} characters or fewer.` });
+    return response.status(400).json({
+      error: `note must be a string of ${MAX_NOTE_LENGTH} characters or fewer.`,
+    });
   }
   const ok = addFeedback(sessionId, worked, note || '', request.userId);
   if (!ok) return response.status(404).json({ error: 'Repair session not found.' });
@@ -56,18 +71,41 @@ repairRouter.get('/dataset', requireAdmin, (_request, response) => {
  * Streams the enterprise repair pipeline as NDJSON. Event types:
  *   intent | plan | agent | thought | command | output | blocked | final | error | aborted
  */
-repairRouter.post('/', async (request, response) => {
-  const { goal, model = DEFAULT_MODEL, maxSteps } = request.body || {};
+repairRouter.post('/', memoryRequest, async (request, response) => {
+  const {
+    goal,
+    model = DEFAULT_MODEL,
+    maxSteps,
+    conversationId,
+    userMessageId,
+  } = request.body || {};
 
-  if (!goal || !String(goal).trim()) {
+  if (typeof goal !== 'string' || !goal.trim()) {
     return response.status(400).json({ error: 'A "goal" describing the problem is required.' });
   }
   if (String(goal).length > MAX_GOAL_LENGTH) {
-    return response.status(400).json({ error: `goal must be ${MAX_GOAL_LENGTH} characters or fewer.` });
+    return response
+      .status(400)
+      .json({ error: `goal must be ${MAX_GOAL_LENGTH} characters or fewer.` });
   }
+  if (
+    (conversationId !== undefined && !isValidUuid(conversationId)) ||
+    (userMessageId !== undefined && !isValidUuid(userMessageId))
+  )
+    return response.status(400).json({ error: 'Invalid repair conversation identity.' });
   let boundedMaxSteps;
   try {
-    boundedMaxSteps = boundedInt(maxSteps, 'maxSteps', { min: 1, max: MAX_STEPS_CEILING, fallback: undefined });
+    if (conversationId)
+      await appendHistory(
+        { conversationId, role: 'user', content: goal.trim(), userMessageId },
+        request.userId,
+      );
+    let result;
+    boundedMaxSteps = boundedInt(maxSteps, 'maxSteps', {
+      min: 1,
+      max: MAX_STEPS_CEILING,
+      fallback: undefined,
+    });
   } catch (error) {
     return response.status(400).json({ error: error.message });
   }
@@ -77,17 +115,41 @@ repairRouter.post('/', async (request, response) => {
   response.setHeader('Cache-Control', 'no-cache, no-transform');
   response.setHeader('X-Accel-Buffering', 'no');
 
+  const signal = executionRequestSignal(request, response);
   const send = (event) => response.write(`${JSON.stringify(event)}\n`);
 
   try {
-    await runRepair({
+    const options = {
       goal: String(goal).trim(),
       model,
       maxSteps: boundedMaxSteps,
-      signal: request.signal,
+      signal,
       userId: request.userId,
-      onEvent: send
-    });
+      onEvent: send,
+    };
+    const domain = repairTask(goal)?.domain;
+    if (domain && domain !== 'spooler') {
+      let routing;
+      try {
+        routing = await routeChatModel({
+          userId: request.userId,
+          requestedModel: model,
+          computerRequest: { requiresTools: true },
+          agentId: 'windows-repair',
+        });
+      } catch {
+        /* fixed diagnostics still work offline */
+      }
+      const run = () => runRepair({ ...options, model: routing?.model || '' });
+      if (routing)
+        result = await inferenceGate.run(() => modelRuntime.run(routing, run), { signal });
+      else result = await run();
+    } else result = await runRepair(options);
+    if (conversationId && !signal.aborted && (result?.answer || result?.summary))
+      await appendHistory(
+        { conversationId, role: 'assistant', content: result.answer || result.summary },
+        request.userId,
+      );
   } catch (error) {
     send({ type: 'error', payload: { message: error.message } });
   } finally {

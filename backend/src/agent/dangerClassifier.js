@@ -92,18 +92,87 @@ const BLOCKED_PATTERNS = [
 ];
 
 /**
+ * Added by the security review. A deny-list can never be complete, so these target whole CLASSES of technique that let a
+ * prompt-injected or confused model escape the other rules: hiding the real command, pulling or pushing data over the
+ * network, surviving a reboot, blinding security tooling, and reading credentials. Anything here needs a human decision.
+ */
+const SECURITY_PATTERNS = [
+  // Hidden or indirect execution: the real command never appears in the text the other rules inspect.
+  /(^|[\s;|&(])-(e|ec|enc|encodedcommand)\b\s+[a-z0-9+/=]{16,}/i,
+  /\bfrombase64string\b/i,
+  /\b(iex|invoke-expression)\b/i,
+  /\[scriptblock\]::create\b/i,
+  /invokecommand\.invokescript\b/i,
+  /\[(system\.)?reflection\.assembly\]::(load|loadfrom|loadfile)\b/i,
+  /\badd-type\b[^\n]*-(typedefinition|memberdefinition)\b/i,
+  // Dynamic invocation: "& $cmd", "& ('Remove'+'-Item')", ". $script" — the verb is computed at run time.
+  /(^|[;|\n(]|&&)\s*[&.]\s*[$("']/,
+  /\binvoke-command\b/i,
+  // A second interpreter escapes the per-segment analysis entirely.
+  /\b(powershell|pwsh)(\.exe)?\b[^\n]*\s-(c|command|file|enc|encodedcommand)\b/i,
+  /\bstart-process\b[^\n]*\b(powershell|pwsh|cmd|wscript|cscript|mshta|rundll32|regsvr32|msiexec)\b/i,
+  // Download to disk, and any upload / exfiltration (a plain read-only GET stays allowed).
+  /\b(downloadfile|start-bitstransfer)\b/i,
+  /\bbitsadmin\b[^\n]*\/transfer/i,
+  /\bcertutil\b[^\n]*(-urlcache|-split|-decode)/i,
+  /\b(invoke-webrequest|invoke-restmethod|iwr|irm|curl(\.exe)?|wget)\b[^\n]*(-outfile|\s-o\s|-infile|-method\s+(post|put|patch|delete)|\s-body\b|--data|--upload-file|\s-t\s)/i,
+  // Persistence and remote access.
+  /\b(register-scheduledtask|new-scheduledtask|new-service)\b/i,
+  /\bschtasks(\.exe)?\b[^\n]*\/(create|change)\b/i,
+  /\bsc(\.exe)?\s+(create|config)\b/i,
+  /\breg(istry)?\s+add\b[^\n]*\\(runonce|image file execution options|appinit_dlls|winlogon)\b/i,
+  /\b(enable-psremoting|set-wsmaninstance)\b|\bwinrm\s+(quickconfig|set)\b/i,
+  /\bwmic\b[^\n]*\bprocess\s+call\s+create\b/i,
+  // Blinding security tooling or covering tracks.
+  /\b(add|set)-mppreference\b[^\n]*-exclusion/i,
+  /\b(stop|set|disable|remove)-service\b[^\n]*\b(windefend|wdnissvc|wdfilter|sense|mpssvc|wscsvc|securityhealthservice|eventlog)\b/i,
+  /\bsc(\.exe)?\s+(stop|config)\s+(windefend|wdnissvc|sense|mpssvc|wscsvc|securityhealthservice|eventlog)\b/i,
+  /\b(wevtutil\s+(cl|clear-log)|clear-eventlog)\b/i,
+  /\b(vssadmin|wbadmin)\b[^\n]*\bdelete\b/i,
+  // Credential and secret access.
+  /\b(mimikatz|procdump|ntdsutil|cmdkey|vaultcmd)\b/i,
+  /\breg(\.exe)?\s+save\s+hk(lm|ey_local_machine)\\(sam|security|system)\b/i,
+  /(\.ssh[\\/]|\bid_(rsa|ed25519|ecdsa)\b|\.aws[\\/]credentials|\.kube[\\/]config|[\\/]login data\b|\bntuser\.dat\b|[\\/]config[\\/]sam\b)/i,
+];
+
+/**
  * Verbs / commands that only read state. Anchored to the start of the
  * (trimmed) command or a pipeline segment so a mutating verb later in the
  * pipeline still escalates the classification.
  */
 const READ_ALLOWLIST = [
-  /^get-/i, /^test-/i, /^resolve-/i, /^measure-/i, /^select-/i, /^where-/i,
-  /^sort-/i, /^find-/i, /^show-/i, /^read-/i, /^compare-/i, /^format-list/i,
-  /^format-table/i, /^out-string/i, /^convertto-/i, /^convertfrom-/i,
-  /^ipconfig\b/i, /^systeminfo\b/i, /^ping\b/i, /^tracert\b/i, /^nslookup\b/i,
-  /^netstat\b/i, /^tasklist\b/i, /^wmic\b(?![^\n]*\b(delete|call|set)\b)/i,
-  /^whoami\b/i, /^hostname\b/i, /^echo\b/i, /^write-(host|output)\b/i,
-  /^dir\b/i, /^ls\b/i, /^type\b/i, /^gc\b/i,
+  /^get-/i,
+  /^test-/i,
+  /^resolve-/i,
+  /^measure-/i,
+  /^select-/i,
+  /^where-/i,
+  /^sort-/i,
+  /^find-/i,
+  /^show-/i,
+  /^read-/i,
+  /^compare-/i,
+  /^format-list/i,
+  /^format-table/i,
+  /^out-string/i,
+  /^convertto-/i,
+  /^convertfrom-/i,
+  /^ipconfig\b/i,
+  /^systeminfo\b/i,
+  /^ping\b/i,
+  /^tracert\b/i,
+  /^nslookup\b/i,
+  /^netstat\b/i,
+  /^tasklist\b/i,
+  /^wmic\b(?![^\n]*\b(delete|call|set)\b)/i,
+  /^whoami\b/i,
+  /^hostname\b/i,
+  /^echo\b/i,
+  /^write-(host|output)\b/i,
+  /^dir\b/i,
+  /^ls\b/i,
+  /^type\b/i,
+  /^gc\b/i,
 ];
 
 /**
@@ -127,6 +196,19 @@ export function classifyCommand(command) {
     }
   }
 
+  // PowerShell ignores backticks inside names ("I`E`X", "Invoke-Ex`pression"), so strip them before matching; the
+  // original text is still what would run, which is exactly why this normalisation is needed.
+  const normalized = cmd.replace(/`/g, '');
+  for (const pattern of SECURITY_PATTERNS) {
+    if (pattern.test(normalized)) {
+      return {
+        level: 'blocked',
+        reason:
+          'Obfuscated or indirect execution, network download/upload, persistence, security-tool tampering or credential access — needs a human decision.',
+      };
+    }
+  }
+
   // A command reads only if EVERY statement/pipeline segment is a read-only
   // verb. Splitting on "|" alone let a statement separator smuggle a mutating
   // command past the check — "Get-Process; Remove-Item C:\Windows -Recurse"
@@ -138,9 +220,9 @@ export function classifyCommand(command) {
     .split(/[|;\n]|&&|\|\|/)
     .map((s) => s.trim())
     .filter(Boolean);
-  const everySegmentReads = segments.length > 0 && segments.every((seg) =>
-    READ_ALLOWLIST.some((pattern) => pattern.test(seg))
-  );
+  const everySegmentReads =
+    segments.length > 0 &&
+    segments.every((seg) => READ_ALLOWLIST.some((pattern) => pattern.test(seg)));
   if (everySegmentReads) {
     return { level: 'read', reason: 'Read-only diagnostic.' };
   }

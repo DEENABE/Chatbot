@@ -1,0 +1,20 @@
+{
+  "name": "Backend – Agent Runtimes",
+  "level": 3,
+  "meta": { "direction": "TB" },
+  "nodes": [
+    { "id": "coding-agent", "label": "Coding Agent", "path": "backend/src/coding/", "meta": { "type": "service" } },
+    { "id": "windows-repair-agent", "label": "Windows Repair Agent", "meta": { "type": "service" } },
+    { "id": "app-control-agent", "label": "App-Control / Desktop Agent", "meta": { "type": "service" } },
+    { "id": "file-agent", "label": "File / Document Agent", "path": "backend/src/fileagent/", "meta": { "type": "service" } },
+    { "id": "execution-core", "label": "Execution Core (state, checkpoints)", "meta": { "type": "service" } },
+    { "id": "tool-bridge-client", "label": "Tool Engine Bridge Client", "path": "backend/src/orchestrator/ToolEngineBridge.js", "meta": { "type": "gateway" } }
+  ],
+  "edges": [
+    { "id": "e-coding-agent-execution-core", "source": "coding-agent", "target": "execution-core", "label": "ExecutionController + AgentState", "meta": { "type": "calls" } },
+    { "id": "e-windows-repair-agent-execution-core", "source": "windows-repair-agent", "target": "execution-core", "label": "checkpointed plan/decide loop", "meta": { "type": "calls" } },
+    { "id": "e-app-control-agent-execution-core", "source": "app-control-agent", "target": "execution-core", "label": "AgentOrchestrator checkpoints", "meta": { "type": "calls" } },
+    { "id": "e-windows-repair-agent-tool-bridge-client", "source": "windows-repair-agent", "target": "tool-bridge-client", "label": "executeStep → callTool", "meta": { "type": "calls" } },
+    { "id": "e-app-control-agent-tool-bridge-client", "source": "app-control-agent", "target": "tool-bridge-client", "label": "callTool (orchestrate route)", "meta": { "type": "calls" } }
+  ]
+}

@@ -11,13 +11,15 @@
     "build": "vite build",
     "preview": "vite preview",
     "electron": "electron .",
-    "electron:build": "node scripts/prepare-backend.cjs && vite build && electron-builder --win"
+    "electron:build": "node scripts/build-release.cjs",
+    "electron:release": "node scripts/build-release.cjs",
+    "settings:admin-digest": "node scripts/update-settings-admin-digest.cjs"
   },
   "build": {
     "appId": "com.chanakya.ai",
     "productName": "Chanakya AI",
     "electronVersion": "37.10.3",
-    "electronDist": "../.electron-dist/37.10.3-win32-x64",
+    "electronDist": "../node_modules/electron/dist",
     "directories": {
       "output": "release-build"
     },
@@ -26,6 +28,11 @@
       "electron/**/*",
       "package.json",
       "tools/**/*",
+      "!**/app-registry{,.*}/**/*",
+      "!**/app-registry{,.*}",
+      "!**/app-aliases{,.*}",
+      "!**/app-permissions{,.*}",
+      "!**/app-targets{,.*}",
       {
         "from": "../node_modules/say",
         "to": "node_modules/say"
@@ -33,7 +40,20 @@
       {
         "from": "../node_modules/one-time",
         "to": "node_modules/one-time"
-      }
+      },
+      {
+        "from": "../node_modules/playwright-core",
+        "to": "node_modules/playwright-core"
+      },
+      "!electron/tests/**/*",
+      "!tools/tests/**/*",
+      "!**/*.test.*",
+      "!**/*.spec.*",
+      "!**/*.bak",
+      "!**/.env*",
+      "!**/*.pem",
+      "!**/*.pfx",
+      "!**/*.key"
     ],
     "afterPack": "scripts/afterPack.cjs",
     "win": {
@@ -47,6 +67,7 @@
       ]
     },
     "nsis": {
+      "perMachine": true,
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "installerSidebar": null,
@@ -54,7 +75,17 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Chanakya AI"
     },
-    "asar": false
+    "asar": false,
+    "extraResources": [
+      {
+        "from": "tools/apps",
+        "to": "desktop-control",
+        "filter": [
+          "*.ps1",
+          "DesktopAccessibility.cs"
+        ]
+      }
+    ]
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",
@@ -64,6 +95,7 @@
     "axios": "^1.9.0",
     "framer-motion": "^12.12.1",
     "lucide-react": "^0.511.0",
+    "playwright-core": "1.63.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-markdown": "^10.1.0",
@@ -75,7 +107,7 @@
   "devDependencies": {
     "@vitejs/plugin-react": "^4.4.1",
     "autoprefixer": "^10.4.21",
-    "electron": "^37.10.3",
+    "electron": "^45.1.0",
     "electron-builder": "^26.15.3",
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",

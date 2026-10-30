@@ -1,35 +1,20 @@
 import { create } from 'zustand';
+import {
+  createChatExecution,
+  executeChatCall,
+  finishChat,
+  executeCancellableTool,
+} from '../services/chatExecution.js';
+import { appChoiceEntry, resumeWithChoice, matchTypedAppChoice } from '../services/appChoice.js';
 import * as apiService from '../services/api.js';
+import { repairTask } from '../../../backend/src/orchestrator/RepairTask.js';
+import { validateAttachment, MAX_ATTACHMENTS, shouldLoadChatTools } from '../utils/attachments.js';
 
-function mapToolsToOllamaSchema(toolsMap) {
-  const ollamaTools = [];
-  for (const [serviceName, actions] of Object.entries(toolsMap)) {
-    for (const action of actions) {
-      const properties = {};
-      const required = [];
-      for (const [paramName, paramSchema] of Object.entries(action.schema || {})) {
-        properties[paramName] = {
-          type: paramSchema.type === 'path' ? 'string' : paramSchema.type || 'string',
-          description: paramSchema.description || `Parameter ${paramName}`
-        };
-        if (paramSchema.required) required.push(paramName);
-      }
-      ollamaTools.push({
-        type: 'function',
-        function: {
-          name: `${serviceName}_${action.action}`,
-          description: action.description || `Call action ${action.action} on ${serviceName}`,
-          parameters: {
-            type: 'object',
-            properties,
-            required
-          }
-        }
-      });
-    }
-  }
-  return ollamaTools;
-}
+import { mapToolsToOllamaSchema } from '../services/toolSchemas.js';
+import {
+  setInstalledApps,
+  computerTask,
+} from '../../../backend/src/orchestrator/ComputerTaskPolicy.js';
 
 export const useAppStore = create((set, get) => ({
   // User Management
@@ -63,7 +48,9 @@ export const useAppStore = create((set, get) => ({
       set({ user, isAuthLoading: false });
       get().fetchHistory();
       get().fetchDocuments();
+      get().fetchActiveWorkspace();
       get().fetchMemories();
+      get().loadInstalledApps();
       return user;
     } catch (err) {
       set({ isAuthLoading: false });
@@ -74,13 +61,19 @@ export const useAppStore = create((set, get) => ({
   register: async (username, displayName, password) => {
     set({ isAuthLoading: true });
     try {
-      const response = await apiService.auth.register({ username, displayName, password });
+      const response = await apiService.auth.register({
+        username,
+        displayName,
+        password,
+      });
       const { user, token } = response.data;
       await apiService.setSession(token);
       set({ user, isAuthLoading: false });
       get().fetchHistory();
       get().fetchDocuments();
       get().fetchMemories();
+      get().loadInstalledApps();
+      get().fetchActiveWorkspace();
       return user;
     } catch (err) {
       set({ isAuthLoading: false });
@@ -89,6 +82,10 @@ export const useAppStore = create((set, get) => ({
   },
 
   logout: async () => {
+    get().cancelSoftwareOperation();
+    get().discardSoftwareChoices();
+    get().clearAttachments();
+    get().stopAllGenerations();
     // Best-effort server-side revocation — the local session is cleared
     // either way (the catch), so a network hiccup or an already-401'd
     // session never blocks logging out locally. This must be awaited
@@ -108,72 +105,595 @@ export const useAppStore = create((set, get) => ({
       folders: [],
       activeChatId: null,
       activeMessages: [],
+      backgroundChats: {},
+      generatingChats: {},
       documents: [],
       memories: [],
-      pendingConfirmations: []
+      pendingConfirmations: [],
+      pendingAppChoices: [],
+      pendingSoftwareChoices: [],
+      activeWorkspaceId: null,
     });
   },
 
   clearChat: () => {
+    get().discardSoftwareChoices();
+    get().clearAttachments();
+    // Leaving the chat never stops its answer: a running chat keeps generating in the background.
+    get()._parkActiveChat();
     set({
       activeMessages: [],
       activeChatId: null,
       activeSources: [],
       isGenerating: false,
-      pendingConfirmations: []
+      activeAbortController: null,
+      pendingConfirmations: [],
+      pendingAppChoices: [],
+      pendingSoftwareChoices: [],
     });
-    get().setAbortController(null);
   },
 
   // Tools & Confirmations
+  // Application choices ("which Chrome?"): an execution paused in awaiting_app_choice, answered by candidate id (see services/appChoice.js).
+  pendingAppChoices: [],
+  addAppChoice: (choice) =>
+    set((state) => ({
+      pendingAppChoices: [
+        ...state.pendingAppChoices.filter((c) => c.choiceId !== choice.choiceId),
+        choice,
+      ],
+    })),
+  removeAppChoice: (choiceId) =>
+    set((state) => ({
+      pendingAppChoices: state.pendingAppChoices.filter((c) => c.choiceId !== choiceId),
+    })),
+  _runQueuedCalls: async (execution, calls, tools, messageId) => {
+    for (let i = 0; i < calls.length && !execution.stopped; i++) {
+      const call = calls[i];
+      const observation = await executeChatCall(
+        execution,
+        call,
+        tools,
+        (tool, action, params, toolCallId, identity) =>
+          executeCancellableTool(window.toolEngine, tool, action, params, toolCallId, identity),
+        get().activeAbortController?.signal,
+      );
+      if (!observation) break;
+      const queuedId = crypto.randomUUID();
+      set((state) => ({
+        activeMessages: [
+          ...state.activeMessages,
+          {
+            id: queuedId,
+            chatId: get().activeChatId,
+            role: 'tool',
+            tool_call_id: observation.toolCallId,
+            tool_name: call.function?.name,
+            content: JSON.stringify(observation),
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      }));
+      if (observation.needsConfirmation)
+        get().addConfirmation({
+          confirmationId: observation.confirmationId,
+          message: observation.confirmationMessage,
+          approvalDetails: observation.approvalDetails,
+          messageId: queuedId,
+          execution,
+          tools,
+          remainingCalls: calls.slice(i + 1),
+        });
+      if (observation.needsAppChoice)
+        get().addAppChoice(
+          appChoiceEntry(observation, {
+            execution,
+            tools,
+            messageId: queuedId,
+            remainingCalls: calls.slice(i + 1),
+          }),
+        );
+    }
+  },
+  chooseApp: async (choiceId, candidateId) => {
+    const choice = get().pendingAppChoices.find((c) => c.choiceId === choiceId);
+    if (!choice || choice.resolving || !window.toolEngine) return;
+    const patchChoice = (fields) =>
+      set((state) => ({
+        pendingAppChoices: state.pendingAppChoices.map((c) =>
+          c.choiceId === choiceId ? { ...c, ...fields } : c,
+        ),
+      }));
+    patchChoice({ resolving: true, error: null });
+    const { execution, tools = [], messageId } = choice;
+    const abort = new AbortController();
+    get().setAbortController(abort);
+    try {
+      const observation = await resumeWithChoice(choice, candidateId, {
+        engine: window.toolEngine,
+        signal: abort.signal,
+      });
+      get().removeAppChoice(choiceId);
+      if (!observation) return;
+      set((state) => ({
+        activeMessages: state.activeMessages.map((m) =>
+          m.id === messageId ? { ...m, content: JSON.stringify(observation) } : m,
+        ),
+      }));
+      // The pick went stale: the engine asks again with what is installed now.
+      if (observation.needsAppChoice) {
+        get().addAppChoice(
+          appChoiceEntry(observation, {
+            execution,
+            tools,
+            messageId,
+            remainingCalls: choice.remainingCalls,
+          }),
+        );
+        return;
+      }
+      // Carry on with the original request: queued calls first, then the loop decides the next step from the new evidence.
+      await get()._runQueuedCalls(execution, choice.remainingCalls || [], tools, messageId);
+      if (!execution.stopped) await get().sendMessage('', false, { execution });
+    } catch (error) {
+      execution.stop('error', error.message);
+      get().removeAppChoice(choiceId);
+      set((state) => ({
+        activeMessages: [
+          ...state.activeMessages,
+          {
+            id: crypto.randomUUID(),
+            chatId: get().activeChatId,
+            role: 'assistant',
+            content: `Execution stopped: ${error.message}`,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      }));
+    } finally {
+      if (get().activeAbortController === abort) get().setAbortController(null);
+    }
+  },
+  cancelAppChoice: async (choiceId, reason = 'User cancelled the application choice.') => {
+    const choice = get().pendingAppChoices.find((c) => c.choiceId === choiceId);
+    if (!choice) return;
+    get().removeAppChoice(choiceId);
+    try {
+      await window.toolEngine?.cancelAppChoice(choiceId);
+    } catch {
+      /* the engine expires unanswered choices itself */
+    }
+    choice.execution?.stop('cancelled', reason);
+    set((state) => ({
+      activeMessages: state.activeMessages.map((m) =>
+        m.id === choice.messageId ? { ...m, content: '[APPLICATION CHOICE CANCELLED]' } : m,
+      ),
+    }));
+  },
   pendingConfirmations: [],
-  addConfirmation: (conf) => set((state) => ({ pendingConfirmations: [...state.pendingConfirmations, conf] })),
-  removeConfirmation: (id) => set((state) => ({ pendingConfirmations: state.pendingConfirmations.filter(c => c.confirmationId !== id) })),
+  pendingSoftwareChoices: [],
+  softwareOperation: null,
+  cancelSoftwareOperation: () => {
+    const job = get().softwareOperation;
+    if (job) {
+      job.controller.abort();
+      set({
+        softwareOperation: {
+          ...job,
+          status: 'Cancelling; Windows may still require you to close an elevated installer',
+        },
+      });
+    }
+  },
+  discardSoftwareChoices: () => {
+    for (const choice of get().pendingSoftwareChoices) {
+      choice.execution.stop('cancelled', 'The conversation changed.');
+      Promise.resolve(window.softwareAPI?.cancelChoice(choice.discoveryId)).catch(() => {});
+    }
+    set({ pendingSoftwareChoices: [] });
+  },
+  chooseSoftware: async (discoveryId, candidateId) => {
+    const choice = get().pendingSoftwareChoices.find((item) => item.discoveryId === discoveryId);
+    if (!choice || choice.resolving || !window.softwareAPI) return;
+    set((state) => ({
+      pendingSoftwareChoices: state.pendingSoftwareChoices.map((item) =>
+        item.discoveryId === discoveryId ? { ...item, resolving: true, error: null } : item,
+      ),
+    }));
+    try {
+      const receipt = await window.softwareAPI.choose(discoveryId, candidateId);
+      if (
+        receipt?.status !== 'SOFTWARE_SELECTED' ||
+        receipt.discoveryId !== discoveryId ||
+        receipt.selectedCandidateId !== candidateId
+      )
+        throw new Error('The software selection was not accepted. Discover the product again.');
+      set((state) => ({
+        pendingSoftwareChoices: state.pendingSoftwareChoices.filter(
+          (item) => item.discoveryId !== discoveryId,
+        ),
+        activeMessages: [
+          ...state.activeMessages,
+          {
+            id: crypto.randomUUID(),
+            chatId: choice.chatId,
+            role: 'tool',
+            tool_name: 'software_chooseCandidate',
+            content: JSON.stringify({ success: true, data: receipt }),
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      }));
+      await get().sendMessage('', false, { execution: choice.execution });
+    } catch (error) {
+      set((state) => ({
+        pendingSoftwareChoices: state.pendingSoftwareChoices.map((item) =>
+          item.discoveryId === discoveryId
+            ? {
+                ...item,
+                resolving: false,
+                error: error.message || 'The selection could not be resumed.',
+              }
+            : item,
+        ),
+      }));
+    }
+  },
+  cancelSoftwareChoice: async (discoveryId) => {
+    const choice = get().pendingSoftwareChoices.find((item) => item.discoveryId === discoveryId);
+    if (!choice) return;
+    await window.softwareAPI?.cancelChoice(discoveryId).catch(() => {});
+    choice.execution.stop('cancelled', 'User cancelled the software identity selection.');
+    set((state) => ({
+      pendingSoftwareChoices: state.pendingSoftwareChoices.filter(
+        (item) => item.discoveryId !== discoveryId,
+      ),
+      activeMessages: [
+        ...state.activeMessages,
+        {
+          id: crypto.randomUUID(),
+          chatId: choice.chatId,
+          role: 'assistant',
+          content: 'Software selection cancelled. No installation was authorized.',
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    }));
+  },
+  addConfirmation: (conf) =>
+    set((state) => ({
+      pendingConfirmations: [...state.pendingConfirmations, conf],
+    })),
+  removeConfirmation: (id) =>
+    set((state) => ({
+      pendingConfirmations: state.pendingConfirmations.filter((c) => c.confirmationId !== id),
+    })),
+  renewConfirmation: async (id) => {
+    const conf = get().pendingConfirmations.find((c) => c.confirmationId === id);
+    if (conf?.repair) {
+      if (conf.renewing) return;
+      const renewalId = conf.renewalId || crypto.randomUUID();
+      set((s) => ({
+        pendingConfirmations: s.pendingConfirmations.map((c) =>
+          c.confirmationId === id ? { ...c, renewing: true, renewalId } : c,
+        ),
+      }));
+      try {
+        const { data: saved } = await apiService.repair.renew(conf.repair.sessionId, {
+          expectedRevision: conf.repair.revision,
+          renewalId,
+        });
+        const o = saved.state.plan[saved.state.currentStepIndex].observation;
+        set((s) => ({
+          pendingConfirmations: s.pendingConfirmations.map((c) =>
+            c.confirmationId === id
+              ? {
+                  ...c,
+                  confirmationId: o.confirmationId,
+                  message: o.confirmationMessage,
+                  repair: { ...c.repair, revision: saved.revision },
+                  renewing: false,
+                  renewalId: null,
+                }
+              : c,
+          ),
+        }));
+      } catch (error) {
+        set((s) => ({
+          pendingConfirmations: s.pendingConfirmations.map((c) =>
+            c.confirmationId === id
+              ? {
+                  ...c,
+                  renewing: false,
+                  renewalError: error.response?.data?.error || error.message,
+                }
+              : c,
+          ),
+        }));
+      }
+      return;
+    }
+    if (!conf?.execution || conf.renewing) return;
+    const renewalId = conf.renewalId || crypto.randomUUID();
+    set((state) => ({
+      pendingConfirmations: state.pendingConfirmations.map((c) =>
+        c.confirmationId === id ? { ...c, renewalId, renewing: true, renewalError: null } : c,
+      ),
+    }));
+    try {
+      const renewal = await window.toolEngine.renewConfirmation(id, renewalId);
+      conf.execution.renewConfirmation(renewal);
+      set((state) => ({
+        pendingConfirmations: state.pendingConfirmations.map((c) =>
+          c.confirmationId === id
+            ? {
+                ...c,
+                confirmationId: renewal.confirmationId,
+                message: renewal.message,
+                expiresAt: renewal.expiresAt,
+                renewalId: null,
+                renewing: false,
+                renewalError: null,
+              }
+            : c,
+        ),
+      }));
+    } catch (error) {
+      set((state) => ({
+        pendingConfirmations: state.pendingConfirmations.map((c) =>
+          c.confirmationId === id ? { ...c, renewing: false, renewalError: error.message } : c,
+        ),
+      }));
+    }
+  },
   resolveConfirmation: async (id, approved) => {
-    const conf = get().pendingConfirmations.find(c => c.confirmationId === id);
-    if (!conf) return;
+    const conf = get().pendingConfirmations.find((c) => c.confirmationId === id);
+    if (!conf || conf.renewing) return;
+    if (conf.repair) {
+      set({ isGenerating: true });
+      set((s) => ({
+        pendingConfirmations: s.pendingConfirmations.map((c) =>
+          c.confirmationId === id ? { ...c, renewing: true } : c,
+        ),
+      }));
+      const abort = new AbortController();
+      get().setAbortController(abort);
+      const cancel = () => {
+        apiService.repair.cancel(conf.repair.sessionId, conf.repair.requestId).catch(() => {});
+      };
+      abort.signal.addEventListener('abort', cancel, { once: true });
+      try {
+        const { data: r } = approved
+          ? await apiService.repair.resume(
+              conf.repair.sessionId,
+              { expectedRevision: conf.repair.revision, confirmationId: id },
+              abort.signal,
+            )
+          : await apiService.repair.cancel(conf.repair.sessionId, conf.repair.requestId);
+        get().removeConfirmation(id);
+        set((s) => ({
+          activeMessages: s.activeMessages.map((m) =>
+            m.id === conf.messageId
+              ? {
+                  ...m,
+                  content:
+                    m.content +
+                    '\n\n' +
+                    (approved
+                      ? r.summary
+                      : 'Repair cancelled. Any admitted effect requires inspection.'),
+                }
+              : m,
+          ),
+        }));
+      } catch (error) {
+        set((s) => ({
+          pendingConfirmations: s.pendingConfirmations.map((c) =>
+            c.confirmationId === id
+              ? {
+                  ...c,
+                  renewing: false,
+                  renewalError:
+                    error.response?.data?.error ||
+                    'Continuation failed. Inspect the checkpoint before trying again.',
+                }
+              : c,
+          ),
+        }));
+      } finally {
+        abort.signal.removeEventListener('abort', cancel);
+        get().setAbortController(null);
+        set({ isGenerating: false });
+      }
+      return;
+    }
     get().removeConfirmation(id);
-    
+
     if (!window.toolEngine) return;
-    
+    // Confirmations raised by a UI panel (not a chat tool loop) just approve or cancel that one request.
+    if (conf.standalone) {
+      let result;
+      const controller = new AbortController(),
+        requestId = crypto.randomUUID();
+      if (approved && conf.approvalDetails?.software)
+        set({
+          softwareOperation: {
+            confirmationId: id,
+            controller,
+            requestId,
+            status: `${conf.approvalDetails.software.operation}: ${conf.approvalDetails.software.name}`,
+          },
+        });
+      try {
+        if (approved)
+          result = await executeCancellableTool(
+            window.toolEngine,
+            '_system',
+            'confirm',
+            { confirmationId: id },
+            crypto.randomUUID(),
+            {
+              requestId,
+              idempotencyKey: crypto.randomUUID(),
+              signal: controller.signal,
+            },
+          );
+        else result = await window.toolEngine.cancel(id);
+      } catch (error) {
+        result = {
+          success: false,
+          error: {
+            message: 'The approved action could not be completed. Check Diagnostics and retry.',
+          },
+        };
+        console.error('Standalone confirmation failed', error);
+      } finally {
+        if (get().softwareOperation?.confirmationId === id) set({ softwareOperation: null });
+        conf.onSettled?.(result);
+      }
+      return;
+    }
+
     // We update the paused tool message to show it's resuming or cancelled
-    const chatMsg = get().activeMessages.find(m => m.id === conf.messageId);
+    const chatMsg = get().activeMessages.find((m) => m.id === conf.messageId);
     if (chatMsg) {
-       set((state) => ({
-         activeMessages: state.activeMessages.map(m => 
-           m.id === conf.messageId ? { ...m, content: approved ? '[RESUMING TOOL EXECUTION...]' : '[TOOL EXECUTION CANCELLED BY USER]' } : m
-         )
-       }));
+      set((state) => ({
+        activeMessages: state.activeMessages.map((m) =>
+          m.id === conf.messageId
+            ? {
+                ...m,
+                content: approved
+                  ? '[RESUMING TOOL EXECUTION...]'
+                  : '[TOOL EXECUTION CANCELLED BY USER]',
+              }
+            : m,
+        ),
+      }));
     }
 
     try {
       let result;
       if (approved) {
-        result = await window.toolEngine.confirm(id);
+        if (!conf.execution) throw new Error('Missing execution checkpoint for confirmation.');
+        const continuationAbort = new AbortController();
+        get().setAbortController(continuationAbort);
+        result = await conf.execution.execute(
+          (step) =>
+            executeCancellableTool(
+              window.toolEngine,
+              '_system',
+              'confirm',
+              { confirmationId: id },
+              step.toolCallId,
+              { ...step, signal: continuationAbort.signal },
+            ),
+          { confirmationId: id, signal: continuationAbort.signal },
+        );
       } else {
+        conf.execution?.stop('cancelled', 'User declined confirmation.');
         result = await window.toolEngine.cancel(id);
+        if (
+          [
+            'winget_install',
+            'webInstall_install',
+            'software_install',
+            'software_download',
+            'software_discoverOnline',
+          ].includes(chatMsg?.tool_name) &&
+          result?.success === true
+        ) {
+          const message = 'Installation declined. The application was not installed.';
+          result = {
+            success: false,
+            data: { success: false, status: 'INSTALL_CANCELLED', message },
+            error: { code: 'INSTALL_CANCELLED', message },
+          };
+          set((state) => ({
+            activeMessages: [
+              ...state.activeMessages,
+              {
+                id: crypto.randomUUID(),
+                chatId: get().activeChatId,
+                role: 'assistant',
+                content: message,
+                createdAt: new Date().toISOString(),
+              },
+            ],
+          }));
+        }
       }
 
       // Resume the ReAct loop by sending the result back!
       // To do this, we just append a tool message and call sendMessage with empty content.
       if (chatMsg) {
         set((state) => ({
-          activeMessages: state.activeMessages.map(m => 
-            m.id === conf.messageId ? { ...m, content: JSON.stringify(result) } : m
-          )
+          activeMessages: state.activeMessages.map((m) =>
+            m.id === conf.messageId ? { ...m, content: JSON.stringify(result) } : m,
+          ),
         }));
       }
 
-      // Automatically trigger LLM to continue
-      get().sendMessage('', false);
-
+      if (approved && conf.execution && !conf.execution.stopped) {
+        // A model can return several calls. Preserve the queue across approval.
+        const remaining = conf.remainingCalls || [];
+        for (let i = 0; i < remaining.length && !conf.execution.stopped; i++) {
+          const call = remaining[i];
+          const observation = await executeChatCall(
+            conf.execution,
+            call,
+            conf.tools || [],
+            (tool, action, params, toolCallId, identity) =>
+              executeCancellableTool(window.toolEngine, tool, action, params, toolCallId, identity),
+            get().activeAbortController?.signal,
+          );
+          if (!observation) break;
+          const messageId = crypto.randomUUID();
+          set((state) => ({
+            activeMessages: [
+              ...state.activeMessages,
+              {
+                id: messageId,
+                chatId: get().activeChatId,
+                role: 'tool',
+                tool_call_id: observation.toolCallId,
+                tool_name: call.function?.name,
+                content: JSON.stringify(observation),
+                createdAt: new Date().toISOString(),
+              },
+            ],
+          }));
+          if (observation.needsConfirmation)
+            get().addConfirmation({
+              confirmationId: observation.confirmationId,
+              message: observation.confirmationMessage,
+              approvalDetails: observation.approvalDetails,
+              messageId,
+              execution: conf.execution,
+              tools: conf.tools,
+              remainingCalls: remaining.slice(i + 1),
+            });
+          if (observation.needsAppChoice)
+            get().addAppChoice(
+              appChoiceEntry(observation, {
+                execution: conf.execution,
+                tools: conf.tools,
+                messageId,
+                remainingCalls: remaining.slice(i + 1),
+              }),
+            );
+        }
+        if (!conf.execution.stopped)
+          await get().sendMessage('', false, { execution: conf.execution });
+      }
     } catch (e) {
+      conf.execution?.stop('error', e.message);
       console.error('Confirmation resolution failed', e);
     }
   },
 
   deleteChat: async (id) => {
     try {
+      get()._abortChatRun(id);
       await apiService.history.delete(id);
       if (get().activeChatId === id) {
         get().clearChat();
@@ -193,6 +713,8 @@ export const useAppStore = create((set, get) => ({
   },
 
   deleteAccount: async (password) => {
+    get().clearAttachments();
+    get().stopAllGenerations();
     // Irreversible on the server the moment this resolves — the account row
     // and its vector store are already gone. Reuse logout's local cleanup
     // (clear the stored token, reset in-memory state) since there is no
@@ -207,7 +729,8 @@ export const useAppStore = create((set, get) => ({
       activeMessages: [],
       documents: [],
       memories: [],
-      pendingConfirmations: []
+      pendingConfirmations: [],
+      pendingAppChoices: [],
     });
   },
 
@@ -244,6 +767,8 @@ export const useAppStore = create((set, get) => ({
     try {
       const response = await apiService.auth.me();
       set({ user: response.data.user, isAuthLoading: false });
+      get().loadInstalledApps();
+      get().fetchActiveWorkspace();
     } catch (err) {
       set({ isAuthLoading: false });
       // A real 401 means the session is actually gone (expired/revoked).
@@ -259,28 +784,52 @@ export const useAppStore = create((set, get) => ({
   },
 
   // Window Size Toggles
-  isExpanded: false,
-  toggleExpand: async () => {
-    const nextMode = !get().isExpanded;
+  // The desktop app starts as the corner bubble and goes full-screen after
+  // sign-in; the main process owns the real window layout and reports it back.
+  // A plain browser tab has no bubble, so it starts full. windowMode is
+  // 'full' | 'compact' | 'bubble', and isExpanded is simply "not the bubble".
+  windowMode: typeof window !== 'undefined' && window.electronAPI ? 'bubble' : 'full',
+  isExpanded: !(typeof window !== 'undefined' && window.electronAPI),
+  // Follow a mode the main process has already applied (no IPC back).
+  syncWindowMode: (mode) => {
+    if (!['full', 'compact', 'bubble'].includes(mode)) return;
+    set({
+      windowMode: mode,
+      isExpanded: mode !== 'bubble',
+      ...(mode !== 'bubble' && { lastExpandedMode: mode }),
+    });
+  },
+  setWindowMode: async (mode) => {
+    const previous = get().windowMode;
+    if (mode === previous) return;
     // Swap the view BEFORE resizing the window. Awaiting the IPC first left the
-    // window at chat size while React still rendered the bubble, so the resize
-    // showed an empty pane for a frame or two.
-    set({ isExpanded: nextMode });
+    // window at the old size while React already rendered the new view, so the
+    // resize showed an empty pane for a frame or two.
+    get().syncWindowMode(mode);
     if (window.electronAPI) {
       try {
-        const expanded = await window.electronAPI.toggleExpand(nextMode);
-        // Reconcile only if the main process disagreed (e.g. a rejected toggle).
-        if (expanded !== nextMode) set({ isExpanded: expanded });
+        const applied = await window.electronAPI.setWindowMode(mode);
+        // Reconcile only if the main process disagreed (e.g. a rejected change).
+        if (applied !== mode) get().syncWindowMode(applied);
       } catch {
-        set({ isExpanded: !nextMode });
+        get().syncWindowMode(previous);
       }
     }
   },
+  // Bubble <-> chat; opening returns to full or compact, whichever was last used.
+  // Signing in happens in the small window; full screen is for signed-in use.
+  toggleExpand: () => {
+    const { isExpanded, user, lastExpandedMode } = get();
+    return get().setWindowMode(isExpanded ? 'bubble' : user ? lastExpandedMode : 'compact');
+  },
+  lastExpandedMode: 'full',
 
-  // Minimize / close both collapse the window back to the bubble, so the store
-  // has to follow suit — otherwise the app restores as an expanded chat while
-  // the renderer is still rendering the collapsed view.
-  collapseToBubble: () => set({ isExpanded: false }),
+  // Full <-> windowed (compact) size.
+  toggleWindowSize: () => {
+    const { windowMode, setWindowMode } = get();
+    if (windowMode === 'bubble') return;
+    return setWindowMode(windowMode === 'full' ? 'compact' : 'full');
+  },
 
   // Input Text prompt
   inputText: '',
@@ -314,7 +863,37 @@ export const useAppStore = create((set, get) => ({
 
   // Models Selection
   models: [],
-  selectedModelId: localStorage.getItem('chanakya-model') || 'qwen3',
+  // No built-in model name: fetchModels() picks the first installed model when nothing valid is saved.
+  selectedModelId: localStorage.getItem('chanakya-model') || '',
+  // Installed third-party apps (name + aliases) so free-form requests naming one can be recognised. Refreshed lazily.
+  installedApps: [],
+  installedAppsAt: 0,
+  loadInstalledApps: async (force = false) => {
+    if (
+      !window.toolEngine ||
+      (!force && get().installedApps.length && Date.now() - get().installedAppsAt < 600000)
+    )
+      return;
+    try {
+      const result = await window.toolEngine.execute(
+        'app',
+        'listApps',
+        { limit: 200, withAliases: true },
+        crypto.randomUUID(),
+        { requestId: crypto.randomUUID(), idempotencyKey: crypto.randomUUID() },
+      );
+      const apps = (result?.data?.apps || []).map((a) => ({
+        name: a.name,
+        aliases: a.aliases || [],
+      }));
+      if (apps.length) {
+        setInstalledApps(apps);
+        set({ installedApps: apps, installedAppsAt: Date.now() });
+      }
+    } catch {
+      /* Admission then falls back to the explicit patterns; chat keeps working. */
+    }
+  },
   isModelsLoading: false,
   fetchModels: async () => {
     set({ isModelsLoading: true });
@@ -322,10 +901,10 @@ export const useAppStore = create((set, get) => ({
       const response = await apiService.models.get();
       const models = response.data.models || [];
       set({ models, isModelsLoading: false });
-      
-      const currentChoice = models.find(m => m.id === get().selectedModelId);
+
+      const currentChoice = models.find((m) => m.id === get().selectedModelId);
       if ((!currentChoice || !currentChoice.installed) && models.length > 0) {
-        const firstInstalled = models.find(m => m.installed);
+        const firstInstalled = models.find((m) => m.installed);
         if (firstInstalled) {
           get().selectModel(firstInstalled.id);
         }
@@ -347,7 +926,13 @@ export const useAppStore = create((set, get) => ({
     // guaranteed 401. App.jsx fires this on a timer/visibility change
     // regardless of auth state, so skip the request entirely rather than
     // hitting the network and logging a needless error every time.
-    if (!get().user || get().isGenerating || get().isUploadingDocs) return;
+    if (
+      !get().user ||
+      get().isGenerating ||
+      Object.keys(get().generatingChats).length ||
+      get().isUploadingDocs
+    )
+      return;
     try {
       await apiService.models.unload();
     } catch {
@@ -369,12 +954,13 @@ export const useAppStore = create((set, get) => ({
       set({
         conversations: response.data.conversations || [],
         folders: response.data.folders || [],
-        isHistoryLoading: false
+        isHistoryLoading: false,
       });
       const activeId = get().activeChatId;
       if (activeId) {
-        const chat = (response.data.conversations || []).find(c => c.id === activeId);
-        if (chat) {
+        const chat = (response.data.conversations || []).find((c) => c.id === activeId);
+        // The chat on screen is still being written by a live answer: the saved copy is older, keep the live one.
+        if (chat && !get().generatingChats[activeId]) {
           set({ activeMessages: chat.messages || [] });
         }
       }
@@ -384,25 +970,61 @@ export const useAppStore = create((set, get) => ({
     }
   },
 
+  // Switching chats / pages never stops an answer. The chat you leave keeps generating in the background
+  // (its messages are parked in backgroundChats) and is picked up again when you come back to it.
   selectChat: (chatId) => {
-    set({ activeChatId: chatId, activeSources: [] });
-    if (chatId) {
-      const chat = get().conversations.find(c => c.id === chatId);
-      set({ activeMessages: chat?.messages || [] });
-    } else {
-      set({ activeMessages: [] });
+    if (chatId && chatId === get().activeChatId) return;
+    get().discardSoftwareChoices();
+    get().clearAttachments();
+    get()._parkActiveChat();
+    const state = get();
+    const run = chatId ? state.generatingChats[chatId] : null;
+    let messages = [];
+    let background = state.backgroundChats;
+    if (chatId && background[chatId]) {
+      messages = background[chatId];
+      const { [chatId]: _taken, ...rest } = background;
+      background = rest;
+    } else if (chatId) {
+      messages = state.conversations.find((c) => c.id === chatId)?.messages || [];
     }
+    set({
+      backgroundChats: background,
+      activeChatId: chatId,
+      activeMessages: messages,
+      activeSources: [],
+      isGenerating: !!run,
+      activeAbortController: run?.controller || null,
+      avatarSpeaking: false,
+    });
   },
 
   createChat: () => {
-    set({ activeChatId: null, activeMessages: [], activeSources: [] });
+    get().discardSoftwareChoices();
+    get().clearAttachments();
+    get()._parkActiveChat();
+    set({
+      activeChatId: null,
+      activeMessages: [],
+      activeSources: [],
+      isGenerating: false,
+      activeAbortController: null,
+      avatarSpeaking: false,
+    });
   },
 
   deleteChat: async (chatId) => {
     try {
+      get()._abortChatRun(chatId);
       await apiService.history.delete(chatId);
       if (get().activeChatId === chatId) {
-        set({ activeChatId: null, activeMessages: [], activeSources: [] });
+        set({
+          activeChatId: null,
+          activeMessages: [],
+          activeSources: [],
+          isGenerating: false,
+          activeAbortController: null,
+        });
       }
       get().fetchHistory();
     } catch (err) {
@@ -496,57 +1118,73 @@ export const useAppStore = create((set, get) => ({
   isGenerating: false,
   activeSources: [],
 
-  _streamAutoRepair: async (goal, chatId, abortController) => {
+  _streamAutoRepair: async (goal, chatId, abortController, userMessageId) => {
     const assistantMsg = {
       id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2),
       chatId,
       role: 'assistant',
       content: '🏢 **Auto-Repair started** — analyzing the problem…\n',
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
     };
-    set((state) => ({ activeMessages: [...state.activeMessages, assistantMsg] }));
+    get()._updateChat(chatId, (messages) => [...messages, assistantMsg]);
 
     const append = (text) =>
-      set((state) => ({
-        activeMessages: state.activeMessages.map((m) =>
-          m.id === assistantMsg.id ? { ...m, content: m.content + text } : m
-        )
-      }));
+      get()._updateChat(chatId, (messages) =>
+        messages.map((m) => (m.id === assistantMsg.id ? { ...m, content: m.content + text } : m)),
+      );
 
     try {
       await apiService.streamRepair(
-        { goal, model: get().selectedModelId },
+        { goal, conversationId: chatId, userMessageId },
         {
           signal: abortController.signal,
           onEvent: (event) => {
             const p = event.payload || {};
             switch (event.type) {
               case 'intent':
-                append(`\n🧭 **Category:** ${p.domain}\n`);
+                set({ generationStatus: 'Checking your system' });
                 break;
               case 'plan':
-                append(`\n📋 **Plan:** ${p.summary}\n${(p.steps || []).map((s, i) => `${i + 1}. ${s}`).join('\n')}\n`);
+                set({ generationStatus: 'Preparing a repair plan' });
                 break;
               case 'agent':
-                append(`\n🤖 **${p.name}** is handling this…\n`);
+                set({ generationStatus: 'Checking your system' });
                 break;
               case 'thought':
-                append(`\n💭 _${p.text}_\n`);
                 break;
               case 'command':
-                append(`\n**▶ Running** \`${p.command}\`\n`);
+                set({ generationStatus: 'Repairing your system' });
                 break;
-              case 'output': {
-                const body = (p.stdout || p.stderr || '(no output)').slice(0, 700);
-                append(`\n\`\`\`\n${body}\n\`\`\`\n`);
+              case 'output':
                 break;
-              }
               case 'blocked':
-                append(`\n⛔ **Needs your approval (not run automatically):** \`${p.command}\`\n_${p.reason}_\n`);
+                set({ generationStatus: 'Waiting for your approval' });
                 break;
               case 'final':
-                append(`\n\n### ${p.resolved ? '✅ Resolved' : '⚠️ Not fully resolved'}\n${p.answer}\n${p.recommendation ? `\n**👉 Recommendation:** ${p.recommendation}\n` : ''}`);
-                if (p.sessionId) set({ pendingRepairFeedback: { sessionId: p.sessionId, chatId } });
+                if (p.confirmationId) {
+                  append(
+                    '\nApproval is required to continue. Review the action in the approval dialog.\n',
+                  );
+                  get().addConfirmation({
+                    confirmationId: p.confirmationId,
+                    message: p.confirmationMessage,
+                    approvalDetails: p.approvalDetails,
+                    messageId: assistantMsg.id,
+                    repair: {
+                      sessionId: p.sessionId,
+                      revision: p.revision,
+                      requestId: p.requestId,
+                    },
+                  });
+                  break;
+                }
+                append(
+                  `\n\n### ${p.resolved ? '✅ Resolved' : p.scope === 'diagnostics_only' && p.success ? 'Diagnostics completed' : '⚠️ Not fully resolved'}\n${p.answer || p.summary || 'The result could not be verified.'}\n${p.recommendation ? `\n**👉 Recommendation:** ${p.recommendation}\n` : ''}`,
+                );
+                if (p.sessionId && p.scope !== 'diagnostics_only')
+                  set({
+                    pendingRepairFeedback: { sessionId: p.sessionId, chatId },
+                  });
                 break;
               case 'error':
                 append(`\n❌ **Error:** ${p.message}\n`);
@@ -554,8 +1192,8 @@ export const useAppStore = create((set, get) => ({
               default:
                 break;
             }
-          }
-        }
+          },
+        },
       );
     } catch (err) {
       if (err.name !== 'AbortError') {
@@ -564,13 +1202,49 @@ export const useAppStore = create((set, get) => ({
     }
   },
 
-  sendMessage: async (content, screenCapture) => {
-    if (!content.trim() && !screenCapture) return;
-    if (get().isGenerating) return;
+  sendMessage: async (content, screenCapture, continuation = null, attachments = []) => {
+    if (!continuation && get().pendingSoftwareChoices.length) get().discardSoftwareChoices();
+    if (!content.trim() && !screenCapture && !continuation && !attachments.length) return;
+    if (get().isGenerating) {
+      if (continuation) return;
+      // A new question in the chat that is still answering interrupts that answer (like other chat apps)
+      // instead of being silently dropped. Answers running in OTHER chats are not touched.
+      get().stopGeneration();
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    }
+
+    // An open "which application?" question is answered by a reply that exactly names one offered application; that
+    // reply is the answer, not a new request. Any other new request supersedes the question.
+    if (!continuation && !attachments.length && get().pendingAppChoices.length) {
+      const answer = matchTypedAppChoice(content, get().pendingAppChoices);
+      if (answer) {
+        set((state) => ({
+          activeMessages: [
+            ...state.activeMessages,
+            {
+              id: crypto.randomUUID(),
+              chatId: get().activeChatId,
+              role: 'user',
+              content: content.trim(),
+              createdAt: new Date().toISOString(),
+            },
+          ],
+        }));
+        await get().chooseApp(answer.choice.choiceId, answer.candidate.id);
+        return;
+      }
+      await Promise.all(
+        get().pendingAppChoices.map((c) =>
+          get().cancelAppChoice(c.choiceId, 'Superseded by a new request.'),
+        ),
+      );
+    }
 
     let chatId = get().activeChatId;
     if (!chatId) {
-      chatId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
+      chatId = crypto.randomUUID
+        ? crypto.randomUUID()
+        : Math.random().toString(36).substring(2, 15);
     }
 
     const tempUserMessage = {
@@ -578,31 +1252,54 @@ export const useAppStore = create((set, get) => ({
       chatId,
       role: 'user',
       content: content.trim(),
-      createdAt: new Date().toISOString()
+      attachments: attachments.map(
+        ({ id, name, size, mimeType, status, scope, mediaType, kind, width, height }) => ({
+          id,
+          name,
+          size,
+          mimeType,
+          status,
+          scope,
+          mediaType,
+          kind,
+          width,
+          height,
+        }),
+      ),
+      createdAt: new Date().toISOString(),
     };
 
+    const chatAbortController = new AbortController();
     set((state) => ({
       activeChatId: chatId,
-      activeMessages: [...state.activeMessages, tempUserMessage],
+      activeMessages: continuation
+        ? state.activeMessages
+        : [...state.activeMessages, tempUserMessage],
       isGenerating: true,
       activeSources: [],
-      pendingRepairFeedback: null
+      pendingRepairFeedback: null,
+      activeAbortController: chatAbortController,
+      generatingChats: {
+        ...state.generatingChats,
+        [chatId]: { controller: chatAbortController, startedAt: Date.now() },
+      },
     }));
-
-    let chatAbortController = new AbortController();
-    get().setAbortController(chatAbortController);
+    // Everything below writes to THIS chat (on screen or parked in the background) and only touches the
+    // shared status/avatar state while this chat is the one being looked at.
+    const onScreen = () => get().activeChatId === chatId;
+    let needsHistorySync = false;
 
     // Auto-Repair mode: run the autonomous diagnose-and-fix agent instead of chat.
-    if (get().autoRepairMode) {
-      await get()._streamAutoRepair(content, chatId, chatAbortController);
-      set({ isGenerating: false, avatarSpeaking: false });
-      get().setAbortController(null);
+    if ((get().autoRepairMode || repairTask(content)) && !continuation && !attachments.length) {
+      await get()._streamAutoRepair(content, chatId, chatAbortController, tempUserMessage.id);
+      get()._endRun(chatId, chatAbortController);
       return;
     }
 
     // 1. Fetch available tools from Electron Tool Engine
     let ollamaTools = [];
-    if (window.toolEngine) {
+    const needsDesktopTools = shouldLoadChatTools(content, attachments, continuation, computerTask);
+    if (window.toolEngine && needsDesktopTools) {
       try {
         const toolsMap = await window.toolEngine.getTools();
         ollamaTools = mapToolsToOllamaSchema(toolsMap);
@@ -611,178 +1308,476 @@ export const useAppStore = create((set, get) => ({
       }
     }
 
-    let isDone = false;
+    let execution;
+    try {
+      execution = continuation?.execution || createChatExecution(content);
+      if (!continuation) {
+        execution.attachmentIds = attachments.map((attachment) => attachment.id);
+        execution.userMessageId = tempUserMessage.id;
+      }
+    } catch (error) {
+      get()._updateChat(chatId, (messages) => [
+        ...messages,
+        {
+          id: crypto.randomUUID(),
+          chatId,
+          role: 'assistant',
+          content: `Checkpoint unavailable: ${error.message}`,
+        },
+      ]);
+      get()._endRun(chatId, chatAbortController);
+      return;
+    }
 
     // ReAct Loop: Continue generating if a tool call was made
-    while (!isDone && !chatAbortController.signal.aborted) {
+    while (!execution.stopped && !chatAbortController.signal.aborted) {
       const tempAssistantMessage = {
         id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15),
         chatId,
         role: 'assistant',
         content: '',
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
       };
 
-      set((state) => ({
-        activeMessages: [...state.activeMessages, tempAssistantMessage]
-      }));
+      get()._updateChat(chatId, (messages) => [...messages, tempAssistantMessage]);
 
       const startTime = Date.now();
       let tokenCount = 0;
-      let pendingToolCall = null;
+      const pendingToolCalls = [];
+      let softwareChoice = null;
 
       try {
         // Build history to send to LLM (exclude the newly added empty assistant message)
-        const chatHistory = get().activeMessages
+        const chatHistory = get()
+          ._chatMessages(chatId)
           .slice(0, -1)
+          // An interrupted/empty assistant bubble carries nothing for the model.
+          .filter((m) => m.role !== 'assistant' || String(m.content || '').trim() || m.tool_calls)
           .map((m) => {
-             if (m.role === 'tool') {
-               return { role: 'tool', content: m.content };
-             }
-             return { role: m.role, content: m.content };
+            if (m.role === 'tool') {
+              return {
+                role: 'tool',
+                content: m.content,
+                tool_call_id: m.tool_call_id,
+                tool_name: m.tool_name,
+              };
+            }
+            return {
+              role: m.role,
+              content: m.content,
+              ...(m.tool_calls ? { tool_calls: m.tool_calls } : {}),
+            };
           });
 
         await apiService.streamChat(
           {
-            message: content, // The initial user query
+            installedApps: needsDesktopTools ? get().installedApps : [],
+            message: execution.state.task, // Preserve the original goal on continuation.
             history: chatHistory,
             tools: ollamaTools,
-            model: get().selectedModelId,
+            // Model routes are configured in Settings. The first tag from /models is not a user pin.
+            model: null,
             conversationId: chatId,
+            workspaceId: get().activeWorkspaceId,
+            userMessageId: execution.userMessageId,
+            attachmentIds: execution.attachmentIds || [],
             screenCapture,
-            agentProfile: get().selectedAgentProfile
+            agentProfile: get().selectedAgentProfile,
           },
           {
             signal: chatAbortController.signal,
             onSources: (sources) => {
-              set({ activeSources: sources });
-              set((state) => ({
-                activeMessages: state.activeMessages.map((m) =>
-                  m.id === tempAssistantMessage.id ? { ...m, sources } : m
-                )
-              }));
+              if (onScreen()) set({ activeSources: sources });
+              get()._updateChat(chatId, (messages) =>
+                messages.map((m) => (m.id === tempAssistantMessage.id ? { ...m, sources } : m)),
+              );
+            },
+            onRoute: (route) => {
+              if (!onScreen()) return;
+              // Say which agent and which local model the request was assigned to.
+              const assigned = [route.agentLabel, route.model].filter(Boolean).join(' · ');
+              set({
+                generationStatus: route.queued
+                  ? 'Waiting for your other chat to finish'
+                  : `${
+                      route.route === 'windows'
+                        ? 'Checking your system'
+                        : 'Reading and preparing a response'
+                    }${assigned ? ` (${assigned})` : ''}`,
+              });
             },
             onToken: (token) => {
               tokenCount++;
               // First token = the model has actually started replying, as
               // distinct from still deciding what to say.
-              if (tokenCount === 1) set({ avatarSpeaking: true });
-              set((state) => ({
-                activeMessages: state.activeMessages.map((m) =>
-                  m.id === tempAssistantMessage.id ? { ...m, content: m.content + token } : m
-                )
-              }));
+              if (tokenCount === 1 && onScreen()) set({ avatarSpeaking: true });
+              get()._updateChat(chatId, (messages) =>
+                messages.map((m) =>
+                  m.id === tempAssistantMessage.id ? { ...m, content: m.content + token } : m,
+                ),
+              );
               const duration = (Date.now() - startTime) / 1000;
-              if (duration > 0.1) {
+              if (duration > 0.1 && onScreen()) {
                 set((state) => ({
                   metrics: {
                     ...state.metrics,
                     tokensPerSec: Math.round(tokenCount / duration),
-                    latency: Math.round(duration * 1000)
-                  }
+                    latency: Math.round(duration * 1000),
+                  },
                 }));
               }
             },
             onToolCall: (toolCall) => {
-              pendingToolCall = toolCall;
+              pendingToolCalls.push(toolCall);
+            },
+            onSoftwareChoice: (choice) => {
+              softwareChoice = choice;
+            },
+            // File agent progress ("Reading report.pdf: part 3 of 9").
+            onStatus: (text) => {
+              if (onScreen() && typeof text === 'string') set({ generationStatus: text.slice(0, 200) });
+            },
+            onMemory: (decision) => {
+              const notice =
+                decision === 'ASK_USER'
+                  ? 'That preference was not saved. Say "Remember ..." or save it in Memory settings.'
+                  : decision === 'DO_NOT_SAVE'
+                    ? 'That content was not saved as long-term memory.'
+                    : decision === 'SAVE' || decision === 'UPDATE_EXISTING'
+                      ? 'Saved to your long-term memory.'
+                      : null;
+              if (notice)
+                get()._updateChat(chatId, (messages) =>
+                  messages.map((m) =>
+                    m.id === tempAssistantMessage.id
+                      ? { ...m, content: m.content + notice + '\n\n' }
+                      : m,
+                  ),
+                );
             },
             onDone: (dbMessage) => {
               // Finalize message object
-            }
-          }
+            },
+          },
         );
 
-        // 2. Handle Tool Call
-        if (pendingToolCall && window.toolEngine) {
-          const fnName = pendingToolCall.function.name; // e.g. "file_readFile"
-          const [serviceName, action] = fnName.split('_');
-          let args = {};
-          
-          try {
-            args = pendingToolCall.function.arguments || {};
-            // Sometimes arguments come back as a JSON string, sometimes as an object
-            if (typeof args === 'string') {
-               args = JSON.parse(args);
-            }
-          } catch(e) {
-            console.warn('Failed to parse tool arguments', e);
-          }
-
-          // Show tool execution message
-          const tempToolMsg = {
-             id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15),
-             chatId,
-             role: 'tool',
-             content: `[EXECUTING TOOL] ${serviceName}.${action}(${JSON.stringify(args)})`,
-             createdAt: new Date().toISOString()
-          };
-          
+        // Transport/UI adapter: AgentState admits every call, including multiple calls per response.
+        if (softwareChoice) {
           set((state) => ({
-             activeMessages: [...state.activeMessages, tempToolMsg]
+            pendingSoftwareChoices: [
+              ...state.pendingSoftwareChoices.filter(
+                (item) => item.discoveryId !== softwareChoice.discoveryId,
+              ),
+              { ...softwareChoice, execution, tools: ollamaTools, chatId, resolving: false },
+            ],
           }));
-
-          let toolOutput = "";
-          try {
-            const toolResult = await window.toolEngine.execute(serviceName, action, args);
-            
-            if (toolResult && toolResult.needsConfirmation) {
-               // Add to pending confirmations so the modal shows up
-               get().addConfirmation({
-                 confirmationId: toolResult.confirmationId,
-                 message: toolResult.message,
-                 messageId: tempToolMsg.id
-               });
-               toolOutput = "ACTION PAUSED: Requires user confirmation. Check UI.";
-               isDone = true; // Stop loop, wait for user
-            } else {
-               toolOutput = JSON.stringify(toolResult);
-            }
-          } catch(e) {
-            toolOutput = JSON.stringify({ error: e.message });
+          break;
+        } else if (pendingToolCalls.length) {
+          get()._updateChat(chatId, (messages) =>
+            messages.map((m) =>
+              m.id === tempAssistantMessage.id ? { ...m, tool_calls: pendingToolCalls } : m,
+            ),
+          );
+          for (const call of pendingToolCalls) {
+            if (execution.stopped) break;
+            const observation = await executeChatCall(
+              execution,
+              call,
+              ollamaTools,
+              (tool, action, params, toolCallId, identity) =>
+                window.toolEngine
+                  ? executeCancellableTool(
+                      window.toolEngine,
+                      tool,
+                      action,
+                      params,
+                      toolCallId,
+                      identity,
+                    )
+                  : Promise.resolve({
+                      success: false,
+                      error: {
+                        code: 'BRIDGE_UNAVAILABLE',
+                        message: 'Tool Engine unavailable.',
+                      },
+                    }),
+              chatAbortController.signal,
+            );
+            if (!observation) break;
+            const messageId = crypto.randomUUID();
+            get()._updateChat(chatId, (messages) => [
+              ...messages,
+              {
+                id: messageId,
+                chatId,
+                role: 'tool',
+                tool_call_id: observation.toolCallId,
+                tool_name: call.function?.name,
+                content: JSON.stringify(observation),
+                createdAt: new Date().toISOString(),
+              },
+            ]);
+            if (observation.needsConfirmation)
+              get().addConfirmation({
+                confirmationId: observation.confirmationId,
+                message: observation.confirmationMessage,
+                approvalDetails: observation.approvalDetails,
+                messageId,
+                execution,
+                tools: ollamaTools,
+                remainingCalls: pendingToolCalls.slice(pendingToolCalls.indexOf(call) + 1),
+              });
+            if (observation.needsAppChoice)
+              get().addAppChoice(
+                appChoiceEntry(observation, {
+                  execution,
+                  tools: ollamaTools,
+                  messageId,
+                  remainingCalls: pendingToolCalls.slice(pendingToolCalls.indexOf(call) + 1),
+                }),
+              );
           }
-
-          set((state) => ({
-             activeMessages: state.activeMessages.map((m) => 
-               m.id === tempToolMsg.id ? { ...m, content: toolOutput } : m
-             )
-          }));
-          
-          // Loop will continue and send the new tool message back to LLM unless isDone is true
         } else {
-          isDone = true; // No more tool calls, we are done
-          get().fetchHistory();
+          finishChat(execution);
+          needsHistorySync = true;
         }
-
       } catch (err) {
         if (err.name !== 'AbortError') {
           console.error('Chat error:', err);
-          set((state) => ({
-            activeMessages: state.activeMessages.map((m) =>
+          get()._updateChat(chatId, (messages) =>
+            messages.map((m) =>
               m.id === tempAssistantMessage.id
-                ? { ...m, content: `Error: ${err.message || 'Could not generate response.'}` }
-                : m
-            )
-          }));
+                ? {
+                    ...m,
+                    content: `Error: ${err.message || 'Could not generate response.'}`,
+                  }
+                : m,
+            ),
+          );
         }
-        isDone = true;
+        execution.stop(err.name === 'AbortError' ? 'cancelled' : 'error', err.message);
       }
     }
 
-    set({ isGenerating: false, avatarSpeaking: false });
-    get().setAbortController(null);
+    if (chatAbortController.signal.aborted && !execution.stopped)
+      execution.stop('cancelled', 'aborted');
+    if (execution.state.phase === 'error') {
+      get()._updateChat(chatId, (messages) => [
+        ...messages,
+        {
+          id: crypto.randomUUID(),
+          chatId,
+          role: 'assistant',
+          content: `Execution stopped: ${execution.state.verdict?.summary || 'Unknown failure'}`,
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+    }
+
+    // A newer question in this chat may already own the run (this one was interrupted): don't reset its state.
+    get()._endRun(chatId, chatAbortController);
+    if (needsHistorySync) {
+      // Pull the saved copy (real ids, titles) once the run no longer owns the screen's messages.
+      await get().fetchHistory();
+      get()._dropBackground(chatId);
+    }
+  },
+
+  // ---- Per-chat generation -------------------------------------------------------------------
+  // generatingChats: chats with an answer in flight (any chat, on screen or not) → { controller }.
+  // backgroundChats: messages of chats that are running (or just finished) while another chat is on screen.
+  generatingChats: {},
+  backgroundChats: {},
+  _chatMessages: (chatId) =>
+    chatId === get().activeChatId ? get().activeMessages : get().backgroundChats[chatId] || [],
+  // Apply a message-list change to a chat wherever its messages currently live.
+  _updateChat: (chatId, change) =>
+    set((state) => {
+      if (state.activeChatId === chatId) return { activeMessages: change(state.activeMessages) };
+      if (state.generatingChats[chatId] || state.backgroundChats[chatId])
+        return {
+          backgroundChats: {
+            ...state.backgroundChats,
+            [chatId]: change(state.backgroundChats[chatId] || []),
+          },
+        };
+      return {};
+    }),
+  // Leaving a chat that is still answering: keep its messages so the answer keeps landing in them.
+  _parkActiveChat: () => {
+    const { activeChatId, generatingChats, activeMessages, backgroundChats } = get();
+    if (activeChatId && generatingChats[activeChatId])
+      set({ backgroundChats: { ...backgroundChats, [activeChatId]: activeMessages } });
+  },
+  _dropBackground: (chatId) => {
+    const { backgroundChats, generatingChats, conversations } = get();
+    if (!backgroundChats[chatId] || generatingChats[chatId]) return;
+    if (!conversations.some((c) => c.id === chatId)) return; // not saved yet: keep what we have
+    const { [chatId]: _done, ...rest } = backgroundChats;
+    set({ backgroundChats: rest });
+  },
+  // The run for chatId is over (finished, failed or stopped). Ignored when a newer run already took over.
+  _endRun: (chatId, controller) => {
+    const run = get().generatingChats[chatId];
+    if (run && run.controller !== controller) return;
+    set((state) => {
+      const { [chatId]: _ended, ...rest } = state.generatingChats;
+      return {
+        generatingChats: rest,
+        ...(state.activeChatId === chatId
+          ? { isGenerating: false, avatarSpeaking: false, activeAbortController: null }
+          : {}),
+      };
+    });
+  },
+  _abortChatRun: (chatId) => {
+    const run = chatId ? get().generatingChats[chatId] : null;
+    if (!run) return;
+    run.controller.abort();
+    get()._endRun(chatId, run.controller);
+    get()._dropBackground(chatId);
+  },
+  stopAllGenerations: () => {
+    for (const run of Object.values(get().generatingChats)) run.controller.abort();
+    get().activeAbortController?.abort();
+    set({
+      generatingChats: {},
+      backgroundChats: {},
+      isGenerating: false,
+      avatarSpeaking: false,
+      activeAbortController: null,
+    });
   },
 
   activeAbortController: null,
   setAbortController: (ctrl) => set({ activeAbortController: ctrl }),
+  // Stop = the chat you are looking at. Answers running in other chats are left alone.
   stopGeneration: () => {
-    const ctrl = get().activeAbortController;
-    if (ctrl) {
-      ctrl.abort();
-      set({ isGenerating: false, avatarSpeaking: false, activeAbortController: null });
-    }
+    const chatId = get().activeChatId;
+    const run = chatId ? get().generatingChats[chatId] : null;
+    const ctrl = run?.controller || get().activeAbortController;
+    if (!ctrl) return;
+    ctrl.abort();
+    if (chatId && run) get()._endRun(chatId, ctrl);
+    set({ isGenerating: false, avatarSpeaking: false, activeAbortController: null });
   },
 
-  // Document Uploads
+  activeWorkspaceId: null,
+  setActiveWorkspaceId: (id) => set({ activeWorkspaceId: id }),
+  fetchActiveWorkspace: async () => {
+    if (!get().user) return;
+    try {
+      const result = await apiService.workspaces.get();
+      set({
+        activeWorkspaceId:
+          result.data.workspaces?.find((workspace) => workspace.active)?.id || null,
+      });
+    } catch {
+      /* Workspaces can be refreshed in Settings after backend recovery. */
+    }
+  },
+  // Draft chat files are separate from the long-term knowledge catalog.
+  pendingAttachments: [],
+  isUploadingAttachments: false,
+  generationStatus: 'Preparing a response',
+  stageAttachments: async (files) => {
+    if (get().isUploadingAttachments)
+      throw new Error('Wait for the current files to finish uploading.');
+    const available = MAX_ATTACHMENTS - get().pendingAttachments.length;
+    if (files.length > available)
+      throw new Error(`Attach at most ${MAX_ATTACHMENTS} files per message.`);
+    const entries = Array.from(files).map((file) => ({
+      clientId: crypto.randomUUID(),
+      name: file.name,
+      size: file.size,
+      file,
+      status: validateAttachment(file) ? 'error' : 'queued',
+      error: validateAttachment(file),
+      progress: 0,
+    }));
+    set((state) => ({
+      pendingAttachments: [...state.pendingAttachments, ...entries],
+      isUploadingAttachments: true,
+    }));
+    const patch = (clientId, fields) =>
+      set((state) => ({
+        pendingAttachments: state.pendingAttachments.map((entry) =>
+          entry.clientId === clientId ? { ...entry, ...fields } : entry,
+        ),
+      }));
+    try {
+      for (const entry of entries) {
+        if (
+          entry.error ||
+          !get().pendingAttachments.some((item) => item.clientId === entry.clientId)
+        )
+          continue;
+        const controller = new AbortController();
+        patch(entry.clientId, { status: 'uploading', controller });
+        const data = new FormData();
+        data.append('purpose', 'attachment');
+        data.append('documents', entry.file);
+        try {
+          const response = await apiService.documents.upload(
+            data,
+            (event) =>
+              patch(entry.clientId, {
+                progress: event.total
+                  ? Math.min(99, Math.round((event.loaded * 100) / event.total))
+                  : 0,
+              }),
+            controller.signal,
+          );
+          const document = response.data.documents?.[0];
+          if (!document)
+            throw new Error(response.data.skipped?.[0]?.reason || 'The file could not be read.');
+          if (!get().pendingAttachments.some((item) => item.clientId === entry.clientId)) {
+            await apiService.documents.delete(document.id);
+            continue;
+          }
+          patch(entry.clientId, {
+            ...document,
+            file: undefined,
+            controller: undefined,
+            status: 'ready',
+            progress: 100,
+            warning: response.data.warnings?.[0]?.message,
+          });
+        } catch (error) {
+          if (!controller.signal.aborted)
+            patch(entry.clientId, {
+              status: 'error',
+              controller: undefined,
+              error:
+                error.response?.data?.error ||
+                error.message ||
+                'Upload failed. Remove this file and try again.',
+            });
+        }
+      }
+    } finally {
+      set({ isUploadingAttachments: false });
+    }
+  },
+  removeAttachment: async (clientId) => {
+    const entry = get().pendingAttachments.find((item) => item.clientId === clientId);
+    if (!entry) return;
+    entry.controller?.abort();
+    set((state) => ({
+      pendingAttachments: state.pendingAttachments.filter((item) => item.clientId !== clientId),
+    }));
+    if (entry.id) await apiService.documents.delete(entry.id).catch(() => {});
+  },
+  clearAttachments: () => {
+    for (const entry of get().pendingAttachments) get().removeAttachment(entry.clientId);
+  },
+  consumeAttachments: () => {
+    const files = get().pendingAttachments.filter((entry) => entry.status === 'ready');
+    set({ pendingAttachments: [] });
+    return files;
+  },
+
+  // Document Uploads (only the explicit advanced Knowledge action)
   documents: [],
   isUploadingDocs: false,
   uploadProgress: 0,
@@ -799,12 +1794,15 @@ export const useAppStore = create((set, get) => ({
     if (!files.length) return;
     set({ isUploadingDocs: true, uploadProgress: 0 });
     const formData = new FormData();
+    formData.append('purpose', 'knowledge');
     for (let i = 0; i < files.length; i++) {
       formData.append('documents', files[i]);
     }
     try {
       const response = await apiService.documents.upload(formData, (progressEvent) => {
-        const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+        const percent = Math.round(
+          (progressEvent.loaded * 100) / (progressEvent.total || progressEvent.loaded || 1),
+        );
         set({ uploadProgress: percent });
       });
       set({ isUploadingDocs: false, uploadProgress: 100 });
@@ -866,14 +1864,19 @@ export const useAppStore = create((set, get) => ({
 
   // Performance dashboard
   metrics: {
-    cpu: 0,
-    ram: 0,
-    gpu: 0,
-    temperature: 0,
-    disk: 0,
-    electronMemory: 0,
+    cpu: null,
+    ram: null,
+    gpu: null,
+    temperature: null,
+    disk: null,
+    electronMemory: null,
+    backendMemoryBytes: null,
+    diskRoot: '',
+    hardware: null,
+    acceleration: null,
+    gpuUnavailableReason: 'GPU utilization is not measured.',
     tokensPerSec: 0,
-    latency: 0
+    latency: 0,
   },
   fetchMetrics: async () => {
     try {
@@ -886,10 +1889,28 @@ export const useAppStore = create((set, get) => ({
           gpu: response.data.gpu,
           temperature: response.data.temperature,
           disk: response.data.disk,
-          electronMemory: response.data.electronMemory
-        }
+          electronMemory: response.data.electronMemory,
+          backendMemoryBytes: response.data.backendMemoryBytes,
+          diskRoot: response.data.diskRoot || '',
+          hardware: response.data.hardware || null,
+          acceleration: response.data.acceleration || null,
+          gpuUnavailableReason:
+            response.data.gpuUnavailableReason || 'GPU utilization is not measured.',
+        },
       }));
     } catch (err) {
+      set((state) => ({
+        metrics: {
+          ...state.metrics,
+          cpu: null,
+          ram: null,
+          gpu: null,
+          temperature: null,
+          disk: null,
+          electronMemory: null,
+          backendMemoryBytes: null,
+        },
+      }));
       console.warn('Failed to poll stats:', err);
     }
   },
@@ -898,9 +1919,18 @@ export const useAppStore = create((set, get) => ({
   settings: {
     theme: localStorage.getItem('chanakya-theme') || 'dark',
     transparency: localStorage.getItem('chanakya-transparency') !== 'false',
-    accentColor: localStorage.getItem('chanakya-accent') || '#3b82f6', // Changed gold to premium blue/purple accent
-    windowOpacity: Number(localStorage.getItem('chanakya-opacity') || '0.94'),
-    animationsEnabled: localStorage.getItem('chanakya-animations') !== 'false',
+    accentColor:
+      localStorage.getItem('chanakya-accent') ||
+      localStorage.getItem('chanakya-accentcolor') ||
+      '#3b82f6',
+    windowOpacity: Number(
+      localStorage.getItem('chanakya-opacity') ||
+        localStorage.getItem('chanakya-windowopacity') ||
+        '0.94',
+    ),
+    animationsEnabled:
+      (localStorage.getItem('chanakya-animations') ??
+        localStorage.getItem('chanakya-animationsenabled')) !== 'false',
     startupWithWindows: localStorage.getItem('chanakya-startup') === 'true',
     alwaysOnTop: localStorage.getItem('chanakya-alwaysontop') !== 'false',
     fontSize: Number(localStorage.getItem('chanakya-fontsize') || '12'),
@@ -908,17 +1938,25 @@ export const useAppStore = create((set, get) => ({
     // Speak the hover greeting aloud. On by default — the avatar talking is the
     // point. Repetition is held back by a 90s cooldown rather than by silence,
     // and it can be turned off in Settings.
-    voiceGreeting: localStorage.getItem('chanakya-voicegreeting') !== 'false'
+    voiceGreeting: localStorage.getItem('chanakya-voicegreeting') !== 'false',
   },
   updateSetting: (key, value) => {
-    localStorage.setItem(`chanakya-${key.toLowerCase()}`, String(value));
+    const storageKey =
+      {
+        accentColor: 'accent',
+        windowOpacity: 'opacity',
+        animationsEnabled: 'animations',
+        startupWithWindows: 'startup',
+        alwaysOnTop: 'alwaysontop',
+      }[key] || key.toLowerCase();
+    localStorage.setItem(`chanakya-${storageKey}`, String(value));
     set((state) => ({
       settings: {
         ...state.settings,
-        [key]: value
-      }
+        [key]: value,
+      },
     }));
-  }
+  },
 }));
 
 // api.js clears the stored token itself on any 401 (it has no access to this

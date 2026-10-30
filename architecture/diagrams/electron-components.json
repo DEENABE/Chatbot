@@ -1,0 +1,29 @@
+{
+  "name": "Electron Main + Tool Engine – Components",
+  "level": 3,
+  "meta": { "direction": "TB" },
+  "nodes": [
+    { "id": "ipc-handlers", "label": "IPC Handlers", "path": "frontend/electron/ipc/", "meta": { "type": "gateway", "technology": "electron" } },
+    { "id": "backend-manager", "label": "Backend Manager", "path": "frontend/electron/managers/BackendManager.js", "meta": { "type": "service" } },
+    { "id": "desktop-shell", "label": "Desktop Shell (window, TTS, wake word)", "meta": { "type": "service", "technology": "electron" } },
+    { "id": "tool-bridge-server", "label": "Tool Bridge Server (+ read-only MCP)", "path": "frontend/electron/ipc/toolBridgeServer.js", "meta": { "type": "gateway" } },
+    { "id": "tool-engine-router", "label": "Tool Engine Router + Execution Ledger", "path": "frontend/tools/ToolEngineRouter.js", "meta": { "type": "service" } },
+    { "id": "tool-security", "label": "Tool Security & Permissions", "path": "frontend/tools/security/", "meta": { "type": "service" } },
+    { "id": "tool-services", "label": "Windows Tool Services", "path": "frontend/tools/services/", "meta": { "type": "service" } },
+    { "id": "repair-runner", "label": "Protected Repair Runner", "path": "frontend/tools/repair/", "meta": { "type": "service" } }
+  ],
+  "edges": [
+    { "id": "e-ipc-handlers-tool-engine-router", "source": "ipc-handlers", "target": "tool-engine-router", "label": "tool:execute / tool:approve via ExecutionLedger", "meta": { "type": "calls" } },
+    { "id": "e-ipc-handlers-desktop-shell", "source": "ipc-handlers", "target": "desktop-shell", "label": "window-*, tts:*, capture handlers", "meta": { "type": "calls" } },
+    { "id": "e-ipc-handlers-repair-runner", "source": "ipc-handlers", "target": "repair-runner", "label": "createProtectedRunner / wireRepairLedger", "meta": { "type": "calls" } },
+    { "id": "e-tool-bridge-server-tool-engine-router", "source": "tool-bridge-server", "target": "tool-engine-router", "label": "POST / , /approve via ExecutionLedger", "meta": { "type": "calls" } },
+    { "id": "e-tool-bridge-server-tool-security", "source": "tool-bridge-server", "target": "tool-security", "label": "POST /mcp → ReadOnlyMcpServer", "meta": { "type": "calls" } },
+    { "id": "e-tool-bridge-server-backend-manager", "source": "tool-bridge-server", "target": "backend-manager", "label": "bridge URL + secret injected into backend env", "meta": { "type": "data-flow" } },
+    { "id": "e-tool-engine-router-tool-security", "source": "tool-engine-router", "target": "tool-security", "label": "ToolExecutionGuard.check (allow / approve / deny)", "meta": { "type": "calls" } },
+    { "id": "e-tool-engine-router-tool-services", "source": "tool-engine-router", "target": "tool-services", "label": "service.execute(action)", "meta": { "type": "calls" } },
+    { "id": "e-tool-services-repair-runner", "source": "tool-services", "target": "repair-runner", "label": "spooler inspect / start / verify", "meta": { "type": "calls" } },
+    { "id": "e-ipc-handlers-tool-security", "source": "ipc-handlers", "target": "tool-security", "label": "verifyWindowsProposal (model route authority)", "meta": { "type": "calls" } },
+    { "id": "e-tool-engine-router-repair-runner", "source": "tool-engine-router", "target": "repair-runner", "label": "modelPolicy (repair/contract.js)", "meta": { "type": "calls" } },
+    { "id": "e-tool-security-repair-runner", "source": "tool-security", "target": "repair-runner", "label": "modelPolicy, isAllowedLegacyProcess (repair/contract.js)", "meta": { "type": "calls" } }
+  ]
+}

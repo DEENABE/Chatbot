@@ -1,6 +1,6 @@
-// Optional Qwen3 post-processing pass over IndicTrans2's output — light
+// Optional Qwen post-processing pass over IndicTrans2's output — light
 // fluency/terminology polish ONLY, gated behind TRANSLATION_POST_PROCESSING
-// (default off, see config.js). Qwen3 must never become the translator
+// (default off, see config.js). Qwen must never become the translator
 // itself: IndicTrans2 has already done the actual translation by the time
 // this runs, and this step's own failure is non-fatal (see
 // translationService.js, which falls back to the unpolished IndicTrans2
@@ -20,6 +20,8 @@
 
 import { config } from '../config.js';
 import { LANGUAGES } from './languageRegistry.js';
+import { resolveGeneralModel } from './modelRouter.js';
+import { fetchInference } from './inferenceTransport.js';
 
 function buildInstruction(targetLanguage) {
   const languageName = LANGUAGES[targetLanguage]?.label || targetLanguage;
@@ -37,29 +39,35 @@ function buildInstruction(targetLanguage) {
  * @param {Object} args
  * @param {string} args.text - IndicTrans2's raw translation output.
  * @param {string} args.targetLanguage
+ * @param {string|null} [args.userId] - Lets the user's saved General model decide when no tag is pinned.
  * @returns {Promise<string>} The polished text.
  * @throws {Error} On any provider failure — callers must treat this as
  *   non-fatal and fall back to the original `text`, per the "optional,
  *   only when needed" requirement.
  */
-export async function postProcessTranslation({ text, targetLanguage }) {
+export async function postProcessTranslation({ text, targetLanguage, userId = null }) {
   const body = {
-    model: config.translate.postProcessingModel,
+    // An installed model: the pinned tag if it exists, otherwise what the General route would use.
+    model: await resolveGeneralModel({
+      configured: config.translate.postProcessingModel,
+      userId,
+    }),
     messages: [
       { role: 'system', content: buildInstruction(targetLanguage) },
-      { role: 'user', content: text }
+      { role: 'user', content: text },
     ],
     stream: false,
     keep_alive: config.ollamaKeepAlive,
     think: false,
-    options: { temperature: 0, num_ctx: 8192 }
+    options: { temperature: 0, num_ctx: 8192 },
   };
 
-  const response = await fetch(`${config.ollamaUrl}/api/chat`, {
+  const response = await fetchInference(`${config.ollamaUrl}/api/chat`, {
     method: 'POST',
+    redirect: 'error',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(config.translate.postProcessingTimeoutMs)
+    signal: AbortSignal.timeout(config.translate.postProcessingTimeoutMs),
   });
 
   if (!response.ok) {

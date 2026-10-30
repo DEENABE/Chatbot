@@ -266,10 +266,7 @@
     "goal": "Microphone is connected but no apps can hear my voice",
     "domain": "audio",
     "subdomain": "registry",
-    "plan": [
-      "Check microphone privacy settings",
-      "Enable app access to microphone"
-    ],
+    "plan": ["Check microphone privacy settings", "Enable app access to microphone"],
     "steps": [
       {
         "command": "Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\microphone' -Name Value",
@@ -303,10 +300,7 @@
     "goal": "USB flash drive plugged in but not showing in File Explorer",
     "domain": "storage",
     "subdomain": "USB",
-    "plan": [
-      "Check disk status in DiskPart/CIM",
-      "Assign a drive letter to the unassigned volume"
-    ],
+    "plan": ["Check disk status in DiskPart/CIM", "Assign a drive letter to the unassigned volume"],
     "steps": [
       {
         "command": "Get-Volume | Where-Object DriveLetter -eq $null",
@@ -377,10 +371,7 @@
     "goal": "Task Scheduler error prevents automated backup task from running",
     "domain": "system",
     "subdomain": "services",
-    "plan": [
-      "Query task status",
-      "Start the Task Scheduler service if stopped"
-    ],
+    "plan": ["Query task status", "Start the Task Scheduler service if stopped"],
     "steps": [
       {
         "command": "Get-Service Schedule | Select-Object Status, StartType",
@@ -414,10 +405,7 @@
     "goal": "Cannot connect to local development server on port 8080",
     "domain": "network",
     "subdomain": "firewall",
-    "plan": [
-      "Check local listening ports",
-      "Open port 8080 in Windows Firewall"
-    ],
+    "plan": ["Check local listening ports", "Open port 8080 in Windows Firewall"],
     "steps": [
       {
         "command": "Get-NetTCPConnection -LocalPort 8080 -ErrorAction SilentlyContinue",
@@ -45254,11 +45242,7 @@
     "goal": "Explorer keeps restarting every few minutes on its own",
     "domain": "windows",
     "subdomain": "File Explorer",
-    "plan": [
-      "Check what faults each time",
-      "Identify the module named",
-      "Address the component"
-    ],
+    "plan": ["Check what faults each time", "Identify the module named", "Address the component"],
     "steps": [
       {
         "command": "Get-WinEvent -FilterHashtable @{LogName='Application'; Id=1000} -MaxEvents 3 | Select-Object -ExpandProperty Message",
@@ -47952,11 +47936,7 @@
     "goal": "npm install fails with EPERM operation not permitted on Windows",
     "domain": "node",
     "subdomain": "Node.js",
-    "plan": [
-      "Check what holds the files",
-      "Look at the path length",
-      "Identify the blocker"
-    ],
+    "plan": ["Check what holds the files", "Look at the path length", "Identify the blocker"],
     "steps": [
       {
         "command": "Get-Process node -EA SilentlyContinue | Select-Object Id, StartTime",
@@ -49202,11 +49182,7 @@
     "goal": "Blue screen CRITICAL_PROCESS_DIED with no recent changes",
     "domain": "bluescreen",
     "subdomain": "stop codes",
-    "plan": [
-      "Identify which process died",
-      "Check system file integrity",
-      "Determine the cause"
-    ],
+    "plan": ["Identify which process died", "Check system file integrity", "Determine the cause"],
     "steps": [
       {
         "command": "Get-WinEvent -FilterHashtable @{LogName='System'; Id=1001} -MaxEvents 2 | Select-Object -ExpandProperty Message",
@@ -49800,11 +49776,7 @@
     "goal": "Windows was activated and now says the product key is invalid",
     "domain": "activation",
     "subdomain": "activation",
-    "plan": [
-      "Check the current licence state",
-      "Look at what changed",
-      "Identify the reason"
-    ],
+    "plan": ["Check the current licence state", "Look at what changed", "Identify the reason"],
     "steps": [
       {
         "command": "Get-CimInstance SoftwareLicensingProduct -Filter \"PartialProductKey IS NOT NULL\" | Select-Object Name, LicenseStatus, GracePeriodRemaining",
@@ -50214,11 +50186,7 @@
     "goal": "Node reports a different version than the one I installed",
     "domain": "node",
     "subdomain": "Node.js",
-    "plan": [
-      "Check which node binaries exist",
-      "Look at PATH order",
-      "Identify which one wins"
-    ],
+    "plan": ["Check which node binaries exist", "Look at PATH order", "Identify which one wins"],
     "steps": [
       {
         "command": "Get-Command node -All | Select-Object Source",
@@ -52603,11 +52571,7 @@
     "goal": "We set RestrictDriverInstallationToAdministrators to 0 but users still cannot install printers",
     "domain": "printer",
     "subdomain": "Point and Print",
-    "plan": [
-      "Check both policy layers",
-      "Look at which one is winning",
-      "Explain the interaction"
-    ],
+    "plan": ["Check both policy layers", "Look at which one is winning", "Explain the interaction"],
     "steps": [
       {
         "command": "Get-ItemProperty 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows NT\\Printers\\PointAndPrint' -Name RestrictDriverInstallationToAdministrators, Restricted, NoWarningNoElevationOnInstall -EA SilentlyContinue",
@@ -54477,11 +54441,7 @@
     "goal": "How do I actually find which driver caused a blue screen",
     "domain": "bluescreen",
     "subdomain": "stop code analysis",
-    "plan": [
-      "Confirm a dump was written",
-      "Check the dump is usable",
-      "Analyse it"
-    ],
+    "plan": ["Confirm a dump was written", "Check the dump is usable", "Analyse it"],
     "source": "microsoft-docs",
     "steps": [
       {
@@ -55707,11 +55667,7 @@
     "goal": "How do I work out what an unfamiliar 0x8007xxxx error actually means",
     "domain": "errorcode",
     "subdomain": "error interpretation",
-    "plan": [
-      "Decode the structure of the code",
-      "Convert the useful part",
-      "Look it up"
-    ],
+    "plan": ["Decode the structure of the code", "Convert the useful part", "Look it up"],
     "source": "microsoft-docs",
     "steps": [
       {
@@ -56506,11 +56462,7 @@
     "goal": "Update fails with 0x80070422",
     "domain": "errorcode",
     "subdomain": "Windows Update",
-    "plan": [
-      "Check the update service state",
-      "Look for what disabled it",
-      "Restore the service"
-    ],
+    "plan": ["Check the update service state", "Look for what disabled it", "Restore the service"],
     "source": "microsoft-docs",
     "steps": [
       {
@@ -56553,11 +56505,7 @@
     "goal": "Update fails with 0x8024A10A",
     "domain": "errorcode",
     "subdomain": "Windows Update",
-    "plan": [
-      "Interpret the code",
-      "Check when the failure occurs",
-      "Explain the timing"
-    ],
+    "plan": ["Interpret the code", "Check when the failure occurs", "Explain the timing"],
     "source": "microsoft-docs",
     "steps": [
       {
@@ -56647,11 +56595,7 @@
     "goal": "Update fails with 0x80240020",
     "domain": "errorcode",
     "subdomain": "Windows Update",
-    "plan": [
-      "Interpret the code",
-      "Check the session state",
-      "Explain the requirement"
-    ],
+    "plan": ["Interpret the code", "Check the session state", "Explain the requirement"],
     "source": "microsoft-docs",
     "steps": [
       {
@@ -56694,11 +56638,7 @@
     "goal": "Update fails with 0x80242014",
     "domain": "errorcode",
     "subdomain": "Windows Update",
-    "plan": [
-      "Check whether a restart is outstanding",
-      "Confirm the pending state",
-      "Complete it"
-    ],
+    "plan": ["Check whether a restart is outstanding", "Confirm the pending state", "Complete it"],
     "source": "microsoft-docs",
     "steps": [
       {
@@ -56741,11 +56681,7 @@
     "goal": "Update scan fails with 0x80244022",
     "domain": "errorcode",
     "subdomain": "Windows Update",
-    "plan": [
-      "Interpret the HTTP status",
-      "Check the configured source",
-      "Test reachability"
-    ],
+    "plan": ["Interpret the HTTP status", "Check the configured source", "Test reachability"],
     "source": "microsoft-docs",
     "steps": [
       {
@@ -57070,11 +57006,7 @@
     "goal": "Update fails with 0x800f0825 - the package cannot be uninstalled",
     "domain": "errorcode",
     "subdomain": "Windows Update",
-    "plan": [
-      "Interpret the code",
-      "Check the component store state",
-      "Repair before retrying"
-    ],
+    "plan": ["Interpret the code", "Check the component store state", "Repair before retrying"],
     "source": "microsoft-docs",
     "steps": [
       {
@@ -57305,11 +57237,7 @@
     "goal": "Upgrade fails with 0xC1900101 - 0x3000D",
     "domain": "errorcode",
     "subdomain": "Windows setup",
-    "plan": [
-      "Identify the phase and operation",
-      "Check the display driver",
-      "Address it"
-    ],
+    "plan": ["Identify the phase and operation", "Check the display driver", "Address it"],
     "source": "microsoft-docs",
     "steps": [
       {
@@ -57634,11 +57562,7 @@
     "goal": "Upgrade fails with 0xC1800118",
     "domain": "errorcode",
     "subdomain": "Windows setup",
-    "plan": [
-      "Interpret the code",
-      "Check the update source",
-      "Identify the WSUS content problem"
-    ],
+    "plan": ["Interpret the code", "Check the update source", "Identify the WSUS content problem"],
     "source": "microsoft-docs",
     "steps": [
       {
@@ -57822,11 +57746,7 @@
     "goal": "How do I find out why an upgrade rolled back without reading the logs by hand",
     "domain": "errorcode",
     "subdomain": "Windows setup",
-    "plan": [
-      "Run the diagnostic tool",
-      "Check what it reports",
-      "Act on the named component"
-    ],
+    "plan": ["Run the diagnostic tool", "Check what it reports", "Act on the named component"],
     "source": "microsoft-docs",
     "steps": [
       {
@@ -57963,11 +57883,7 @@
     "goal": "Upgrade fails with 0x80246007 or 0x80190001",
     "domain": "errorcode",
     "subdomain": "Windows setup",
-    "plan": [
-      "Interpret both codes",
-      "Check the download path",
-      "Choose an alternative method"
-    ],
+    "plan": ["Interpret both codes", "Check the download path", "Choose an alternative method"],
     "source": "microsoft-docs",
     "steps": [
       {
@@ -58664,11 +58580,7 @@
     "goal": "Should I look at the source or the destination when a connection fails",
     "domain": "network",
     "subdomain": "TCP/IP",
-    "plan": [
-      "Understand what each side can tell you",
-      "Take both captures",
-      "Compare them"
-    ],
+    "plan": ["Understand what each side can tell you", "Take both captures", "Compare them"],
     "source": "microsoft-docs",
     "steps": [
       {
@@ -59134,11 +59046,7 @@
     "goal": "CPU spikes only for a few seconds at a time and I keep missing it",
     "domain": "performance",
     "subdomain": "high CPU",
-    "plan": [
-      "Set up capture that is already running",
-      "Bound the file size",
-      "Catch the window"
-    ],
+    "plan": ["Set up capture that is already running", "Bound the file size", "Catch the window"],
     "source": "microsoft-docs",
     "steps": [
       {
@@ -60568,11 +60476,7 @@
     "goal": "Converting a DHCP lease to a reservation removed the client's DNS records",
     "domain": "dns",
     "subdomain": "DNS server",
-    "plan": [
-      "Confirm what happened",
-      "Check whether it is expected",
-      "Decide whether to act"
-    ],
+    "plan": ["Confirm what happened", "Check whether it is expected", "Decide whether to act"],
     "source": "microsoft-docs",
     "steps": [
       {
@@ -61265,6 +61169,886 @@
       "worked": true,
       "note": "interface type was set to wireless, never noticed it",
       "at": "2026-09-10T10:22:00.000Z"
+    }
+  },
+  {
+    "id": "90d209ef-63fb-4c6a-96fb-2160a56b4915",
+    "createdAt": "2026-09-12T09:00:00.000Z",
+    "goal": "An MSI install rolls back with 'A fatal error occurred during installation' only when I pick D:\\Tools as the target",
+    "domain": "apps",
+    "subdomain": "Windows Installer",
+    "plan": [
+      "Check whether the target folder is encrypted",
+      "Check whether the drive is a SUBST drive",
+      "Check SYSTEM permissions on the target"
+    ],
+    "steps": [
+      {
+        "command": "cipher /c D:\\Tools",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Listing D:\\Tools\\\nNew files added to this directory will be encrypted.\nE D:\\Tools\\",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "subst",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "icacls D:\\Tools",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "D:\\Tools BUILTIN\\Administrators:(OI)(CI)(F)\n         CONTOSO\\jdoe:(OI)(CI)(F)\n\nSuccessfully processed 1 files; Failed processing 0 files",
+        "stderr": "",
+        "reason": null
+      }
+    ],
+    "resolved": true,
+    "summary": "Two documented causes of error 1603 line up. The folder is EFS-encrypted (E flag), and SYSTEM is missing from the ACL - the Windows Installer service installs as SYSTEM, which cannot read an encrypted folder it has no key for and has no access to anyway. The installer rolls back the moment it touches the folder.",
+    "recommendation": "Install to an unencrypted folder, or add SYSTEM with Full Control on the target (This folder, subfolders and files) and let it propagate before retrying. The other documented causes are a SUBST drive and the app already being installed - `subst` returned nothing so that one is ruled out. Do not disable antivirus as a first move; the evidence points at permissions.",
+    "feedback": {
+      "worked": true,
+      "note": "moved install to C:\\Tools, worked immediately",
+      "at": "2026-09-12T09:05:00.000Z"
+    },
+    "source": "microsoft-docs"
+  },
+  {
+    "id": "c54e238d-8bdf-4f4a-9ae8-906487316104",
+    "createdAt": "2026-09-12T09:07:00.000Z",
+    "goal": "Reinstalling a program fails with 1603 after an in-place Windows upgrade, and there is no shortcut for it any more",
+    "domain": "apps",
+    "subdomain": "Windows Installer",
+    "plan": [
+      "Check whether the app is still installed",
+      "Look in the uninstall registry keys",
+      "Uninstall then reinstall"
+    ],
+    "steps": [
+      {
+        "command": "Get-Package -Name '*ExampleApp*' -ErrorAction SilentlyContinue | Select-Object Name, Version, ProviderName",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Name        Version ProviderName\n----        ------- ------------\nExampleApp  4.2.0   msi",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-ChildItem 'C:\\Program Files\\ExampleApp' -ErrorAction SilentlyContinue | Select-Object -First 3 Name",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Name\n----\nExampleApp.exe\nlibs\nlicense.txt",
+        "stderr": "",
+        "reason": null
+      }
+    ],
+    "resolved": true,
+    "summary": "The app is already installed. The upgrade dropped its desktop shortcut, so the user assumed it was gone and ran the installer again - Windows Installer refuses to install a product that is already present and returns 1603.",
+    "recommendation": "Search for the app and pin it to Start to get the shortcut back, or uninstall via Settings > Apps and reinstall cleanly. Check for an existing install before troubleshooting the installer itself - it is the cheapest of the four documented causes to rule out.",
+    "feedback": {
+      "worked": true,
+      "note": "pinned it from search, it was there all along",
+      "at": "2026-09-12T09:12:00.000Z"
+    },
+    "source": "microsoft-docs"
+  },
+  {
+    "id": "a4e037e0-6380-4450-a88d-afd41983561c",
+    "createdAt": "2026-09-12T09:14:00.000Z",
+    "goal": "Every Store app opens for a second and drops straight back to Start with no error",
+    "domain": "apps",
+    "subdomain": "Microsoft Store apps",
+    "plan": [
+      "Look for the activation event",
+      "Check the permissions on Program Files and Windows",
+      "Check for policy-managed ACLs"
+    ],
+    "steps": [
+      {
+        "command": "Get-WinEvent -LogName 'Microsoft-Windows-TWinUI/Operational' -MaxEvents 3 | Where-Object Id -eq 5961 | Select-Object TimeCreated, Id, Message | Format-List",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "TimeCreated : 9/30/2026 9:14:02 AM\nId          : 5961\nMessage     : Activation of the app Microsoft.WindowsCalculator_8wekyb3d8bbwe!App for the Windows.Launch contract failed with error: The app didn't start.",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "icacls 'C:\\Program Files' | Select-String 'APPLICATION PACKAGES'",
+        "blocked": false,
+        "exitCode": 1,
+        "stdout": "",
+        "stderr": "No matches found for ALL APPLICATION PACKAGES",
+        "reason": null
+      },
+      {
+        "command": "gpresult /scope computer /r | Select-String -Pattern 'File System|Registry'",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "    Applied Group Policy Objects\n        Hardening-Baseline-v3",
+        "stderr": "",
+        "reason": null
+      }
+    ],
+    "resolved": true,
+    "summary": "Event 5961 is the documented signature of this fault: activation of the app failed with 'The app didn't start'. ALL APPLICATION PACKAGES has no entry on C:\\Program Files, and a hardening GPO is applied, so a File System / Registry security policy has stripped the well-known group the Store apps depend on.",
+    "recommendation": "Restore the permissions where they were removed - fix the GPO so it grants ALL APPLICATION PACKAGES Read/Read & Execute/List on Program Files and Windows (Full Control on C:\\Users) and Read on the registry hives, instead of patching by hand and letting the policy undo it. Test in a lab first: Microsoft documents that extensive DACL changes cannot be rolled back, only re-applied, so do not run recursive permission resets on a production machine to 'see if it helps'.",
+    "feedback": {
+      "worked": true,
+      "note": "GPO edited, apps launched after gpupdate and sign-out",
+      "at": "2026-09-12T09:19:00.000Z"
+    },
+    "source": "microsoft-docs"
+  },
+  {
+    "id": "e1a0dab2-0da6-49eb-bd35-fd520f18bb55",
+    "createdAt": "2026-09-12T09:21:00.000Z",
+    "goal": "Start, search and every Store app fail together and the Application log shows Event 1000 with exception 0xc000027b",
+    "domain": "apps",
+    "subdomain": "Microsoft Store apps",
+    "plan": [
+      "Read the crash event fields",
+      "Interpret the exception code",
+      "Check ALL APPLICATION PACKAGES on the registry hives"
+    ],
+    "steps": [
+      {
+        "command": "Get-WinEvent -FilterHashtable @{LogName='Application';Id=1000} -MaxEvents 1 | Select-Object -ExpandProperty Message",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Faulting application name: ShellExperienceHost.exe\nFaulting module name: twinui.dll\nException code: 0xc000027b",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "(Get-Acl 'Registry::HKEY_CLASSES_ROOT').Access | Where-Object IdentityReference -like '*APPLICATION PACKAGES*'",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "(Get-Acl 'Registry::HKEY_LOCAL_MACHINE\\SOFTWARE').Access | Where-Object IdentityReference -like '*APPLICATION PACKAGES*' | Select-Object IdentityReference, RegistryRights",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": "",
+        "reason": null
+      }
+    ],
+    "resolved": true,
+    "summary": "0xc000027b is an application-internal exception raised when an access-denied happens during app initialisation and is fatal. Neither HKCR nor HKLM\\SOFTWARE grants ALL APPLICATION PACKAGES any access, which is the documented cause: the read permission is missing from one or more of the keys the shell needs.",
+    "recommendation": "Grant ALL APPLICATION PACKAGES Read on the listed hives (HKCR, HKU, HKLM\\HARDWARE, SAM, SOFTWARE, SYSTEM, Drivers) - through the managing GPO if there is one, otherwise by hand on only the keys that produce access-denied in Process Monitor. Change the smallest set of keys that fixes it; wide recursive registry ACL edits are exactly what caused this and cannot be undone.",
+    "feedback": {
+      "worked": true,
+      "note": "Process Monitor pointed at HKCR, one key fixed it",
+      "at": "2026-09-12T09:26:00.000Z"
+    },
+    "source": "microsoft-docs"
+  },
+  {
+    "id": "6db361ef-68de-493d-ba5d-b8ef0ce6a9b4",
+    "createdAt": "2026-09-12T09:28:00.000Z",
+    "goal": "An application keeps crashing and I only have Event ID 1000 - how do I find out which module is to blame",
+    "domain": "apps",
+    "subdomain": "Application crashes",
+    "plan": [
+      "Read the three fields together",
+      "Decide whether the faulting module is first or third party",
+      "Capture a dump for the vendor"
+    ],
+    "steps": [
+      {
+        "command": "Get-WinEvent -FilterHashtable @{LogName='Application';Id=1000} -MaxEvents 3 | ForEach-Object { $_.Properties[0].Value + ' | ' + $_.Properties[3].Value + ' | ' + $_.Properties[6].Value }",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "AcmeCad.exe | ntdll.dll | c0000374\nAcmeCad.exe | ntdll.dll | c0000374\nAcmeCad.exe | ntdll.dll | c0000374",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-Item 'C:\\Program Files\\AcmeCad\\AcmeCad.exe' | Select-Object -ExpandProperty VersionInfo | Select-Object CompanyName, FileVersion",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "CompanyName FileVersion\n----------- -----------\nAcme Software 12.4.0.88",
+        "stderr": "",
+        "reason": null
+      }
+    ],
+    "resolved": true,
+    "summary": "The same app, the same exception - 0xc0000374 is STATUS_HEAP_CORRUPTION - and ntdll.dll as the faulting module. The Microsoft documentation is explicit that ntdll, kernel32 and kernelbase are usually victims: they are what is on the stack when something else corrupts memory, so ntdll being named does not mean Windows is at fault. The app is a third-party product.",
+    "recommendation": "Do not chase ntdll. Update the app and confirm antivirus exclusions and Windows updates first, then collect a full dump for the vendor: create HKLM\\SOFTWARE\\Microsoft\\Windows\\Windows Error Reporting\\LocalDumps\\AcmeCad.exe (and the Wow6432Node twin for 32-bit) with DumpFolder, DumpCount and DumpType=2, and optionally enable page heap with gflags /i AcmeCad.exe +hpa. Remove the key and the flag afterwards - page heap slows the process and the dumps are large.",
+    "feedback": {
+      "worked": true,
+      "note": "vendor found a plug-in overrunning a buffer from the dump",
+      "at": "2026-09-12T09:33:00.000Z"
+    },
+    "source": "microsoft-docs"
+  },
+  {
+    "id": "d09eff59-5e5f-4b80-b9c4-6fd404ae95f8",
+    "createdAt": "2026-09-12T09:35:00.000Z",
+    "goal": "A program crashes with 0xc0000022 in Event 1000 right after I moved its data folder",
+    "domain": "apps",
+    "subdomain": "Application crashes",
+    "plan": [
+      "Read the exception code",
+      "Check the permissions on the moved folder",
+      "Compare with the original location"
+    ],
+    "steps": [
+      {
+        "command": "Get-WinEvent -FilterHashtable @{LogName='Application';Id=1000} -MaxEvents 1 | Select-Object -ExpandProperty Message",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Faulting application name: DataSync.exe\nFaulting module name: KERNELBASE.dll\nException code: 0xc0000022",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "icacls 'E:\\AppData\\DataSync'",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "E:\\AppData\\DataSync BUILTIN\\Administrators:(OI)(CI)(F)\n                      CONTOSO\\jdoe:(OI)(CI)(R)\n\nSuccessfully processed 1 files; Failed processing 0 files",
+        "stderr": "",
+        "reason": null
+      }
+    ],
+    "resolved": true,
+    "summary": "0xc0000022 is STATUS_ACCESS_DENIED. The moved folder gives the user read-only rights while the app writes to it on start. KERNELBASE.dll in the event is where the denial surfaced, not the cause.",
+    "recommendation": "Grant the user Modify on the folder rather than Full Control everywhere, and prefer moving data with robocopy /COPYALL so ACLs travel with it. A path-based error code beats module names: read the exception first and it tells you what class of problem you have.",
+    "feedback": {
+      "worked": true,
+      "note": "gave Modify on the new folder, app started",
+      "at": "2026-09-12T09:40:00.000Z"
+    },
+    "source": "microsoft-docs"
+  },
+  {
+    "id": "bbf975a3-a63f-48b9-9696-b260fac523d5",
+    "createdAt": "2026-09-12T09:42:00.000Z",
+    "goal": "Outlook crashes on start and will not even open in safe mode",
+    "domain": "office",
+    "subdomain": "Click-to-Run",
+    "plan": [
+      "Try safe mode with the switch",
+      "Check which add-ins are loaded",
+      "Try Quick Repair then Online Repair"
+    ],
+    "steps": [
+      {
+        "command": "Start-Process outlook.exe -ArgumentList '/safe'",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-ItemProperty 'HKCU:\\Software\\Microsoft\\Office\\Outlook\\Addins\\*' | Select-Object PSChildName, LoadBehavior",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "PSChildName                 LoadBehavior\n-----------                 ------------\nAcmeCRM.Addin                          3\nOneNote.OutlookAddin                   3",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-WinEvent -FilterHashtable @{LogName='Application';Id=1000} -MaxEvents 1 | Select-Object -ExpandProperty Message",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Faulting application name: OUTLOOK.EXE\nFaulting module name: AcmeCRM.dll\nException code: 0xc0000005",
+        "stderr": "",
+        "reason": null
+      }
+    ],
+    "resolved": true,
+    "summary": "Even /safe fails, but the crash log names AcmeCRM.dll - a third-party add-in - as the faulting module with an access violation. LoadBehavior 3 means it loads at startup. Safe mode failing on its own points at Office files being damaged too, not just the add-in.",
+    "recommendation": "Set the add-in's LoadBehavior to 0 to stop it loading, then run Quick Repair; if the crash persists run Online Repair (it reinstalls, so needs the network and takes longer). Update or reinstall the CRM add-in afterwards. Repair Office before rebuilding the profile - a profile rebuild does nothing for a broken binary.",
+    "feedback": {
+      "worked": true,
+      "note": "disabled the add-in via LoadBehavior=0 and repaired",
+      "at": "2026-09-12T09:47:00.000Z"
+    }
+  },
+  {
+    "id": "298eefd8-100a-4c47-9c65-2dd11c9d3c43",
+    "createdAt": "2026-09-12T09:49:00.000Z",
+    "goal": "Chrome crashes with 'Aw, Snap! STATUS_ACCESS_VIOLATION' on every tab and it started after installing a security product",
+    "domain": "apps",
+    "subdomain": "Chrome",
+    "plan": [
+      "Check whether a security product injects into Chrome",
+      "Try Chrome with extensions and sandbox unchanged",
+      "Look for a known conflicting module"
+    ],
+    "steps": [
+      {
+        "command": "Get-Process chrome | Select-Object -First 1 | ForEach-Object { $_.Modules | Where-Object FileName -notlike 'C:\\Program Files\\Google*' | Select-Object -First 5 ModuleName, FileName }",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "ModuleName       FileName\n----------       --------\nsecinject64.dll  C:\\Program Files\\AcmeSec\\secinject64.dll",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "& 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' --disable-extensions",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-WinEvent -FilterHashtable @{LogName='Application';Id=1000} -MaxEvents 1 | Select-Object -ExpandProperty Message",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Faulting application name: chrome.exe\nFaulting module name: secinject64.dll\nException code: 0xc0000005",
+        "stderr": "",
+        "reason": null
+      }
+    ],
+    "resolved": true,
+    "summary": "The crash persists with extensions disabled, and the faulting module is secinject64.dll from the newly installed security product, which injects itself into Chrome. The browser is not broken - the injected DLL is.",
+    "recommendation": "Update the security product (injection bugs are usually fixed in point releases), or add a Chrome exclusion in its console. Do not uninstall Chrome or delete its profile - neither touches the cause. Only if the vendor has no fix, consider the product itself, and do not disable protection without replacing it.",
+    "feedback": {
+      "worked": true,
+      "note": "security agent update fixed the injection",
+      "at": "2026-09-12T09:54:00.000Z"
+    }
+  },
+  {
+    "id": "306edd08-c469-45a7-8f07-7248a04c6b32",
+    "createdAt": "2026-09-12T09:56:00.000Z",
+    "goal": "Zoom or Teams installs fine but the camera is black only inside that app",
+    "domain": "apps",
+    "subdomain": "Zoom / meeting apps",
+    "plan": [
+      "Check that another app is not holding the camera",
+      "Check Windows camera privacy for desktop apps",
+      "Test the camera in another app"
+    ],
+    "steps": [
+      {
+        "command": "Get-PnpDevice -Class Camera -Status OK | Select-Object FriendlyName, Status",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "FriendlyName        Status\n------------        ------\nIntegrated Camera   OK",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-ItemProperty 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\webcam' -Name Value",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Value : Allow",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-ItemProperty 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\webcam\\NonPackaged' -Name Value",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Value : Deny",
+        "stderr": "",
+        "reason": null
+      }
+    ],
+    "resolved": true,
+    "summary": "Camera access is allowed for Store apps but the separate NonPackaged switch - which governs classic desktop apps like Zoom - is Deny. The camera works in the Camera app, which is a Store app, so the hardware is fine.",
+    "recommendation": "Turn on 'Let desktop apps access your camera' under Settings > Privacy & security > Camera. That is the single most common cause of an app-only black camera. If it was set by policy (LetAppsAccessCamera), change it in the policy, not on the machine.",
+    "feedback": {
+      "worked": true,
+      "note": "desktop-app camera toggle was off",
+      "at": "2026-09-12T10:01:00.000Z"
+    }
+  },
+  {
+    "id": "1b2e90f9-48d9-46b4-8977-35f088570621",
+    "createdAt": "2026-09-12T10:03:00.000Z",
+    "goal": "An installer says 'Another installation is in progress' (error 1618) and nothing else is installing",
+    "domain": "apps",
+    "subdomain": "Installers",
+    "plan": [
+      "Look for running installer processes",
+      "Check the Windows Installer service",
+      "Look for a pending restart"
+    ],
+    "steps": [
+      {
+        "command": "Get-Process msiexec -ErrorAction SilentlyContinue | Select-Object Id, StartTime, CPU",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "  Id StartTime            CPU\n  -- ---------            ---\n8412 9/30/2026 7:02:11 AM 0.06",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-Service msiserver | Select-Object Status, StartType",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Status StartType\n------ ---------\nRunning    Manual",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Test-Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\RebootPending'",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "False",
+        "stderr": "",
+        "reason": null
+      }
+    ],
+    "resolved": true,
+    "summary": "An msiexec.exe process has been running for hours at almost no CPU - a stuck installer from an earlier attempt holding the single global Windows Installer mutex. Only one MSI transaction may run at a time, so every new install returns 1618.",
+    "recommendation": "Check first that it is genuinely idle and not a slow install that is still working, then end that one process or restart the Windows Installer service, and retry. A reboot clears it if you would rather not pick a process. Do not delete Installer registry keys for this error.",
+    "feedback": {
+      "worked": true,
+      "note": "ended the hung msiexec, install went through",
+      "at": "2026-09-12T10:08:00.000Z"
+    }
+  },
+  {
+    "id": "7c98723f-525e-4f03-9eaa-ddf1a722a507",
+    "createdAt": "2026-09-12T10:10:00.000Z",
+    "goal": "An installer stops with 'Another version of this product is already installed' (1638) though the old one is gone from Apps",
+    "domain": "apps",
+    "subdomain": "Installers",
+    "plan": [
+      "Look for leftover uninstall registration",
+      "Check the product code state",
+      "Use the vendor or Microsoft repair tool"
+    ],
+    "steps": [
+      {
+        "command": "Get-ChildItem 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall','HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall' | Get-ItemProperty | Where-Object DisplayName -like '*ExampleApp*' | Select-Object DisplayName, DisplayVersion, PSChildName",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "DisplayName DisplayVersion PSChildName\n----------- ------------- -----------\nExampleApp  3.9.1         {6F1A2C0B-1B8E-4B50-9C2A-3D3F5D2B7A11}",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Test-Path 'C:\\Program Files\\ExampleApp'",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "False",
+        "stderr": "",
+        "reason": null
+      }
+    ],
+    "resolved": true,
+    "summary": "The uninstall registration for 3.9.1 remains but its files are gone, so Windows Installer thinks that version is present and refuses the new one (1638 fires when a different version of the same product is registered). Apps & features hid it because it filtered on a broken entry.",
+    "recommendation": "Use the Microsoft Program Install and Uninstall troubleshooter, which is built to remove exactly this orphaned registration for a product code, and then install. Do not hand-delete keys under Installer\\Products; if you must remove a registration, export the key first.",
+    "feedback": {
+      "worked": true,
+      "note": "troubleshooter removed the orphan, installed 4.0",
+      "at": "2026-09-12T10:15:00.000Z"
+    }
+  },
+  {
+    "id": "7efc6011-3c8e-4165-b59e-070f0e2a9f92",
+    "createdAt": "2026-09-12T10:17:00.000Z",
+    "goal": "A legacy business app runs on Windows 7 but shows a blank window on Windows 11",
+    "domain": "apps",
+    "subdomain": "Third-party apps",
+    "plan": [
+      "Look for compatibility flags",
+      "Try the compatibility troubleshooter settings",
+      "Check display scaling on the exe"
+    ],
+    "steps": [
+      {
+        "command": "Get-ItemProperty 'HKCU:\\Software\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\Layers' -ErrorAction SilentlyContinue",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-Item 'C:\\LegacyApp\\LegacyApp.exe' | Select-Object -ExpandProperty VersionInfo | Select-Object FileVersion, ProductName",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "FileVersion ProductName\n----------- -----------\n2.1.0.0     LegacyApp 2000",
+        "stderr": "",
+        "reason": null
+      }
+    ],
+    "resolved": false,
+    "summary": "No compatibility layers are set for the exe, so nothing has been tried yet. A blank window on a legacy app is typically a rendering or DPI issue, which compatibility mode and DPI override address - but there is no evidence yet which one it is, and the app is 2000-era.",
+    "recommendation": "Set Windows 7 compatibility mode first and re-test; then, separately, 'Override high DPI scaling behavior: Application'. Change one at a time so you know which fixed it. If neither works, run it in a VM or Windows Sandbox rather than lowering system security for it.",
+    "feedback": {
+      "worked": false,
+      "note": "still blank, needed the vendor's newer build",
+      "at": "2026-09-12T10:22:00.000Z"
+    }
+  },
+  {
+    "id": "896f76ee-72e1-4d3a-8a29-3131f8307bc5",
+    "createdAt": "2026-09-12T10:24:00.000Z",
+    "goal": "VLC, 7-Zip or another app does not appear in 'Open with' and the file type opens the wrong program",
+    "domain": "apps",
+    "subdomain": "Third-party apps",
+    "plan": [
+      "Check the user's choice for the extension",
+      "Look for a hash-protected UserChoice",
+      "Set the default properly"
+    ],
+    "steps": [
+      {
+        "command": "Get-ItemProperty 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.mkv\\UserChoice'",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "ProgId : ApplicationFavorites\\Photos.mkv\nHash   : xyz==",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-ItemProperty 'HKLM:\\SOFTWARE\\Classes\\Applications\\vlc.exe\\shell\\open\\command' -ErrorAction SilentlyContinue",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "(default) : \"C:\\Program Files\\VideoLAN\\VLC\\vlc.exe\" --started-from-file \"%1\"",
+        "stderr": "",
+        "reason": null
+      }
+    ],
+    "resolved": true,
+    "summary": "VLC is registered correctly, but .mkv has a UserChoice value pointing at another app. UserChoice is protected by a hash, so an installer or script cannot simply overwrite it - Windows only accepts a change made through its own UI or supported policy.",
+    "recommendation": "Choose the app in Settings > Apps > Default apps > (file type) rather than editing UserChoice. For many machines use a default-associations XML through policy. Do not delete the UserChoice key to force a reset unless you accept losing that user's other choices.",
+    "feedback": {
+      "worked": true,
+      "note": "set through Default apps, stuck after that",
+      "at": "2026-09-12T10:29:00.000Z"
+    }
+  },
+  {
+    "id": "de4edb26-9034-438c-a05e-f70a5648155f",
+    "createdAt": "2026-09-12T10:31:00.000Z",
+    "goal": "An app that was installed for one user does not show for others and its shortcut is missing on the shared PC",
+    "domain": "apps",
+    "subdomain": "Third-party apps",
+    "plan": [
+      "Check per-user versus machine-wide install",
+      "Find where it installed",
+      "Decide on a machine-wide install"
+    ],
+    "steps": [
+      {
+        "command": "Get-ChildItem 'C:\\Users\\jdoe\\AppData\\Local\\Programs' -Directory | Select-Object Name",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Name\n----\nAcmeNotes",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Test-Path 'C:\\Program Files\\AcmeNotes'",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "False",
+        "stderr": "",
+        "reason": null
+      }
+    ],
+    "resolved": true,
+    "summary": "The app is a per-user install under jdoe's AppData\\Local\\Programs, not a machine-wide one, so it is invisible to other accounts by design. Nothing is broken.",
+    "recommendation": "Reinstall using the vendor's all-users (machine) installer or MSI, which writes to Program Files, if the shared PC needs it. Do not copy the per-user folder into another profile - the app's registration and update service are tied to the original user.",
+    "feedback": {
+      "worked": true,
+      "note": "used the MSI variant for the shared PC",
+      "at": "2026-09-12T10:36:00.000Z"
+    }
+  },
+  {
+    "id": "040f53e8-cf78-4ac3-abff-50bbc50fcd07",
+    "createdAt": "2026-09-12T10:38:00.000Z",
+    "goal": "A game launcher or installer needs 'Microsoft Visual C++ 2015-2022 Redistributable' but says it is already installed",
+    "domain": "apps",
+    "subdomain": "Third-party apps",
+    "plan": [
+      "List the redistributables",
+      "Check x86 and x64 versions separately",
+      "Repair the right one"
+    ],
+    "steps": [
+      {
+        "command": "Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x64','HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x86' -ErrorAction SilentlyContinue | Select-Object PSChildName, Version, Installed",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "PSChildName Version         Installed\n----------- -------         ---------\nx64         v14.38.33135.00         1",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Test-Path 'HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x86'",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "False",
+        "stderr": "",
+        "reason": null
+      }
+    ],
+    "resolved": true,
+    "summary": "Only the x64 runtime is present. The launcher is a 32-bit process, which needs the x86 redistributable - 64-bit Windows does not make it redundant. The 'already installed' message came from the installer checking the wrong architecture.",
+    "recommendation": "Install the x86 redistributable next to the x64 one; do not remove the existing one. Repair (not uninstall) if either is present but the app still complains of a missing DLL.",
+    "feedback": {
+      "worked": true,
+      "note": "x86 redist installed, launcher opened",
+      "at": "2026-09-12T10:43:00.000Z"
+    }
+  },
+  {
+    "id": "96cd2ea1-f4aa-47c6-bfb6-5e2b62621717",
+    "createdAt": "2026-09-12T10:45:00.000Z",
+    "goal": "Settings opens then closes immediately but Control Panel works",
+    "domain": "settings",
+    "subdomain": "Windows Settings",
+    "plan": ["Look for the crash record", "Repair or reset the Settings app", "Re-register it"],
+    "steps": [
+      {
+        "command": "Get-WinEvent -FilterHashtable @{LogName='Application';Id=1000} -MaxEvents 1 | Select-Object -ExpandProperty Message",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Faulting application name: SystemSettings.exe\nFaulting module name: Windows.UI.Xaml.dll\nException code: 0xc000027b",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-AppxPackage -Name windows.immersivecontrolpanel | Select-Object Name, Status, Version",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Name                        Status Version\n----                        ------ -------\nwindows.immersivecontrolpanel   Ok  10.0.6.1000",
+        "stderr": "",
+        "reason": null
+      }
+    ],
+    "resolved": true,
+    "summary": "SystemSettings.exe crashes with 0xc000027b, the same access-denied-at-initialisation exception Microsoft documents for Store apps failing when ALL APPLICATION PACKAGES has lost access. Control Panel works because it is a classic Win32 shell, unaffected.",
+    "recommendation": "Try Repair (Settings > Apps > Installed apps > Settings > Advanced options) first, then Reset; both keep the OS intact. If the crash returns, examine permissions with Process Monitor rather than re-registering repeatedly. Do not run sfc /scannow as a reflex here - the package is fine.",
+    "feedback": {
+      "worked": true,
+      "note": "repair fixed it",
+      "at": "2026-09-12T10:50:00.000Z"
+    }
+  },
+  {
+    "id": "99794d4f-1c9b-4834-9262-138bc2c9ea08",
+    "createdAt": "2026-09-12T10:52:00.000Z",
+    "goal": "Control Panel opens but items like Programs and Features or Device Manager show blank or crash",
+    "domain": "shell",
+    "subdomain": "Control Panel",
+    "plan": [
+      "Test the individual applets",
+      "Look for a shell extension crash",
+      "Isolate with a clean boot"
+    ],
+    "steps": [
+      {
+        "command": "control appwiz.cpl",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-WinEvent -FilterHashtable @{LogName='Application';Id=1000} -MaxEvents 1 | Select-Object -ExpandProperty Message",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Faulting application name: explorer.exe\nFaulting module name: AcmeShellExt.dll\nException code: 0xc0000005",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-ChildItem 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Shell Extensions\\Approved' | Measure-Object | Select-Object Count",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Count\n-----\n   41",
+        "stderr": "",
+        "reason": null
+      }
+    ],
+    "resolved": true,
+    "summary": "explorer.exe is crashing in a third-party shell extension DLL that loads every time an applet renders, not in Control Panel itself. It is a very common cause of one applet crashing and another working.",
+    "recommendation": "Find the offending extension with ShellExView-style enumeration or by disabling recently added ones, then update or remove that software. Do not delete the Approved key or run repairs on Explorer; only the extension is at fault.",
+    "feedback": {
+      "worked": true,
+      "note": "disabled the vendor's context-menu extension",
+      "at": "2026-09-12T10:57:00.000Z"
+    }
+  },
+  {
+    "id": "b5550d84-fc1f-45ad-85cf-8eaf34ba0def",
+    "createdAt": "2026-09-12T11:06:00.000Z",
+    "goal": "Win+R and 'Run' do nothing and cmd.exe closes instantly",
+    "domain": "shell",
+    "subdomain": "Run / Command Prompt",
+    "plan": [
+      "Check for a policy blocking cmd",
+      "Check for AppLocker or SRP rules",
+      "Test PowerShell"
+    ],
+    "steps": [
+      {
+        "command": "Get-ItemProperty 'HKCU:\\Software\\Policies\\Microsoft\\Windows\\System' -Name DisableCMD -ErrorAction SilentlyContinue",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "DisableCMD : 2",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-AppLockerPolicy -Effective -ErrorAction SilentlyContinue | Select-Object -ExpandProperty RuleCollections | Select-Object -First 1 RuleCollectionType",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "RuleCollectionType\n------------------\nExe",
+        "stderr": "",
+        "reason": null
+      }
+    ],
+    "resolved": true,
+    "summary": "DisableCMD=2 blocks the command prompt interactively but still allows batch files. Because AppLocker also has an Exe collection, other tools may be restricted as well. This is policy, not damage.",
+    "recommendation": "Change the setting in the policy that sets it; local edits get reverted. Ask before bypassing. If this is your own machine and you set it earlier, remove the value through Group Policy Editor so it is cleaned properly.",
+    "feedback": {
+      "worked": true,
+      "note": "policy adjusted for the support group",
+      "at": "2026-09-12T11:11:00.000Z"
+    }
+  },
+  {
+    "id": "3e1e0dd6-dab1-4c89-ab21-ff64c4fb59c1",
+    "createdAt": "2026-09-12T11:13:00.000Z",
+    "goal": "Device Manager is empty or 'MMC could not create the snap-in' errors when opening any management console",
+    "domain": "shell",
+    "subdomain": "Device Manager",
+    "plan": [
+      "Check the MMC snap-in registration",
+      "Look for a damaged .NET or MMC file",
+      "Test another console"
+    ],
+    "steps": [
+      {
+        "command": "mmc.exe /a compmgmt.msc",
+        "blocked": false,
+        "exitCode": 1,
+        "stdout": "",
+        "stderr": "MMC could not create the snap-in. The snap-in might not have been installed correctly.",
+        "reason": null
+      },
+      {
+        "command": "Get-WindowsOptionalFeature -Online -FeatureName NetFx4 | Select-Object FeatureName, State",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "FeatureName State\n----------- -----\nNetFx4      Enabled",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "sfc /verifyonly",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Windows Resource Protection did not find any integrity violations.",
+        "stderr": "",
+        "reason": null
+      }
+    ],
+    "resolved": false,
+    "summary": "Every console fails the same way, .NET 4 is enabled, and files are intact per SFC. That points at a damaged MMC snap-in registration or a conflicting third-party snap-in, but this is not confirmed.",
+    "recommendation": "Look for a recently added third-party snap-in and remove it, and check the MMC event log entries for the failing CLSID. Repair-install only as a later step. Do not re-register every DLL in System32 at random; that hides the cause.",
+    "feedback": {
+      "worked": false,
+      "note": "snap-in was actually fine - problem lay elsewhere, unresolved",
+      "at": "2026-09-12T11:18:00.000Z"
+    }
+  },
+  {
+    "id": "7141175a-5110-4bfe-a8ce-d83bf75152c7",
+    "createdAt": "2026-09-12T11:20:00.000Z",
+    "goal": "services.msc lists services but Start is greyed out for a service and it cannot be changed",
+    "domain": "shell",
+    "subdomain": "Services console",
+    "plan": [
+      "Check whether policy or a protected process controls it",
+      "Check the account",
+      "Check dependencies"
+    ],
+    "steps": [
+      {
+        "command": "Get-Service AcmeAgent | Select-Object Status, StartType, CanStop",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Status StartType CanStop\n------ --------- -------\nStopped  Disabled   False",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "sc.exe qc AcmeAgent",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "START_TYPE: 4 DISABLED\nDEPENDENCIES: RPCSS",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-WinEvent -FilterHashtable @{LogName='System';Id=7000,7001,7023} -MaxEvents 3 | Select-Object Id, Message",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": "",
+        "reason": null
+      }
+    ],
+    "resolved": true,
+    "summary": "The service start type is Disabled (4), which is why Start is greyed out. Nothing crashed. Somebody or something - possibly a hardening script - set it.",
+    "recommendation": "Confirm why it was disabled before re-enabling: if the vendor's agent is needed, set the start type to Automatic and start it; if it is a security baseline, leave it disabled. Check dependencies afterwards.",
+    "feedback": {
+      "worked": true,
+      "note": "re-enabled as Automatic with permission",
+      "at": "2026-09-12T11:25:00.000Z"
+    }
+  },
+  {
+    "id": "5f1f723f-2125-4b62-b9e4-1bfbbe3a90d1",
+    "createdAt": "2026-09-12T11:27:00.000Z",
+    "goal": "Task Manager opens but the Details or Startup tabs are empty",
+    "domain": "shell",
+    "subdomain": "Task Manager",
+    "plan": [
+      "Check for performance counter corruption",
+      "Rebuild counters",
+      "Test as another user"
+    ],
+    "steps": [
+      {
+        "command": "lodctr /q | Select-String 'Disabled' | Select-Object -First 3",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "     PerfProc [Disabled]\n     PerfNet  [Disabled]",
+        "stderr": "",
+        "reason": null
+      },
+      {
+        "command": "Get-Counter '\\Process(*)\\ID Process' -ErrorAction SilentlyContinue | Measure-Object | Select-Object Count",
+        "blocked": false,
+        "exitCode": 0,
+        "stdout": "Count\n-----\n    0",
+        "stderr": "",
+        "reason": null
+      }
+    ],
+    "resolved": true,
+    "summary": "Performance counter providers PerfProc and PerfNet are disabled, and Get-Counter returns no processes - so anything that reads the same counters, including parts of Task Manager, shows nothing. The disabling is typically the aftermath of a counter-loading failure.",
+    "recommendation": "Rebuild with lodctr /R (run it twice, elevated, and follow with winmgmt /resyncperf). It rebuilds registration only and is safe. Do not delete perf registry keys by hand. This is different from a Task Manager disabled by policy.",
+    "feedback": {
+      "worked": true,
+      "note": "lodctr /R fixed it",
+      "at": "2026-09-12T11:32:00.000Z"
     }
   }
 ]

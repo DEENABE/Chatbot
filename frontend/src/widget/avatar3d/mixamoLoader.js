@@ -72,7 +72,9 @@ function loadFbx(url) {
  */
 export async function loadMixamoCharacter({ baseUrl, clipUrls = {} }) {
   if (!(await exists(baseUrl))) {
-    throw new Error(`Base model not found at ${baseUrl}. Export a "With Skin" FBX from Mixamo and place it there.`);
+    throw new Error(
+      `Base model not found at ${baseUrl}. Export a "With Skin" FBX from Mixamo and place it there.`,
+    );
   }
 
   const root = await loadFbx(baseUrl);
@@ -114,7 +116,7 @@ export async function loadMixamoCharacter({ baseUrl, clipUrls = {} }) {
       } catch (err) {
         console.warn(`[avatar3d] Failed to load clip "${name}":`, err.message);
       }
-    })
+    }),
   );
 
   let current = null;

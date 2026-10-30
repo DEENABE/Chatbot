@@ -1,20 +1,28 @@
-import http from 'http';
-
+import http from 'node:http';
 export function waitForBackend(url, timeout = 20000) {
   return new Promise((resolve, reject) => {
-    const start = Date.now();
-    const check = () => {
-      http.get(url, (res) => {
-        if (res.statusCode === 200) resolve();
-        else retry();
-      }).on("error", retry);
-    };
+    const deadline = Date.now() + timeout;
+    let finished = false;
     const retry = () => {
-      if (Date.now() - start > timeout) {
-        reject(new Error("Backend did not start in time"));
-        return;
-      }
-      setTimeout(check, 400);
+      if (finished) return;
+      if (Date.now() >= deadline) {
+        finished = true;
+        reject(new Error('The local service did not respond in time. See diagnostics.'));
+      } else setTimeout(check, 250);
+    };
+    const check = () => {
+      if (finished) return;
+      const request = http.get(url, (response) => {
+        response.resume();
+        if (response.statusCode === 200) {
+          finished = true;
+          resolve();
+        } else retry();
+      });
+      request.setTimeout(Math.max(1, Math.min(1000, deadline - Date.now())), () =>
+        request.destroy(),
+      );
+      request.once('error', retry);
     };
     check();
   });

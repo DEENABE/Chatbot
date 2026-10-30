@@ -4,7 +4,11 @@
 
 :root {
   color-scheme: dark;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family:
+    'Inter',
+    system-ui,
+    -apple-system,
+    sans-serif;
   /* The Electron window is transparent: painting an opaque colour here draws a
      dark square around the floating bubble. Each view supplies its own
      background instead. */
@@ -40,7 +44,10 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-button, textarea, select, input {
+button,
+textarea,
+select,
+input {
   font-family: inherit;
   outline: none !important;
 }
@@ -88,7 +95,7 @@ button, textarea, select, input {
   pointer-events: none;
   position: fixed;
   inset: 0;
-  opacity: .015;
+  opacity: 0.015;
   z-index: 50;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.8'/%3E%3C/svg%3E");
 }
@@ -107,9 +114,15 @@ button, textarea, select, input {
 }
 
 @keyframes orb-float {
-  0% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(40px, -50px) scale(1.1); }
-  100% { transform: translate(-30px, 30px) scale(0.9); }
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(40px, -50px) scale(1.1);
+  }
+  100% {
+    transform: translate(-30px, 30px) scale(0.9);
+  }
 }
 
 /* Beautiful Rich Markdown */
@@ -119,10 +132,20 @@ button, textarea, select, input {
   color: #e4e4e7;
 }
 
-.markdown ul, .markdown ol {
+.markdown ul,
+.markdown ol {
   padding-left: 1.4rem;
   margin: 0.6rem 0;
   color: #d4d4d8;
+}
+
+/* Tailwind preflight strips list markers; restore them for answers. */
+.markdown ul {
+  list-style: disc;
+}
+
+.markdown ol {
+  list-style: decimal;
 }
 
 .markdown li {
@@ -159,12 +182,21 @@ button, textarea, select, input {
 
 /* Shimmer animations for action loading states */
 @keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
 }
 
 .shimmer-bg {
-  background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 75%);
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.03) 25%,
+    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0.03) 75%
+  );
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
 }

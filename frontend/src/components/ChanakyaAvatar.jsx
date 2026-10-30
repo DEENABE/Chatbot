@@ -14,33 +14,40 @@ export default function ChanakyaAvatar({ accentColor = '#3b82f6' }) {
     >
       {/* Meditating Aura (Breathing effect) */}
       <motion.div
-        animate={isHovered ? {
-          scale: [1, 1.2, 1],
-          opacity: [0.5, 0.8, 0.5],
-        } : {
-          scale: [1, 1.05, 1],
-          opacity: [0.2, 0.4, 0.2],
-        }}
+        animate={
+          isHovered
+            ? {
+                scale: [1, 1.2, 1],
+                opacity: [0.5, 0.8, 0.5],
+              }
+            : {
+                scale: [1, 1.05, 1],
+                opacity: [0.2, 0.4, 0.2],
+              }
+        }
         transition={{
           duration: isHovered ? 1.5 : 4,
           repeat: Infinity,
-          ease: "easeInOut"
+          ease: 'easeInOut',
         }}
         className="absolute inset-0 rounded-full blur-2xl"
-        style={{ background: `radial-gradient(circle, ${accentColor} 0%, transparent 70%)` }}
+        style={{
+          background: `radial-gradient(circle, ${accentColor} 0%, transparent 70%)`,
+        }}
       />
 
-      <div className="relative z-10 w-28 h-28 rounded-full border-2 flex items-center justify-center overflow-hidden shadow-2xl transition-transform duration-500"
-           style={{ 
-             borderColor: `${accentColor}50`, 
-             boxShadow: `0 0 30px ${accentColor}30`, 
-             transform: isHovered ? 'scale(1.05)' : 'scale(1)',
-             background: '#000'
-           }}>
-        
+      <div
+        className="relative z-10 w-28 h-28 rounded-full border-2 flex items-center justify-center overflow-hidden shadow-2xl transition-transform duration-500"
+        style={{
+          borderColor: `${accentColor}50`,
+          boxShadow: `0 0 30px ${accentColor}30`,
+          transform: isHovered ? 'scale(1.05)' : 'scale(1)',
+          background: '#000',
+        }}
+      >
         <AnimatePresence mode="wait">
           {!isHovered ? (
-            <motion.img 
+            <motion.img
               key="default"
               src={defaultAvatar}
               alt="Chanakya Meditating"
@@ -51,7 +58,7 @@ export default function ChanakyaAvatar({ accentColor = '#3b82f6' }) {
               transition={{ duration: 0.3 }}
             />
           ) : (
-            <motion.img 
+            <motion.img
               key="hover"
               src={hoverAvatar}
               alt="Chanakya Awake"
@@ -63,7 +70,6 @@ export default function ChanakyaAvatar({ accentColor = '#3b82f6' }) {
             />
           )}
         </AnimatePresence>
-
       </div>
     </div>
   );

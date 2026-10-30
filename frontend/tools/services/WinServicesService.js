@@ -6,7 +6,7 @@
  * @module tools/services/WinServicesService
  */
 
-import { spawn } from 'child_process';
+import { spawn } from '../ExecutionContext.js';
 import { BaseToolService } from '../BaseToolService.js';
 
 /** Regex pattern for valid Windows service names. */
@@ -21,8 +21,13 @@ const SERVICE_NAME_PATTERN = /^[a-zA-Z0-9_.\-]+$/;
  * insensitively against the short service name, not the display name.
  */
 const PROTECTED_SERVICE_NAMES = new Set([
-  'windefend', 'mpssvc', 'sense', 'wscsvc', 'securityhealthservice',
-  'wuauserv', 'eventlog'
+  'windefend',
+  'mpssvc',
+  'sense',
+  'wscsvc',
+  'securityhealthservice',
+  'wuauserv',
+  'eventlog',
 ]);
 
 /** Default timeout for PowerShell commands (ms). */
@@ -50,40 +55,40 @@ export class WinServicesService extends BaseToolService {
         handler: this.list.bind(this),
         schema: {},
         destructive: false,
-        description: 'List all Windows services'
+        description: 'List all Windows services',
       },
       getStatus: {
         handler: this.getStatus.bind(this),
         schema: {
-          name: { type: 'string', required: true }
+          name: { type: 'string', required: true },
         },
         destructive: false,
-        description: 'Get the status of a specific Windows service'
+        description: 'Get the status of a specific Windows service',
       },
       start: {
         handler: this.start.bind(this),
         schema: {
-          name: { type: 'string', required: true }
+          name: { type: 'string', required: true },
         },
         destructive: true,
-        description: 'Start a Windows service'
+        description: 'Start a Windows service',
       },
       stop: {
         handler: this.stop.bind(this),
         schema: {
-          name: { type: 'string', required: true }
+          name: { type: 'string', required: true },
         },
         destructive: true,
-        description: 'Stop a Windows service'
+        description: 'Stop a Windows service',
       },
       restart: {
         handler: this.restart.bind(this),
         schema: {
-          name: { type: 'string', required: true }
+          name: { type: 'string', required: true },
         },
         destructive: true,
-        description: 'Restart a Windows service'
-      }
+        description: 'Restart a Windows service',
+      },
     };
   }
 
@@ -124,7 +129,7 @@ export class WinServicesService extends BaseToolService {
     const services = JSON.parse(output);
 
     return {
-      services: Array.isArray(services) ? services : [services]
+      services: Array.isArray(services) ? services : [services],
     };
   }
 
@@ -138,8 +143,7 @@ export class WinServicesService extends BaseToolService {
   async getStatus(params) {
     const name = this._sanitizeServiceName(params.name);
 
-    const command =
-      `Get-Service -Name '${name}' | Select-Object Name, DisplayName, Status, StartType, DependentServices, ServicesDependedOn | ConvertTo-Json`;
+    const command = `Get-Service -Name '${name}' | Select-Object Name, DisplayName, Status, StartType, DependentServices, ServicesDependedOn | ConvertTo-Json`;
 
     const output = await this._runPS(command);
     return JSON.parse(output);
@@ -214,7 +218,7 @@ export class WinServicesService extends BaseToolService {
     if (!SERVICE_NAME_PATTERN.test(trimmed)) {
       throw new Error(
         `Invalid service name: "${trimmed}". ` +
-        `Service names may only contain letters, digits, underscores, dots, and hyphens.`
+          `Service names may only contain letters, digits, underscores, dots, and hyphens.`,
       );
     }
 
@@ -230,7 +234,9 @@ export class WinServicesService extends BaseToolService {
    */
   _assertNotProtected(name) {
     if (PROTECTED_SERVICE_NAMES.has(name.toLowerCase())) {
-      const error = new Error(`Refusing to stop/restart '${name}' — this is a security-critical service (antivirus, firewall, update, or logging).`);
+      const error = new Error(
+        `Refusing to stop/restart '${name}' — this is a security-critical service (antivirus, firewall, update, or logging).`,
+      );
       error.code = 'PROTECTED_SERVICE';
       throw error;
     }
@@ -252,26 +258,33 @@ export class WinServicesService extends BaseToolService {
       let timedOut = false;
       let settled = false;
 
-      const proc = spawn('powershell.exe', [
-        '-NoProfile',
-        '-NonInteractive',
-        '-ExecutionPolicy', 'Bypass',
-        '-Command', command
-      ], {
-        windowsHide: true,
-        stdio: ['pipe', 'pipe', 'pipe']
-      });
+      const proc = spawn(
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', command],
+        {
+          windowsHide: true,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        },
+      );
 
       const timer = setTimeout(() => {
         timedOut = true;
         proc.kill('SIGTERM');
         setTimeout(() => {
-          try { proc.kill('SIGKILL'); } catch { /* already dead */ }
+          try {
+            proc.kill('SIGKILL');
+          } catch {
+            /* already dead */
+          }
         }, 2000);
       }, timeout);
 
-      proc.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
-      proc.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+      proc.stdout.on('data', (chunk) => {
+        stdout += chunk.toString();
+      });
+      proc.stderr.on('data', (chunk) => {
+        stderr += chunk.toString();
+      });
 
       proc.on('error', (err) => {
         clearTimeout(timer);
@@ -292,9 +305,9 @@ export class WinServicesService extends BaseToolService {
         }
 
         if (exitCode !== 0) {
-          reject(new Error(
-            `PowerShell command failed (exit code ${exitCode}): ${stderr || stdout}`
-          ));
+          reject(
+            new Error(`PowerShell command failed (exit code ${exitCode}): ${stderr || stdout}`),
+          );
           return;
         }
 
@@ -305,4 +318,3 @@ export class WinServicesService extends BaseToolService {
 }
 
 export default WinServicesService;
-

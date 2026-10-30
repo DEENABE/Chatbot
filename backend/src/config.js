@@ -1,27 +1,25 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import 'dotenv/config';
+import { localServiceUrl } from './lib/localServiceUrl.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const ollamaUrl = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
-const ollamaHost = new URL(ollamaUrl).hostname;
-if (!['127.0.0.1', 'localhost', '::1', '[::1]'].includes(ollamaHost)) {
-  throw new Error('OLLAMA_URL must point to localhost. Chanakya AI refuses remote AI endpoints.');
-}
+const ollamaUrl = localServiceUrl(process.env.OLLAMA_URL || 'http://127.0.0.1:11434', 'OLLAMA_URL');
+const seconds = (value, fallback) => {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 1 && n <= 3600 ? Math.round(n * 1000) : fallback * 1000;
+};
 
-// Persistent data lives in backend/'s OWN storage/ folder — `root` here is
-// computed from this file's own location (import.meta.url), never a
-// hardcoded machine path, so this is portable: whatever directory backend/
-// happens to be running from (a dev checkout, or the packaged .exe's own
-// resources/backend), its storage/ sibling is what gets used. Deliberately
-// NOT an OS profile folder (e.g. Electron's app.getPath('userData')) — the
-// user wants one visible, predictable location they can find themselves,
-// not one hidden in AppData. frontend/electron/managers/BackendManager.js
-// no longer overrides this for the packaged app (it used to force
-// app.getPath('userData')); frontend/scripts/prepare-backend.cjs and
-// afterPack.cjs preserve this folder's contents across rebuilds (see the
-// comments there) specifically so repackaging the .exe never wipes it.
-const appDataPath = process.env.APP_DATA_PATH || root;
+// Development retains its existing data. Electron passes a writable per-user
+// root for installed builds; mutable data never goes under resources/ASAR.
+const appDataPath = path.resolve(process.env.APP_DATA_PATH || root);
+const host = process.env.HOST || '127.0.0.1';
+if (!['127.0.0.1', 'localhost', '::1'].includes(host))
+  throw new Error('HOST must be loopback for the local desktop API.');
+const translationUrl = localServiceUrl(
+  process.env.INDICTRANS_SERVICE_URL || 'http://127.0.0.1:8100',
+  'INDICTRANS_SERVICE_URL',
+);
 
 export const config = {
   // The one canonical persistent-data root everything else in this file
@@ -38,9 +36,14 @@ export const config = {
   // actually passed a host, so Node defaulted to 0.0.0.0 (every interface).
   // Anyone else on the same network could reach the agent/repair PowerShell
   // routes; this closes that off.
-  host: process.env.HOST || '127.0.0.1',
+  host,
   ollamaUrl,
-  defaultModel: process.env.DEFAULT_MODEL || 'llama3',
+  defaultModel: process.env.DEFAULT_MODEL || '',
+  // Coding agent: preferred installed model for the Coding panel (falls back to any
+  // installed *coder* model, then any tools-capable model, when this tag is missing).
+  codingModel: process.env.CODING_MODEL || 'qwen2.5-coder:14b',
+  // Per-step coding inference limit. 14B partly runs on CPU with a 6GB GPU, so allow longer.
+  codingModelTimeoutMs: seconds(process.env.CODING_MODEL_TIMEOUT_SECONDS, 600),
   embeddingModel: process.env.EMBEDDING_MODEL || 'nomic-embed-text',
   maxFileSize: Number(process.env.MAX_FILE_SIZE_MB || 25) * 1024 * 1024,
   ragTopK: Number(process.env.RAG_TOP_K || 5),
@@ -48,25 +51,30 @@ export const config = {
   // RAM/VRAM sooner when idle (at the cost of a reload on the next request).
   // e.g. '5m' (responsive), '30s' (aggressive), '0' (unload immediately).
   ollamaKeepAlive: process.env.OLLAMA_KEEP_ALIVE || '5m',
-  frontendOrigin: process.env.FRONTEND_ORIGIN || 'http://localhost:5173',
+  modelFirstOutputTimeoutMs: seconds(process.env.CHAT_FIRST_TOKEN_TIMEOUT_SECONDS, 900),
+  modelIdleTimeoutMs: seconds(process.env.CHAT_IDLE_TIMEOUT_SECONDS, 300),
+  frontendOrigin: localServiceUrl(
+    process.env.FRONTEND_ORIGIN || 'http://localhost:5173',
+    'FRONTEND_ORIGIN',
+  ),
   uploadDir: path.join(appDataPath, 'storage', 'uploads'),
   vectorDir: path.join(appDataPath, 'storage', 'lancedb'),
   dbFile: path.join(appDataPath, 'storage', 'db.sqlite'),
   pluginsDir: path.join(appDataPath, 'storage', 'plugins'),
   ocrDir: path.join(appDataPath, 'storage', 'ocr'),
-  frontendDist: path.resolve(root, '..', 'frontend', 'dist'),
+  frontendDist: process.env.FRONTEND_DIST_PATH || path.resolve(root, '..', 'frontend', 'dist'),
 
   // Translator feature (routes/translate.js, services/translationService.js).
   // The actual translation engine is IndicTrans2, running in a separate
   // local Python microservice (indictrans-service/ at the repo root) —
   // reached over loopback HTTP exactly like Ollama is, never a remote
-  // endpoint. Qwen3/Ollama is used only for the OPTIONAL post-processing
+  // endpoint. Qwen (Ollama) is used only for the OPTIONAL post-processing
   // pass below, never as the translator itself.
   //
-  // Earlier in this app's history the translator called Ollama/qwen3
+  // Earlier in this app's history the translator called Ollama/Qwen
   // directly (no IndicTrans2 involved) — that history is why
-  // postProcessingModel below still defaults through DEFAULT_MODEL/'qwen3'
-  // the same way the old direct-translation model selection did: qwen3
+  // postProcessingModel below still defaults through DEFAULT_MODEL/'qwen3.5:9b'
+  // the same way the old direct-translation model selection did: Qwen
   // measurably outperformed llama3 on Indic-language output quality
   // (llama3 hallucinated content on simple phrases), and that same quality
   // gap is just as relevant to a fluency-polish pass over Indic text.
@@ -76,7 +84,7 @@ export const config = {
     // Where the IndicTrans2 microservice listens. Same loopback-only
     // posture as ollamaUrl (see the OLLAMA_URL check above this object) —
     // this app refuses remote AI endpoints by design.
-    serviceUrl: process.env.INDICTRANS_SERVICE_URL || 'http://127.0.0.1:8100',
+    serviceUrl: translationUrl,
     // IndicTrans2 inference latency on CPU (the common case for a desktop
     // install) is unproven without a real deployment — 120s is a
     // deliberately generous starting point for a ~5000-char request; the
@@ -84,14 +92,14 @@ export const config = {
     // rather than hanging indefinitely if this is ever too tight.
     serviceTimeoutMs: Number(process.env.INDICTRANS_TIMEOUT_MS || 120_000),
 
-    // Optional Qwen3 fluency/terminology polish over IndicTrans2's raw
+    // Optional Qwen fluency/terminology polish over IndicTrans2's raw
     // output. OFF by default — must be explicitly enabled, and its
     // failure is always non-fatal (falls back to the unpolished
     // IndicTrans2 output rather than failing the whole request).
     postProcessingEnabled: process.env.TRANSLATION_POST_PROCESSING === 'true',
     postProcessingModel:
-      process.env.TRANSLATION_POST_PROCESSING_MODEL || process.env.DEFAULT_MODEL || 'qwen3',
-    postProcessingTimeoutMs: Number(process.env.TRANSLATION_POST_PROCESSING_TIMEOUT_MS || 30_000)
+      process.env.TRANSLATION_POST_PROCESSING_MODEL || process.env.DEFAULT_MODEL || '',
+    postProcessingTimeoutMs: Number(process.env.TRANSLATION_POST_PROCESSING_TIMEOUT_MS || 30_000),
   },
 
   // Auth abuse protection (middleware/rateLimiter.js). Configurable rather
@@ -140,15 +148,6 @@ export const config = {
     // middleware/rateLimiter.js), so one busy account can't exhaust another
     // user's budget on this shared desktop app.
     translateWindowMs: Number(process.env.TRANSLATE_WINDOW_MS || 60 * 1000),
-    translateMaxRequests: Number(process.env.TRANSLATE_MAX_REQUESTS || 15)
-  }
+    translateMaxRequests: Number(process.env.TRANSLATE_MAX_REQUESTS || 15),
+  },
 };
-
-export const supportedModels = [
-  { id: 'llama3', label: 'Llama 3', family: 'Meta' },
-  { id: 'mistral', label: 'Mistral', family: 'Mistral AI' },
-  { id: 'qwen3', label: 'Qwen 3', family: 'Alibaba' },
-  { id: 'qwen2.5', label: 'Qwen 2.5 (agent)', family: 'Alibaba' },
-  { id: 'llama3.1', label: 'Llama 3.1', family: 'Meta' },
-  // { id: 'gemma3', label: 'Gemma 3', family: 'Google' }
-];

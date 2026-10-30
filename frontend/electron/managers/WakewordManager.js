@@ -8,30 +8,27 @@ export function startWakeWordDetector(sendCallback) {
   const scriptPath = getWakewordScriptPath();
   logger.log(`Starting Wake Word detector with script: ${scriptPath}`);
 
-  wakewordProcess = spawn("powershell.exe", [
-    "-NoProfile",
-    "-NonInteractive",
-    "-ExecutionPolicy",
-    "Bypass",
-    "-File",
-    scriptPath
-  ], {
-    windowsHide: true,
-    stdio: ["pipe", "pipe", "pipe"]
-  });
+  wakewordProcess = spawn(
+    'powershell.exe',
+    ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath],
+    {
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    },
+  );
 
-  wakewordProcess.stdout?.on("data", (data) => {
+  wakewordProcess.stdout?.on('data', (data) => {
     const output = data.toString().trim();
     if (!output) return;
-    const lines = output.split("\n");
+    const lines = output.split('\n');
     for (const line of lines) {
       try {
         const parsed = JSON.parse(line.trim());
-        if (parsed.event === "wakeword") {
-          logger.log("Wake word detected:", parsed.text);
+        if (parsed.event === 'wakeword') {
+          logger.log('Wake word detected:', parsed.text);
           sendCallback(parsed);
-        } else if (parsed.event === "error") {
-          logger.error("Wake word process error:", parsed.message);
+        } else if (parsed.event === 'error') {
+          logger.error('Wake word process error:', parsed.message);
         }
       } catch (e) {
         // incomplete JSON or standard output
@@ -39,11 +36,11 @@ export function startWakeWordDetector(sendCallback) {
     }
   });
 
-  wakewordProcess.stderr?.on("data", (data) => {
+  wakewordProcess.stderr?.on('data', (data) => {
     logger.error(`[wakeword stderr] ${data.toString().trim()}`);
   });
 
-  wakewordProcess.on("exit", (code) => {
+  wakewordProcess.on('exit', (code) => {
     logger.log(`Wake word process exited with code ${code}`);
   });
 

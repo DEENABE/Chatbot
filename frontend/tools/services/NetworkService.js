@@ -7,7 +7,7 @@
  * @module NetworkService
  */
 
-import { execFile } from 'child_process';
+import { execFile } from '../ExecutionContext.js';
 import dns from 'dns';
 import net from 'net';
 import http from 'http';
@@ -30,9 +30,7 @@ function validateHost(host) {
   }
 
   if (INJECTION_PATTERN.test(host)) {
-    throw new Error(
-      'host contains invalid characters that could be used for command injection',
-    );
+    throw new Error('host contains invalid characters that could be used for command injection');
   }
 
   // Loose pattern: hostname, IPv4, or bracketed/un-bracketed IPv6
@@ -63,8 +61,20 @@ export class NetworkService extends BaseToolService {
         handler: this.ping.bind(this),
         schema: {
           host: { type: 'string', required: true },
-          count: { type: 'number', required: false, min: 1, max: 20 },
-          timeout: { type: 'number', required: false },
+          count: {
+            type: 'number',
+            required: false,
+            integer: true,
+            min: 1,
+            max: 20,
+          },
+          timeout: {
+            type: 'number',
+            required: false,
+            integer: true,
+            min: 1,
+            max: 30000,
+          },
         },
         destructive: false,
         description: 'Ping a host and report round-trip statistics',
@@ -143,13 +153,18 @@ export class NetworkService extends BaseToolService {
    */
   _exec(cmd, args) {
     return new Promise((resolve, reject) => {
-      execFile(cmd, args, { windowsHide: true, maxBuffer: 5 * 1024 * 1024 }, (err, stdout, stderr) => {
-        if (err) {
-          reject(new Error(`${cmd} failed: ${stderr?.trim() || err.message}`));
-          return;
-        }
-        resolve(stdout);
-      });
+      execFile(
+        cmd,
+        args,
+        { windowsHide: true, maxBuffer: 5 * 1024 * 1024 },
+        (err, stdout, stderr) => {
+          if (err) {
+            reject(new Error(`${cmd} failed: ${stderr?.trim() || err.message}`));
+            return;
+          }
+          resolve(stdout);
+        },
+      );
     });
   }
 
@@ -172,7 +187,10 @@ export class NetworkService extends BaseToolService {
           }
           try {
             const trimmed = stdout.trim();
-            if (!trimmed) { resolve(null); return; }
+            if (!trimmed) {
+              resolve(null);
+              return;
+            }
             resolve(JSON.parse(trimmed));
           } catch {
             resolve(stdout.trim());
@@ -200,8 +218,10 @@ export class NetworkService extends BaseToolService {
     const safeTimeout = Math.max(100, Number(timeout) || 1000);
 
     const stdout = await this._exec('ping', [
-      '-n', String(safeCount),
-      '-w', String(safeTimeout),
+      '-n',
+      String(safeCount),
+      '-w',
+      String(safeTimeout),
       host,
     ]);
 
@@ -220,11 +240,7 @@ export class NetworkService extends BaseToolService {
 
     const safeHops = Math.max(1, Math.min(Number(maxHops) || 30, 64));
 
-    const stdout = await this._exec('tracert', [
-      '-d',
-      '-h', String(safeHops),
-      host,
-    ]);
+    const stdout = await this._exec('tracert', ['-d', '-h', String(safeHops), host]);
 
     return { host, hops: this._parseTracertOutput(stdout) };
   }
@@ -302,17 +318,15 @@ export class NetworkService extends BaseToolService {
     // Filter by state
     if (state && state !== 'ALL') {
       const upper = state.toUpperCase();
-      connections = connections.filter(
-        (c) => (c.State || '').toString().toUpperCase().includes(upper),
+      connections = connections.filter((c) =>
+        (c.State || '').toString().toUpperCase().includes(upper),
       );
     }
 
     // Filter by port
     if (port != null) {
       const p = Number(port);
-      connections = connections.filter(
-        (c) => c.LocalPort === p || c.RemotePort === p,
-      );
+      connections = connections.filter((c) => c.LocalPort === p || c.RemotePort === p);
     }
 
     return { connections };
@@ -487,7 +501,10 @@ export class NetworkService extends BaseToolService {
       for (const line of lines) {
         const kv = line.match(/^\s{3,}(.+?)\s*[.:]\s*(.+)$/);
         if (kv) {
-          const key = kv[1].trim().replace(/[\s.]+/g, '_').toLowerCase();
+          const key = kv[1]
+            .trim()
+            .replace(/[\s.]+/g, '_')
+            .toLowerCase();
           const value = kv[2].trim();
           // Collect multi-value fields into arrays
           if (adapter[key] !== undefined) {
@@ -540,4 +557,3 @@ export class NetworkService extends BaseToolService {
 }
 
 export default NetworkService;
-

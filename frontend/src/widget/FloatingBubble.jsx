@@ -108,14 +108,20 @@ export default function FloatingBubble() {
   const isElectron = !!window.electronAPI;
 
   // Filter actions based on environment
-  const visibleActions = quickActions.filter(a => !a.electronOnly || isElectron);
+  const visibleActions = quickActions.filter((a) => !a.electronOnly || isElectron);
 
   // The avatar's behaviour, recomputed from real signals — not an LLM call, so
   // this is cheap enough to run on every render. See avatarDirector.js for what
   // each field means and which parts the renderer below can actually show.
   const avatar = useMemo(
-    () => deriveAvatarState({ isListening: micListening, isThinking: isGenerating && !avatarSpeaking, isSpeaking: avatarSpeaking, justGreeted }),
-    [micListening, isGenerating, avatarSpeaking, justGreeted]
+    () =>
+      deriveAvatarState({
+        isListening: micListening,
+        isThinking: isGenerating && !avatarSpeaking,
+        isSpeaking: avatarSpeaking,
+        justGreeted,
+      }),
+    [micListening, isGenerating, avatarSpeaking, justGreeted],
   );
 
   // Cleanup timeouts on unmount
@@ -245,7 +251,9 @@ export default function FloatingBubble() {
       setGreeting('');
       setShowToolbar(false);
       if (isElectron) {
-        try { await window.electronAPI.setToolbarMode(false); } catch (err) {
+        try {
+          await window.electronAPI.setToolbarMode(false);
+        } catch (err) {
           console.warn('Hover collapse failed:', err);
         }
       }
@@ -263,7 +271,7 @@ export default function FloatingBubble() {
     dragThreshold.current = {
       isDragging: false,
       startX: e.screenX,
-      startY: e.screenY
+      startY: e.screenY,
     };
 
     if (isElectron) window.electronAPI.dragStart();
@@ -313,12 +321,20 @@ export default function FloatingBubble() {
     e.preventDefault();
 
     // Clear pending timeouts
-    if (hoverTimeoutRef.current) { clearTimeout(hoverTimeoutRef.current); hoverTimeoutRef.current = null; }
-    if (leaveTimeoutRef.current) { clearTimeout(leaveTimeoutRef.current); leaveTimeoutRef.current = null; }
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+    if (leaveTimeoutRef.current) {
+      clearTimeout(leaveTimeoutRef.current);
+      leaveTimeoutRef.current = null;
+    }
 
     const collapseToolbar = async () => {
       if (isElectron) {
-        try { await window.electronAPI.setToolbarMode(false); } catch {}
+        try {
+          await window.electronAPI.setToolbarMode(false);
+        } catch {}
       }
       setShowToolbar(false);
       setIsHovered(false);
@@ -434,7 +450,12 @@ export default function FloatingBubble() {
                 initial={{ opacity: 0, scale: 0.3, y: 15 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.3, y: 8 }}
-                transition={{ delay: i * 0.05, type: 'spring', stiffness: 500, damping: 22 }}
+                transition={{
+                  delay: i * 0.05,
+                  type: 'spring',
+                  stiffness: 500,
+                  damping: 22,
+                }}
                 onClick={(e) => handleActionClick(action.id, e)}
                 onMouseDown={(e) => e.stopPropagation()}
                 onMouseEnter={() => {
@@ -449,7 +470,8 @@ export default function FloatingBubble() {
                 // clue that one of them starts voice input.
                 className="w-[168px] h-[38px] pl-3 pr-4 rounded-full flex items-center gap-2.5 cursor-pointer group relative"
                 style={{
-                  background: 'linear-gradient(135deg, rgba(22, 22, 28, 0.94), rgba(12, 12, 14, 0.98))',
+                  background:
+                    'linear-gradient(135deg, rgba(22, 22, 28, 0.94), rgba(12, 12, 14, 0.98))',
                   border: '1px solid rgba(255, 255, 255, 0.08)',
                   boxShadow: '0 3px 10px rgba(0, 0, 0, 0.4)',
                   backdropFilter: 'blur(8px)',
@@ -485,6 +507,15 @@ export default function FloatingBubble() {
       {/* Main Avatar Bubble */}
       <motion.div
         ref={bubbleRef}
+        role="button"
+        tabIndex={0}
+        aria-label="Open Chanakya AI"
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            toggleExpand();
+          }
+        }}
         onMouseDown={handleMouseDown}
         className="w-[68px] h-[68px] rounded-full flex items-center justify-center cursor-grab active:cursor-grabbing relative"
         style={{
@@ -530,7 +561,11 @@ export default function FloatingBubble() {
               scale: [1, 1.18, 1],
               opacity: [avatar.emotionIntensity * 0.5, 0, avatar.emotionIntensity * 0.5],
             }}
-            transition={{ duration: breathDuration, repeat: Infinity, ease: 'easeInOut' }}
+            transition={{
+              duration: breathDuration,
+              repeat: Infinity,
+              ease: 'easeInOut',
+            }}
           />
         )}
 
@@ -574,15 +609,24 @@ export default function FloatingBubble() {
                 alt="Chanakya Smiling"
                 className="absolute inset-0 w-full h-full object-cover"
                 initial={{ opacity: 0 }}
-                animate={{ opacity: isHovered || avatar.emotion === 'happy' ? 1 : 0 }}
+                animate={{
+                  opacity: isHovered || avatar.emotion === 'happy' ? 1 : 0,
+                }}
                 transition={presets.fade}
               />
               {/* Blink — a thin band at eye height, dark and gone in ~140ms. Not a
                   real eyelid (there isn't one to animate), just a plausible flicker. */}
               <motion.div
                 className="absolute left-0 right-0 pointer-events-none"
-                style={{ top: '40%', height: '10%', background: 'rgba(5,5,8,0.85)' }}
-                animate={{ opacity: isBlinking ? 1 : 0, scaleY: isBlinking ? 1 : 0 }}
+                style={{
+                  top: '40%',
+                  height: '10%',
+                  background: 'rgba(5,5,8,0.85)',
+                }}
+                animate={{
+                  opacity: isBlinking ? 1 : 0,
+                  scaleY: isBlinking ? 1 : 0,
+                }}
                 transition={{ duration: BLINK_DURATION_MS / 2 / 1000 }}
               />
             </motion.div>
@@ -609,7 +653,10 @@ export default function FloatingBubble() {
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.6 }}
                 className="absolute -bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-[3px] px-1.5 py-1 rounded-full"
-                style={{ background: 'rgba(10,10,12,0.9)', border: `1px solid ${glowColor}55` }}
+                style={{
+                  background: 'rgba(10,10,12,0.9)',
+                  border: `1px solid ${glowColor}55`,
+                }}
               >
                 {[0, 1, 2].map((i) => (
                   <motion.span
@@ -617,7 +664,12 @@ export default function FloatingBubble() {
                     className="w-[3px] h-[3px] rounded-full"
                     style={{ backgroundColor: glowColor }}
                     animate={{ scaleY: [1, 2.2, 1] }}
-                    transition={{ duration: 0.5, repeat: Infinity, delay: i * 0.12, ease: 'easeInOut' }}
+                    transition={{
+                      duration: 0.5,
+                      repeat: Infinity,
+                      delay: i * 0.12,
+                      ease: 'easeInOut',
+                    }}
                   />
                 ))}
               </motion.div>
@@ -653,8 +705,8 @@ export default function FloatingBubble() {
                 animate={{
                   scale: 2.0,
                   opacity: 0,
-                  x: (i === 0 ? -22 : i === 1 ? 22 : 0),
-                  y: (i === 2 ? -22 : 6),
+                  x: i === 0 ? -22 : i === 1 ? 22 : 0,
+                  y: i === 2 ? -22 : 6,
                 }}
                 transition={{
                   duration: 1.4,

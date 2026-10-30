@@ -6,22 +6,24 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "node --watch src/server.js",
-    "ingest": "node src/ingest/runIngest.js",
-    "test": "node --test"
+    "dev": "node --watch src/server.js"
   },
   "dependencies": {
     "@lancedb/lancedb": "^0.18.2",
     "better-sqlite3": "^13.0.3",
     "cors": "^2.8.6",
     "dotenv": "^16.4.5",
+    "electron": "45.1.0",
+    "exceljs": "^3.4.0",
     "express": "^4.21.0",
     "express-rate-limit": "^7.4.0",
     "helmet": "^8.3.0",
+    "jszip": "^3.10.2",
     "mammoth": "^1.9.0",
     "multer": "^2.2.0",
     "pdf-parse": "^1.1.1",
-    "read-excel-file": "^5.8.0"
+    "read-excel-file": "^5.8.0",
+    "tesseract.js": "^7.0.0"
   },
   "engines": {
     "node": ">=18"

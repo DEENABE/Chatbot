@@ -1,0 +1,14 @@
+const base = process.argv[2];
+const { toXlsx } = await import(base + '/src/fileagent/writers.js');
+const { toDocx, markdownToBlocks } = await import(base + '/src/fileagent/documents.js');
+const fs = await import('node:fs');
+const readXlsxFile = (await import(base + '/node_modules/read-excel-file/node/index.js').catch(() => import('read-excel-file/node'))).default;
+const mammoth = (await import('mammoth')).default;
+const xlsx = toXlsx([{ name: 'Sales', columns: ['Region', 'Amount', 'பெயர்'], rows: [['South', 4900, 'தமிழ்'], ['North', 800, 'x & <y>']] }, { name: 'Other', columns: ['a'], rows: [[1]] }]);
+fs.writeFileSync(process.env.HOME + '/scratch/t.xlsx', xlsx);
+console.log('xlsx sheet1:', JSON.stringify(await readXlsxFile(process.env.HOME + '/scratch/t.xlsx')));
+console.log('xlsx sheet2:', JSON.stringify(await readXlsxFile(process.env.HOME + '/scratch/t.xlsx', { sheet: 2 })));
+const docx = toDocx({ title: 'அறிக்கை', blocks: markdownToBlocks('## Key points\n\n- one **bold**\n- இரண்டு\n\n| A | B |\n| --- | --- |\n| 1 | 2 |') });
+fs.writeFileSync(process.env.HOME + '/scratch/t.docx', docx);
+const r = await mammoth.convertToHtml({ path: process.env.HOME + '/scratch/t.docx' });
+console.log('docx html:', r.value, '| warnings:', r.messages.length);

@@ -60,10 +60,27 @@ export class InputValidator {
    */
   static validate(schema, params) {
     const errors = [];
-    const safeParams = params != null && typeof params === 'object' ? params : {};
+    if (
+      !params ||
+      typeof params !== 'object' ||
+      Array.isArray(params) ||
+      ![Object.prototype, null].includes(Object.getPrototypeOf(params))
+    )
+      return {
+        valid: false,
+        errors: [{ field: 'params', message: 'Parameters must be a plain object' }],
+      };
+    const safeParams = params;
+    for (const field of Object.keys(safeParams)) {
+      if (
+        !Object.hasOwn(schema, field) ||
+        ['__proto__', 'constructor', 'prototype'].includes(field)
+      )
+        errors.push({ field, message: 'Unknown parameter' });
+    }
 
     for (const [field, rules] of Object.entries(schema)) {
-      const value = safeParams[field];
+      const value = Object.hasOwn(safeParams, field) ? safeParams[field] : undefined;
 
       // --- Required check ---
       if (rules.required && (value === undefined || value === null)) {
@@ -81,9 +98,7 @@ export class InputValidator {
       errors.push(...typeErrors);
     }
 
-    return errors.length === 0
-      ? { valid: true }
-      : { valid: false, errors };
+    return errors.length === 0 ? { valid: true } : { valid: false, errors };
   }
 
   /**
@@ -110,7 +125,10 @@ export class InputValidator {
 
     // Must start with a drive letter (C:\) or UNC prefix (\\)
     if (!WINDOWS_DRIVE_PATH.test(p) && !WINDOWS_UNC_PATH.test(p)) {
-      return { valid: false, error: 'Path must be an absolute Windows path (drive letter or UNC)' };
+      return {
+        valid: false,
+        error: 'Path must be an absolute Windows path (drive letter or UNC)',
+      };
     }
 
     // Reject path traversal
@@ -120,7 +138,10 @@ export class InputValidator {
 
     // Reject dangerous characters
     if (DANGEROUS_PATH_CHARS.test(p)) {
-      return { valid: false, error: 'Path contains dangerous or invalid characters' };
+      return {
+        valid: false,
+        error: 'Path contains dangerous or invalid characters',
+      };
     }
 
     return { valid: true };
@@ -152,7 +173,7 @@ export class InputValidator {
       case 'array':
         return InputValidator._validateArray(field, value, rules);
       case 'object':
-        return InputValidator._validateObject(field, value);
+        return InputValidator._validateObject(field, value, rules);
       default:
         return [{ field, message: `Unknown schema type: ${rules.type}` }];
     }
@@ -170,17 +191,26 @@ export class InputValidator {
     }
 
     if (rules.minLength !== undefined && value.length < rules.minLength) {
-      errors.push({ field, message: `${field} must be at least ${rules.minLength} characters` });
+      errors.push({
+        field,
+        message: `${field} must be at least ${rules.minLength} characters`,
+      });
     }
 
     if (rules.maxLength !== undefined && value.length > rules.maxLength) {
-      errors.push({ field, message: `${field} must be at most ${rules.maxLength} characters` });
+      errors.push({
+        field,
+        message: `${field} must be at most ${rules.maxLength} characters`,
+      });
     }
 
     if (rules.pattern !== undefined) {
       const regex = new RegExp(rules.pattern);
       if (!regex.test(value)) {
-        errors.push({ field, message: `${field} must match pattern ${rules.pattern}` });
+        errors.push({
+          field,
+          message: `${field} must match pattern ${rules.pattern}`,
+        });
       }
     }
 
@@ -193,7 +223,7 @@ export class InputValidator {
   static _validateNumber(field, value, rules) {
     const errors = [];
 
-    if (typeof value !== 'number' || Number.isNaN(value)) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
       errors.push({ field, message: `${field} must be a number` });
       return errors;
     }
@@ -232,7 +262,7 @@ export class InputValidator {
     }
 
     if (!rules.values.includes(value)) {
-      const allowed = rules.values.map(v => JSON.stringify(v)).join(', ');
+      const allowed = rules.values.map((v) => JSON.stringify(v)).join(', ');
       return [{ field, message: `${field} must be one of [${allowed}]` }];
     }
 
@@ -262,17 +292,27 @@ export class InputValidator {
     }
 
     if (rules.minItems !== undefined && value.length < rules.minItems) {
-      errors.push({ field, message: `${field} must have at least ${rules.minItems} items` });
+      errors.push({
+        field,
+        message: `${field} must have at least ${rules.minItems} items`,
+      });
     }
 
     if (rules.maxItems !== undefined && value.length > rules.maxItems) {
-      errors.push({ field, message: `${field} must have at most ${rules.maxItems} items` });
+      errors.push({
+        field,
+        message: `${field} must have at most ${rules.maxItems} items`,
+      });
     }
 
     // Validate each item against itemSchema if provided
     if (rules.itemSchema) {
       for (let i = 0; i < value.length; i++) {
-        const itemErrors = InputValidator._validateType(`${field}[${i}]`, value[i], rules.itemSchema);
+        const itemErrors = InputValidator._validateType(
+          `${field}[${i}]`,
+          value[i],
+          rules.itemSchema,
+        );
         errors.push(...itemErrors);
       }
     }
@@ -283,10 +323,20 @@ export class InputValidator {
   /**
    * @private
    */
-  static _validateObject(field, value) {
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+  static _validateObject(field, value, rules = {}) {
+    if (
+      typeof value !== 'object' ||
+      value === null ||
+      Array.isArray(value) ||
+      ![Object.prototype, null].includes(Object.getPrototypeOf(value))
+    ) {
       return [{ field, message: `${field} must be a plain object` }];
     }
+    if (rules.properties)
+      return (InputValidator.validate(rules.properties, value).errors || []).map((e) => ({
+        ...e,
+        field: `${field}.${e.field}`,
+      }));
     return [];
   }
 }

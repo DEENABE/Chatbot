@@ -80,7 +80,7 @@ export default function ScreenRecorder({ onClose }) {
     setSelectedSource(source);
     setPreviewUrl(null);
     setRecordedChunks([]);
-    
+
     try {
       // Get capture stream
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -88,14 +88,16 @@ export default function ScreenRecorder({ onClose }) {
         video: {
           mandatory: {
             chromeMediaSource: 'desktop',
-            chromeMediaSourceId: source.id
-          }
-        }
+            chromeMediaSourceId: source.id,
+          },
+        },
       });
 
       streamRef.current = stream;
-      
-      const recorder = new MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp9' });
+
+      const recorder = new MediaRecorder(stream, {
+        mimeType: 'video/webm; codecs=vp9',
+      });
       mediaRecorderRef.current = recorder;
 
       const chunks = [];
@@ -155,7 +157,7 @@ export default function ScreenRecorder({ onClose }) {
   const handleSaveFile = async () => {
     if (recordedChunks.length === 0) return;
     const blob = new Blob(recordedChunks, { type: 'video/webm' });
-    
+
     const reader = new FileReader();
     reader.readAsDataURL(blob);
     reader.onloadend = async () => {
@@ -164,7 +166,10 @@ export default function ScreenRecorder({ onClose }) {
         const defaultName = `nova_screen_rec_${Date.now()}.webm`;
         const res = await window.electronAPI.saveFile(defaultName, base64);
         if (res && res.success) {
-          window.electronAPI.showNotification('Recording Saved', `File saved successfully to ${res.filePath}`);
+          window.electronAPI.showNotification(
+            'Recording Saved',
+            `File saved successfully to ${res.filePath}`,
+          );
         }
       }
     };
@@ -174,14 +179,19 @@ export default function ScreenRecorder({ onClose }) {
   const handleUploadToAI = async () => {
     if (recordedChunks.length === 0) return;
     const blob = new Blob(recordedChunks, { type: 'video/webm' });
-    const file = new File([blob], `screen_rec_${Date.now()}.webm`, { type: 'video/webm' });
-    
+    const file = new File([blob], `screen_rec_${Date.now()}.webm`, {
+      type: 'video/webm',
+    });
+
     setIsUploading(true);
     try {
       await uploadDocuments([file]);
       fetchDocuments(); // Refresh knowledge base
       if (window.electronAPI) {
-        window.electronAPI.showNotification('AI Memory Added', 'Screen recording uploaded and indexed by local RAG.');
+        window.electronAPI.showNotification(
+          'AI Memory Added',
+          'Screen recording uploaded and indexed by local RAG.',
+        );
       }
       alert('Screen recording uploaded successfully to your offline knowledge base.');
     } catch (err) {
@@ -197,8 +207,14 @@ export default function ScreenRecorder({ onClose }) {
       {/* Header */}
       <div className="flex items-center justify-between border-b border-white/5 p-4 shrink-0">
         <div className="flex items-center gap-2">
-          <Video size={16} style={{ color: accent }} className={isRecording ? 'animate-pulse' : ''} />
-          <span className="text-xs font-bold uppercase tracking-wider text-stone-300">Chanakya Screen Recorder</span>
+          <Video
+            size={16}
+            style={{ color: accent }}
+            className={isRecording ? 'animate-pulse' : ''}
+          />
+          <span className="text-xs font-bold uppercase tracking-wider text-stone-300">
+            Chanakya Screen Recorder
+          </span>
         </div>
         <button
           onClick={onClose}
@@ -210,13 +226,14 @@ export default function ScreenRecorder({ onClose }) {
 
       {/* Main Content Area */}
       <div className="flex-1 p-4 flex flex-col gap-4 min-h-0">
-        
         {/* State 1: Active recording overlay */}
         {isRecording && (
           <div className="flex-grow flex flex-col items-center justify-center bg-black/40 border border-white/5 rounded-2xl p-6 text-center gap-4">
             <div className="relative">
               <div className="w-16 h-16 rounded-full flex items-center justify-center bg-red-500/10 border-2 border-red-500/20">
-                <div className={`w-6 h-6 rounded-full bg-red-500 ${isPaused ? 'opacity-50' : 'animate-ping'}`} />
+                <div
+                  className={`w-6 h-6 rounded-full bg-red-500 ${isPaused ? 'opacity-50' : 'animate-ping'}`}
+                />
               </div>
               {!isPaused && (
                 <div className="absolute inset-0 w-16 h-16 rounded-full bg-red-500 opacity-20 animate-pulse pointer-events-none" />
@@ -224,7 +241,9 @@ export default function ScreenRecorder({ onClose }) {
             </div>
 
             <div>
-              <div className="text-xl font-mono font-bold tracking-widest text-white">{formatTime(timer)}</div>
+              <div className="text-xl font-mono font-bold tracking-widest text-white">
+                {formatTime(timer)}
+              </div>
               <div className="text-[10px] text-stone-500 mt-1 uppercase tracking-widest">
                 {isPaused ? 'Recording Paused' : `Recording: ${selectedSource?.name}`}
               </div>
@@ -263,16 +282,15 @@ export default function ScreenRecorder({ onClose }) {
         {!isRecording && previewUrl && (
           <div className="flex-grow flex flex-col gap-3 min-h-0">
             <div className="relative border border-white/10 bg-black rounded-2xl overflow-hidden flex-1 flex items-center justify-center">
-              <video
-                src={previewUrl}
-                controls
-                className="max-w-full max-h-full object-contain"
-              />
+              <video src={previewUrl} controls className="max-w-full max-h-full object-contain" />
             </div>
-            
+
             <div className="flex items-center gap-3 shrink-0">
               <button
-                onClick={() => { setPreviewUrl(null); setSelectedSource(null); }}
+                onClick={() => {
+                  setPreviewUrl(null);
+                  setSelectedSource(null);
+                }}
                 className="flex-1 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-white/10 text-stone-300 py-2 text-xs font-bold transition-all"
               >
                 Discard
@@ -305,7 +323,9 @@ export default function ScreenRecorder({ onClose }) {
         {!isRecording && !previewUrl && (
           <div className="flex-grow flex flex-col gap-3 min-h-0">
             <div className="flex items-center justify-between shrink-0">
-              <span className="text-[10px] uppercase font-bold text-stone-500 tracking-wider">Choose screen or window</span>
+              <span className="text-[10px] uppercase font-bold text-stone-500 tracking-wider">
+                Choose screen or window
+              </span>
               <button
                 onClick={fetchSources}
                 disabled={isCapturingSources}
@@ -323,7 +343,9 @@ export default function ScreenRecorder({ onClose }) {
             ) : (
               <div className="flex-1 overflow-y-auto pr-1">
                 {sources.length === 0 ? (
-                  <div className="text-center text-xs text-stone-500 py-10">No capture feeds found.</div>
+                  <div className="text-center text-xs text-stone-500 py-10">
+                    No capture feeds found.
+                  </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-3 pb-2">
                     {sources.map((src) => (
@@ -345,7 +367,7 @@ export default function ScreenRecorder({ onClose }) {
                             <Play size={20} className="text-white fill-white drop-shadow-md" />
                           </div>
                         </div>
-                        
+
                         {/* Source details */}
                         <div className="flex items-center gap-1.5 min-w-0">
                           <Monitor size={10} className="text-stone-500 shrink-0" />

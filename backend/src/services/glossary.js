@@ -18,7 +18,7 @@
 
 const GLOSSARY = Object.freeze({
   bearing: { tam_Taml: 'தாங்கி' },
-  shaft: { tam_Taml: 'தண்டு' }
+  shaft: { tam_Taml: 'தண்டு' },
 });
 
 function escapeRegExp(value) {

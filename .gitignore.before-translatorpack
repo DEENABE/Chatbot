@@ -1,0 +1,183 @@
+
+# ─── Dependencies ───────────────────────────────────────────────
+node_modules/
+.pnp
+.pnp.js
+.npm
+
+# ─── Environment / secrets ──────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ─── Build output ───────────────────────────────────────────────
+dist/
+build/
+frontend/dist/
+frontend/release-build/
+frontend/release-latest/
+# Self-contained backend runtime produced by scripts/prepare-backend.cjs
+frontend/backend-runtime/
+# Transient stash used by prepare-backend.cjs/afterPack.cjs to carry the
+# packaged app's real storage/ (db.sqlite, uploads, etc) across a rebuild —
+# only ever exists mid-build, never meant to be committed.
+frontend/.storage-preserve-tmp/
+# Pre-extracted Electron distribution (electronDist in frontend/package.json's
+# build config) — a local workaround for an antivirus lock on electron-builder's
+# own fresh-extract-then-rename step; safe to delete and re-extract from the
+# electron npm cache at any time.
+.electron-dist/
+
+# # ─── Backend runtime / generated data ───────────────────────────
+# backend/storage/
+backend/data/
+# # keep the folder structure but not its contents
+# !backend/storage/.gitkeep
+# # legacy runtime files (older layout)
+backend/storage/uploads/*
+# backend/storage/lancedb/*
+# backend/storage/history.json
+# backend/storage/repair-sessions.json
+# backend/storage/repair-dataset.jsonl
+!backend/storage/uploads/.gitkeep
+# !backend/storage/lancedb/.gitkeep
+# Runtime user DB — password hashes/salts, must never be committed.
+backend/storage/users.json
+backend/storage/db.sqlite
+backend/storage/db.sqlite-shm
+backend/storage/db.sqlite-wal
+# JSONDatabase writes to this filename at runtime, not db.sqlite — same
+# password-hash/salt sensitivity as the rule above, must match the real name.
+backend/storage/db_store.json
+# Raw password-reset code, written locally by authService.js since this app
+# has no email/SMTP to deliver it through instead. Same sensitivity tier as
+# the credential files above — never committed.
+backend/storage/password-reset-token.txt
+# Training-corpus files (repair/automation sessions, PowerShell transcripts —
+# hostnames, usernames, paths, network config) now live under a dedicated
+# directory rather than loose in storage/
+#backend/storage/training-data/
+# Written by lib/portGuard.js on every server startup, purely local runtime
+# state (this machine's own PID) — never meaningful across machines/commits.
+backend/storage/.dev-server.pid
+# Written by services/indictransProcess.js when it auto-spawns the Python
+# translation service — same rationale as the pid file above.
+backend/storage/.indictrans-service.pid
+
+# ─── Logs ───────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+backend.log
+logs/
+
+# ─── Caches / test / coverage ───────────────────────────────────
+.cache/
+.vite/
+coverage/
+*.tsbuildinfo
+
+# ─── Editor / OS ────────────────────────────────────────────────
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+Desktop.ini
+# Word/Office lock files created while a document is open
+~$*
+
+# ─── Local tooling ──────────────────────────────────────────────
+.claude/
+
+# ─── Misc scratch ───────────────────────────────────────────────
+test.json
+backend/test_doc.txt
+*.local
+
+# ─── Dataset tooling ──────────────────────────────────────────────
+# Timestamped snapshots written by the dataset scripts before each run —
+# grows without bound and has no value once the run it protected succeeds.
+dataset-backups/
+# One-off generator/verification scripts (gen1.py...gen26.py, etc.) used to
+# build the training data — local tooling, not part of the shipped app.
+dataset-tools/
+
+#--------claude ignore--------
+.claude/
+#-------ship.mjs igore--------
+scripts/ship.mjs
+
+#----flie transer-----
+sync.ffs_db
+
+
+
+#---git workflow---
+.github/workflows/codeql.yml
+
+#---claude.md--
+CLAUDE.md
+
+ #----gitignore----
+ .gitignore
+
+#---scripts---
+ scripts/ship.mjs
+
+
+ #---claude auto check---
+ .github/workflows/claude-auto-check.yml/codeql.yml
+
+ #---.env example---
+    .env.example
+
+
+
+# ─── IndicTrans2 microservice (Python) ──────────────────────────
+# Local virtualenv and downloaded model checkpoints (~6GB) — never
+# committed, set up locally per-machine via indictrans-service/README.md.
+indictrans-service/.venv/
+indictrans-service/models/
+indictrans-service/.env
+Chanakya_Codebase_Complete_Architecture_Guide.docx
+generate_doc_guide.py
+
+# ─── Added by the security review ───────────────────────────────
+# Installer outputs of `npm run electron:release` (electron-builder writes here, see scripts/build-release.cjs).
+frontend/release-security/
+frontend/release-latest/
+# FreeFileSync bookkeeping and local tool state — never part of the project.
+sync.ffs_db
+sync.ffs_lock
+*.ffs_lock
+.claude/settings.local.json
+# Local copies of helper scripts / secrets kept as backups next to the repo.
+*.ps1.bak
+*.pem
+*.pfx
+*.key
+# Any local user data written by the app at runtime.
+backend/data/
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+# Reversible cleanup archive (delete this folder once the demo is done)
+_cleanup_archive/
+
+# Desktop release outputs and isolated QA artifacts
+frontend/release-desktop*/
+.qa/
+.astra-tmp/
+docs/
+indictrans-service
+demo-data
+test
+tests*
+
+.mjs*
+.cjs*

@@ -10,7 +10,7 @@ context compression before generation, with per-user token usage tracking.
 - [Ollama](https://ollama.com) installed and running locally
 - Pull the models you need:
   ```bash
-  ollama pull qwen2.5:7b          # or llama3.1:8b, mistral:7b, gemma2:9b
+  ollama pull qwen3.5:9b          # or llama3.1:8b, mistral:7b, gemma2:9b
   ollama pull nomic-embed-text    # embedding model
   ```
 
@@ -23,7 +23,7 @@ cp .env.example .env
 ```
 
 Edit `.env` — set `CHAT_MODEL` to whichever model you're actually running
-(`llama3.1:8b`, `qwen2.5:7b`, `mistral:7b`, or `gemma2:9b`), and point
+(`llama3.1:8b`, `qwen3.5:9b`, `mistral:7b`, or `gemma2:9b`), and point
 `SOURCE_DB_URL` at your real database once you wire it up (see step 3).
 
 ## 3. Connect your real database
@@ -73,19 +73,19 @@ curl http://localhost:3000/usage/u1
 
 ## File map
 
-| File | Purpose |
-|---|---|
-| `src/server.js` | Express app entry point |
-| `src/config/index.js` | All tunable settings (models, topK, token budget, context limits) |
-| `src/db/schema.sql`, `connection.js` | SQLite + sqlite-vec index setup |
-| `src/ingest/*` | Indexing pipeline: clean → chunk → embed → store (run via `npm run ingest`) |
-| `src/retrieval/*` | Query-time: embed query → vector search → rerank → compress context |
-| `src/llm/*` | Ollama client, prompt building, token counting/limits |
-| `src/routes/ask.js` | Main RAG endpoint (streaming) |
-| `src/routes/ingestRoute.js` | Optional API-triggered re-index (batch by batch) |
-| `src/routes/usage.js` | Per-user token usage lookup |
-| `src/middleware/*` | Error handling, rate limiting |
-| `scripts/reindex.sh` | Cron-friendly re-index trigger |
+| File                                 | Purpose                                                                     |
+| ------------------------------------ | --------------------------------------------------------------------------- |
+| `src/server.js`                      | Express app entry point                                                     |
+| `src/config/index.js`                | All tunable settings (models, topK, token budget, context limits)           |
+| `src/db/schema.sql`, `connection.js` | SQLite + sqlite-vec index setup                                             |
+| `src/ingest/*`                       | Indexing pipeline: clean → chunk → embed → store (run via `npm run ingest`) |
+| `src/retrieval/*`                    | Query-time: embed query → vector search → rerank → compress context         |
+| `src/llm/*`                          | Ollama client, prompt building, token counting/limits                       |
+| `src/routes/ask.js`                  | Main RAG endpoint (streaming)                                               |
+| `src/routes/ingestRoute.js`          | Optional API-triggered re-index (batch by batch)                            |
+| `src/routes/usage.js`                | Per-user token usage lookup                                                 |
+| `src/middleware/*`                   | Error handling, rate limiting                                               |
+| `scripts/reindex.sh`                 | Cron-friendly re-index trigger                                              |
 
 ## Tuning knobs (in `.env`)
 

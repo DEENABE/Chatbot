@@ -1,26 +1,41 @@
 import crypto from 'node:crypto';
 import { db } from './db.js';
+import { safeText, containsSecret } from '../memory/validation.js';
 
 export async function getMemories(userId, type) {
   if (type) {
-    return db.prepare('SELECT * FROM memories WHERE userId = ? AND type = ? ORDER BY createdAt DESC').all(userId, type);
+    return db
+      .prepare('SELECT * FROM memories WHERE userId = ? AND type = ? ORDER BY createdAt DESC')
+      .all(userId, type)
+      .map(legacyView);
   }
-  return db.prepare('SELECT * FROM memories WHERE userId = ? ORDER BY createdAt DESC').all(userId);
+  return db
+    .prepare('SELECT * FROM memories WHERE userId = ? ORDER BY createdAt DESC')
+    .all(userId)
+    .map(legacyView);
 }
+const legacyView = (row) => ({
+  ...row,
+  content: containsSecret(row.content)
+    ? '[Sensitive legacy memory withheld; you may delete this entry.]'
+    : row.content,
+});
 
 export async function addMemory(userId, content, type) {
   const memory = {
     id: crypto.randomUUID(),
     userId,
-    content: content.trim(),
+    content: safeText(content, 8000),
     type,
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
   };
 
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO memories (id, userId, content, type, createdAt)
     VALUES (@id, @userId, @content, @type, @createdAt)
-  `).run(memory);
+  `,
+  ).run(memory);
 
   return memory;
 }

@@ -15,7 +15,7 @@ export const LANGUAGES = Object.freeze({
   tam_Taml: { label: 'Tamil', native: 'தமிழ்', script: 'Tamil' },
   kan_Knda: { label: 'Kannada', native: 'ಕನ್ನಡ', script: 'Kannada' },
   tel_Telu: { label: 'Telugu', native: 'తెలుగు', script: 'Telugu' },
-  mal_Mlym: { label: 'Malayalam', native: 'മലയാളം', script: 'Malayalam' }
+  mal_Mlym: { label: 'Malayalam', native: 'മലയാളം', script: 'Malayalam' },
 });
 
 export const LANGUAGE_CODES = Object.freeze(Object.keys(LANGUAGES));

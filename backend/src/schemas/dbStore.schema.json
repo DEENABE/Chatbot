@@ -4,7 +4,17 @@
   "title": "backend/storage/db_store.json",
   "description": "The JSON-file-backed 'database' from src/db/connection.js (JSONDatabase). Every route that touches auth, chat history, folders, memories, or document metadata reads/writes this file through services/db.js. A malformed 'users' row is what crashed /api/agent and /api/repair before authService.js was made defensive — this schema exists to catch that class of corruption before it reaches a request.",
   "type": "object",
-  "required": ["users", "chats", "messages", "folders", "memories", "documents", "chunks", "chunks_vec", "usage_log"],
+  "required": [
+    "users",
+    "chats",
+    "messages",
+    "folders",
+    "memories",
+    "documents",
+    "chunks",
+    "chunks_vec",
+    "usage_log"
+  ],
   "properties": {
     "users": { "type": "array", "items": { "$ref": "#/$defs/user" } },
     "chats": { "type": "array", "items": { "$ref": "#/$defs/chat" } },
@@ -20,7 +30,18 @@
     "user": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "username", "displayName", "email", "department", "role", "permissions", "passwordHash", "salt", "createdAt"],
+      "required": [
+        "id",
+        "username",
+        "displayName",
+        "email",
+        "department",
+        "role",
+        "permissions",
+        "passwordHash",
+        "salt",
+        "createdAt"
+      ],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "username": { "type": "string", "minLength": 2 },
@@ -40,7 +61,16 @@
     "chat": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "userId", "title", "folderId", "isPinned", "isBookmarked", "createdAt", "updatedAt"],
+      "required": [
+        "id",
+        "userId",
+        "title",
+        "folderId",
+        "isPinned",
+        "isBookmarked",
+        "createdAt",
+        "updatedAt"
+      ],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "userId": { "type": "string", "minLength": 1 },

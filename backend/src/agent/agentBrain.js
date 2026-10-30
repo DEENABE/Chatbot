@@ -11,13 +11,13 @@
  */
 
 import { config } from '../config.js';
+import { fetchInference } from '../services/inferenceTransport.js';
 
 /**
  * Model used for agent reasoning. Overridable per request or via AGENT_MODEL.
- * Defaults to qwen3 (already installed, strong at JSON/tool reasoning).
- * qwen2.5 also works — `ollama pull qwen2.5` then set AGENT_MODEL=qwen2.5.
+ * No built-in tag: callers pass the model the request was routed to (empty means "none selected").
  */
-export const AGENT_DEFAULT_MODEL = process.env.AGENT_MODEL || 'qwen3';
+export const AGENT_DEFAULT_MODEL = process.env.AGENT_MODEL || '';
 
 const SYSTEM_PROMPT = `You are Chanakya-Fix, an autonomous Windows troubleshooting agent running locally on the user's PC. You diagnose and fix Windows problems by running PowerShell commands one at a time.
 
@@ -57,9 +57,9 @@ function buildPrompt(goal, steps) {
           if (step.blocked) {
             return `STEP ${i + 1}\nCommand: ${step.command}\nResult: BLOCKED — ${step.reason} (not executed)`;
           }
-          const out = [step.stdout, step.stderr && `STDERR: ${step.stderr}`]
-            .filter(Boolean)
-            .join('\n') || '(no output)';
+          const out =
+            [step.stdout, step.stderr && `STDERR: ${step.stderr}`].filter(Boolean).join('\n') ||
+            '(no output)';
           return `STEP ${i + 1}\nCommand: ${step.command}\nExit code: ${step.exitCode}${step.timedOut ? ' (TIMED OUT)' : ''}\nOutput:\n${out}`;
         })
         .join('\n\n')
@@ -78,10 +78,21 @@ function buildPrompt(goal, steps) {
  * @param {AbortSignal} [args.signal]
  * @returns {Promise<{ thought: string, command: string|null, done: boolean, answer: string|null }>}
  */
-export async function decideNextStep({ goal, steps = [], model = AGENT_DEFAULT_MODEL, systemPrompt = SYSTEM_PROMPT, signal }) {
+export async function decideNextStep({
+  goal,
+  steps = [],
+  model = AGENT_DEFAULT_MODEL,
+  systemPrompt = SYSTEM_PROMPT,
+  signal,
+}) {
+  if (!model)
+    throw new Error(
+      'No local model is selected. Install a model in Ollama and choose it in Settings → Models.',
+    );
   let response;
   try {
-    response = await fetch(`${config.ollamaUrl}/api/generate`, {
+    response = await fetchInference(`${config.ollamaUrl}/api/generate`, {
+      redirect: 'error',
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       signal,
@@ -96,7 +107,9 @@ export async function decideNextStep({ goal, steps = [], model = AGENT_DEFAULT_M
       }),
     });
   } catch (error) {
-    throw new Error(`Cannot reach Ollama at ${config.ollamaUrl}. Is it running? (${error.message})`);
+    throw new Error(
+      `Cannot reach Ollama at ${config.ollamaUrl}. Is it running? (${error.message})`,
+    );
   }
 
   if (!response.ok) {
@@ -125,7 +138,7 @@ export async function decideNextStep({ goal, steps = [], model = AGENT_DEFAULT_M
   return {
     thought: typeof decision.thought === 'string' ? decision.thought : '',
     command: decision.command ? String(decision.command) : null,
-    done: Boolean(decision.done),
+    done: decision.done === true,
     answer: decision.answer ? String(decision.answer) : null,
   };
 }

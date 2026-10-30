@@ -1,16 +1,33 @@
 import crypto from 'node:crypto';
 import { db } from './db.js';
+import { memoryManager } from '../memory/runtime.js';
+import { claimAttachments } from './documentsStore.js';
+import { getDocuments, deleteDocument } from './documentsStore.js';
+import { ValidationError } from '../lib/validate.js';
+import { isValidUuid } from '../lib/validateUuid.js';
+
+function messageRecord(msg) {
+  let attachments = [];
+  try {
+    attachments = JSON.parse(msg.attachments || '[]');
+  } catch {}
+  return { ...msg, attachments };
+}
 
 export async function getConversations(userId) {
   if (!userId) return [];
 
-  const chats = db.prepare(`
+  const chats = db
+    .prepare(
+      `
     SELECT * FROM chats 
     WHERE userId = ? 
     ORDER BY isPinned DESC, updatedAt DESC
-  `).all(userId);
+  `,
+    )
+    .all(userId);
 
-  return chats.map(chat => ({
+  return chats.map((chat) => ({
     id: chat.id,
     userId: chat.userId,
     title: chat.title,
@@ -19,60 +36,113 @@ export async function getConversations(userId) {
     isBookmarked: Boolean(chat.isBookmarked),
     createdAt: chat.createdAt,
     updatedAt: chat.updatedAt,
-    messages: getMessages(chat.id)
+    messages: getMessages(chat.id),
   }));
 }
 
 export function getMessages(chatId) {
-  const messages = db.prepare('SELECT * FROM messages WHERE chatId = ? ORDER BY createdAt ASC').all(chatId);
-  return messages.map(msg => ({
+  const messages = db
+    .prepare('SELECT * FROM messages WHERE chatId = ? ORDER BY createdAt ASC')
+    .all(chatId);
+  return messages.map((msg) => ({
     id: msg.id,
     chatId: msg.chatId,
     role: msg.role,
     content: msg.content,
     sources: msg.sources,
-    createdAt: msg.createdAt
+    createdAt: msg.createdAt,
+    attachments: messageRecord(msg).attachments,
   }));
 }
 
 export async function appendHistory(entry, userId) {
-  const { conversationId, role, content, sources } = entry;
+  const { conversationId, role, content, sources, attachmentIds = [], userMessageId } = entry;
   const now = new Date().toISOString();
-
-  // conversationId is client-supplied (chat.js defaults it to a fresh UUID,
-  // but a caller can send any string). Without this check, an id colliding
-  // with another user's existing chat would fall through to the INSERT
-  // below, which would throw a raw SQLite UNIQUE-constraint error (chats.id
-  // is the primary key) — an unhandled exception leaking internal DB detail
-  // to the client instead of a clean, generic denial (Step 5/12).
-  const foreignChat = db.prepare('SELECT 1 FROM chats WHERE id = ? AND userId != ?').get(conversationId, userId);
-  if (foreignChat) {
-    throw new Error('Conversation not found.');
+  if (userMessageId && (role !== 'user' || !isValidUuid(userMessageId)))
+    throw new ValidationError('Invalid userMessageId.');
+  if (userMessageId) {
+    const existing = db
+      .prepare('SELECT m.*,c.userId FROM messages m JOIN chats c ON c.id=m.chatId WHERE m.id=?')
+      .get(userMessageId);
+    if (existing) {
+      if (
+        existing.userId !== userId ||
+        existing.chatId !== conversationId ||
+        existing.role !== 'user' ||
+        existing.content !== content
+      ) {
+        throw new ValidationError('Message does not belong to this conversation.');
+      }
+      const saved = messageRecord(existing);
+      if (
+        JSON.stringify(saved.attachments.map((a) => a.id).sort()) !==
+        JSON.stringify([...new Set(attachmentIds)].sort())
+      ) {
+        throw new ValidationError('Attachments do not match the original message.');
+      }
+      delete saved.userId;
+      return saved;
+    }
   }
+  const messageId = userMessageId || crypto.randomUUID();
+  const sourcesStr = sources ? JSON.stringify(sources) : null;
+  const attachments = db.transaction(() => {
+    // conversationId is client-supplied (chat.js defaults it to a fresh UUID,
+    // but a caller can send any string). Without this check, an id colliding
+    // with another user's existing chat would fall through to the INSERT
+    // below, which would throw a raw SQLite UNIQUE-constraint error (chats.id
+    // is the primary key) — an unhandled exception leaking internal DB detail
+    // to the client instead of a clean, generic denial (Step 5/12).
+    const foreignChat = db
+      .prepare('SELECT 1 FROM chats WHERE id = ? AND userId != ?')
+      .get(conversationId, userId);
+    if (foreignChat) {
+      throw new Error('Conversation not found.');
+    }
 
-  // 1. Ensure the conversation exists
-  let chatExists = db.prepare('SELECT 1 FROM chats WHERE id = ? AND userId = ?').get(conversationId, userId);
-  if (!chatExists) {
-    const title = role === 'user' ? content.slice(0, 80) : 'New Conversation';
-    db.prepare(`
+    // 1. Ensure the conversation exists
+    let chatExists = db
+      .prepare('SELECT 1 FROM chats WHERE id = ? AND userId = ?')
+      .get(conversationId, userId);
+    if (!chatExists) {
+      const title = role === 'user' ? content.slice(0, 80) : 'New Conversation';
+      db.prepare(
+        `
       INSERT INTO chats (id, userId, title, folderId, isPinned, isBookmarked, createdAt, updatedAt)
       VALUES (?, ?, ?, NULL, 0, 0, ?, ?)
-    `).run(conversationId, userId, title, now, now);
-  } else {
-    db.prepare('UPDATE chats SET updatedAt = ? WHERE id = ?').run(now, conversationId);
-  }
+    `,
+      ).run(conversationId, userId, title, now, now);
+    } else {
+      db.prepare('UPDATE chats SET updatedAt = ? WHERE id = ?').run(now, conversationId);
+    }
 
-  // 2. Insert message
-  const messageId = crypto.randomUUID();
-  const sourcesStr = sources ? JSON.stringify(sources) : null;
-  db.prepare(`
-    INSERT INTO messages (id, chatId, role, content, sources, createdAt)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(messageId, conversationId, role, content, sourcesStr, now);
+    // 2. Insert message
+    const attached = claimAttachments(attachmentIds, userId, conversationId);
+    db.prepare(
+      `
+    INSERT INTO messages (id, chatId, role, content, sources, createdAt,attachments)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `,
+    ).run(messageId, conversationId, role, content, sourcesStr, now, JSON.stringify(attached));
+    return attached;
+  })();
+  try {
+    memoryManager.observeConversation({
+      userId,
+      conversationId,
+      messageId,
+      role,
+      content,
+    });
+  } catch {
+    console.warn('[memory] CONVERSATION_PROJECTION_FAILED');
+  }
 
   // If this was the first user message, update title
   if (role === 'user') {
-    const messagesCount = db.prepare('SELECT COUNT(*) as count FROM messages WHERE chatId = ?').get(conversationId);
+    const messagesCount = db
+      .prepare('SELECT COUNT(*) as count FROM messages WHERE chatId = ?')
+      .get(conversationId);
     if (messagesCount && messagesCount.count === 1) {
       const newTitle = content.slice(0, 80) || 'New Conversation';
       db.prepare('UPDATE chats SET title = ? WHERE id = ?').run(newTitle, conversationId);
@@ -85,12 +155,17 @@ export async function appendHistory(entry, userId) {
     role,
     content,
     sources: sourcesStr,
-    createdAt: now
+    attachments,
+    createdAt: now,
   };
 }
 
 export async function deleteConversation(conversationId, userId) {
+  const attachmentIds = (await getDocuments(userId, { purpose: 'attachment', conversationId })).map(
+    (doc) => doc.id,
+  );
   db.prepare('DELETE FROM chats WHERE id = ? AND userId = ?').run(conversationId, userId);
+  for (const id of attachmentIds) await deleteDocument(id, userId);
 }
 
 export async function updateConversation(conversationId, userId, updates) {
@@ -107,7 +182,9 @@ export async function updateConversation(conversationId, userId, updates) {
     // any other id in this app) could be set to any other user's folder id
     // with no verification at all (Step 3/11).
     if (updates.folderId !== null) {
-      const ownsFolder = db.prepare('SELECT 1 FROM folders WHERE id = ? AND userId = ?').get(updates.folderId, userId);
+      const ownsFolder = db
+        .prepare('SELECT 1 FROM folders WHERE id = ? AND userId = ?')
+        .get(updates.folderId, userId);
       if (!ownsFolder) {
         throw new Error('Folder not found.');
       }
@@ -135,11 +212,13 @@ export async function updateConversation(conversationId, userId, updates) {
   values.push(new Date().toISOString());
 
   values.push(conversationId, userId);
-  db.prepare(`
+  db.prepare(
+    `
     UPDATE chats
     SET ${fields.join(', ')}
     WHERE id = ? AND userId = ?
-  `).run(...values);
+  `,
+  ).run(...values);
 }
 
 // Folders Management
@@ -152,15 +231,21 @@ export async function createFolder(name, userId) {
     id: crypto.randomUUID(),
     userId,
     name: name.trim(),
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
   };
 
-  db.prepare('INSERT INTO folders (id, userId, name, createdAt) VALUES (@id, @userId, @name, @createdAt)').run(folder);
+  db.prepare(
+    'INSERT INTO folders (id, userId, name, createdAt) VALUES (@id, @userId, @name, @createdAt)',
+  ).run(folder);
   return folder;
 }
 
 export async function updateFolder(folderId, name, userId) {
-  db.prepare('UPDATE folders SET name = ? WHERE id = ? AND userId = ?').run(name.trim(), folderId, userId);
+  db.prepare('UPDATE folders SET name = ? WHERE id = ? AND userId = ?').run(
+    name.trim(),
+    folderId,
+    userId,
+  );
 }
 
 export async function deleteFolder(folderId, userId) {
@@ -173,15 +258,19 @@ export async function searchChats(query, userId) {
   // Bounded (Step 19: resource exhaustion) — a broad term like "e" can
   // otherwise match a large fraction of a long-running user's entire
   // history; 200 is far more than anyone scans through in a search dropdown.
-  const chats = db.prepare(`
+  const chats = db
+    .prepare(
+      `
     SELECT DISTINCT c.* FROM chats c
     LEFT JOIN messages m ON c.id = m.chatId
     WHERE c.userId = ? AND (c.title LIKE ? OR m.content LIKE ?)
     ORDER BY c.updatedAt DESC
     LIMIT 200
-  `).all(userId, searchTerm, searchTerm);
+  `,
+    )
+    .all(userId, searchTerm, searchTerm);
 
-  return chats.map(chat => ({
+  return chats.map((chat) => ({
     id: chat.id,
     userId: chat.userId,
     title: chat.title,
@@ -189,6 +278,6 @@ export async function searchChats(query, userId) {
     isPinned: Boolean(chat.isPinned),
     isBookmarked: Boolean(chat.isBookmarked),
     createdAt: chat.createdAt,
-    updatedAt: chat.updatedAt
+    updatedAt: chat.updatedAt,
   }));
 }

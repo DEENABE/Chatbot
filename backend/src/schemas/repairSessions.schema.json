@@ -2,83 +2,234 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "repairSessions.schema.json",
   "title": "backend/storage/repair-sessions.json",
-  "description": "Written by RepairLogger.logSession()/addFeedback() — src/ai/RepairLogger.js. Read by GET /api/repair/sessions and POST /api/repair/feedback.",
+  "description": "Written by RepairLogger.logSession()/addFeedback() \u00e2\u20ac\u201d src/ai/RepairLogger.js. Read by GET /api/repair/sessions and POST /api/repair/feedback.",
   "type": "array",
-  "items": { "$ref": "#/$defs/session" },
+  "items": {
+    "oneOf": [
+      {
+        "$ref": "#/$defs/session"
+      },
+      {
+        "$ref": "#/$defs/typedSession"
+      }
+    ]
+  },
   "$defs": {
     "session": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "createdAt", "goal", "domain", "plan", "steps", "resolved", "summary", "recommendation", "feedback"],
+      "required": [
+        "id",
+        "createdAt",
+        "goal",
+        "domain",
+        "plan",
+        "steps",
+        "resolved",
+        "summary",
+        "recommendation",
+        "feedback"
+      ],
       "properties": {
-        "id": { "type": "string", "minLength": 1 },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "goal": { "type": "string" },
-        "domain": {
-          "description": "'automation' covers scheduled-task/startup/monitoring requests (Register-ScheduledTask, startup entries, disk/folder watchers) — a distinct capability from the 6 repair domains below, not yet wired into IntentClassifier.js/AgentRegistry.js for live routing.",
+        "id": {
           "type": "string",
-          "enum": ["network", "bluetooth", "performance", "file", "security", "windows", "automation"]
+          "minLength": 1
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "goal": {
+          "type": "string"
+        },
+        "domain": {
+          "description": "'automation' covers scheduled-task/startup/monitoring requests (Register-ScheduledTask, startup entries, disk/folder watchers) \u00e2\u20ac\u201d a distinct capability from the 6 repair domains below, not yet wired into IntentClassifier.js/AgentRegistry.js for live routing.",
+          "type": "string",
+          "enum": [
+            "network",
+            "bluetooth",
+            "performance",
+            "file",
+            "security",
+            "windows",
+            "automation"
+          ]
         },
         "subdomain": {
-          "description": "Canonical slug from knowledge/subdomains.js, or null. Free-text labels ('Wi-Fi', 'RAM') are silently dropped by normalizeSubdomain() at export time, so storing them claims a specialization the training prompt never receives — the enum makes that fail loudly instead.",
+          "description": "Canonical slug from knowledge/subdomains.js, or null. Free-text labels ('Wi-Fi', 'RAM') are silently dropped by normalizeSubdomain() at export time, so storing them claims a specialization the training prompt never receives \u00e2\u20ac\u201d the enum makes that fail loudly instead.",
           "oneOf": [
-            { "type": "null" },
+            {
+              "type": "null"
+            },
             {
               "type": "string",
               "enum": [
-                "dns-advanced", "vpn", "proxy", "iis", "cloud", "loadbalancer",
-                "wifi", "ethernet", "firewall-rules", "sharing",
-                "pairing", "audio-profile", "radio", "transfer", "peripherals",
-                "cpu", "gpu", "memory", "boot", "power", "gaming", "thermal", "startup",
-                "storage", "raid", "dfs", "permissions", "corruption", "search", "sync",
-                "certificates", "security-incident", "defender", "firewall", "accounts",
-                "encryption", "updates-security",
-                "eventlog", "errorcode", "driver", "audio", "printer", "display",
-                "registry", "services", "update", "activedirectory", "office", "hardware",
-                "dev", "internals", "docker", "hyperv", "exchange", "virtualization",
-                "wsl", "accessibility", "sql", "sccm", "azuread", "cluster", "bsod",
-                "wsus", "gpo-advanced", "terminal", "vmware", "shell", "time", "store",
-                "backup", "sync", "script", "cleanup", "service", "scheduler",
-                "reminder", "diagnostic", "diskmonitor", "foldermonitor", "power", "maintenance",
-                "filesearch", "fileorganize", "filecompress", "filerecovery", "appmanage"
+                "dns-advanced",
+                "vpn",
+                "proxy",
+                "iis",
+                "cloud",
+                "loadbalancer",
+                "wifi",
+                "ethernet",
+                "firewall-rules",
+                "sharing",
+                "pairing",
+                "audio-profile",
+                "radio",
+                "transfer",
+                "peripherals",
+                "cpu",
+                "gpu",
+                "memory",
+                "boot",
+                "power",
+                "gaming",
+                "thermal",
+                "startup",
+                "storage",
+                "raid",
+                "dfs",
+                "permissions",
+                "corruption",
+                "search",
+                "sync",
+                "certificates",
+                "security-incident",
+                "defender",
+                "firewall",
+                "accounts",
+                "encryption",
+                "updates-security",
+                "eventlog",
+                "errorcode",
+                "driver",
+                "audio",
+                "printer",
+                "display",
+                "registry",
+                "services",
+                "update",
+                "activedirectory",
+                "office",
+                "hardware",
+                "dev",
+                "internals",
+                "docker",
+                "hyperv",
+                "exchange",
+                "virtualization",
+                "wsl",
+                "accessibility",
+                "sql",
+                "sccm",
+                "azuread",
+                "cluster",
+                "bsod",
+                "wsus",
+                "gpo-advanced",
+                "terminal",
+                "vmware",
+                "shell",
+                "time",
+                "store",
+                "backup",
+                "sync",
+                "script",
+                "cleanup",
+                "service",
+                "scheduler",
+                "reminder",
+                "diagnostic",
+                "diskmonitor",
+                "foldermonitor",
+                "power",
+                "maintenance",
+                "filesearch",
+                "fileorganize",
+                "filecompress",
+                "filerecovery",
+                "appmanage"
               ]
             }
           ]
         },
-        "plan": { "type": "array", "items": { "type": "string" } },
+        "plan": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "steps": {
           "type": "array",
-          "items": { "$ref": "#/$defs/step" }
+          "items": {
+            "$ref": "#/$defs/step"
+          }
         },
-        "resolved": { "type": "boolean" },
-        "summary": { "type": "string" },
-        "recommendation": { "type": "string" },
+        "resolved": {
+          "type": "boolean"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "recommendation": {
+          "type": "string"
+        },
         "feedback": {
           "oneOf": [
-            { "type": "null" },
+            {
+              "type": "null"
+            },
             {
               "type": "object",
               "additionalProperties": false,
               "required": ["worked", "note", "at"],
               "properties": {
-                "worked": { "type": "boolean" },
-                "note": { "type": "string" },
-                "at": { "type": "string", "format": "date-time" }
+                "worked": {
+                  "type": "boolean"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string",
+                  "format": "date-time"
+                }
               }
             }
           ]
         },
         "type": {
-          "description": "Present only on domain:'automation' records — 'automation', distinguishing them from plain repair sessions.",
+          "description": "Present only on domain:'automation' records \u00e2\u20ac\u201d 'automation', distinguishing them from plain repair sessions.",
           "type": "string"
         },
-        "intent": { "type": "string", "description": "Machine intent tag, e.g. 'schedule.backup.folder' — automation records only." },
-        "parameters": { "type": "object", "description": "Extracted request parameters — automation records only." },
-        "missingParameters": { "type": "array", "items": { "type": "string" } },
-        "clarification": { "type": ["string", "null"] },
-        "riskLevel": { "type": "string", "enum": ["low", "medium", "high"] },
-        "requiresConfirmation": { "type": "boolean" },
-        "plannedAction": { "type": "string" },
+        "intent": {
+          "type": "string",
+          "description": "Machine intent tag, e.g. 'schedule.backup.folder' \u00e2\u20ac\u201d automation records only."
+        },
+        "parameters": {
+          "type": "object",
+          "description": "Extracted request parameters \u00e2\u20ac\u201d automation records only."
+        },
+        "missingParameters": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "clarification": {
+          "type": ["string", "null"]
+        },
+        "riskLevel": {
+          "type": "string",
+          "enum": ["low", "medium", "high"]
+        },
+        "requiresConfirmation": {
+          "type": "boolean"
+        },
+        "plannedAction": {
+          "type": "string"
+        },
         "verification": {
           "type": "array",
           "items": {
@@ -86,12 +237,21 @@
             "additionalProperties": false,
             "required": ["command", "expected"],
             "properties": {
-              "command": { "type": "string" },
-              "expected": { "type": "string" }
+              "command": {
+                "type": "string"
+              },
+              "expected": {
+                "type": "string"
+              }
             }
           }
         },
-        "rollback": { "type": ["string", "null"] }
+        "rollback": {
+          "type": ["string", "null"]
+        },
+        "userId": {
+          "type": ["string", "null"]
+        }
       }
     },
     "step": {
@@ -99,12 +259,211 @@
       "additionalProperties": false,
       "required": ["command", "blocked", "exitCode", "stdout", "stderr", "reason"],
       "properties": {
-        "command": { "type": ["string", "null"] },
-        "blocked": { "type": "boolean" },
-        "exitCode": { "type": ["integer", "null"] },
-        "stdout": { "type": "string" },
-        "stderr": { "type": "string" },
-        "reason": { "type": ["string", "null"] }
+        "command": {
+          "type": ["string", "null"]
+        },
+        "blocked": {
+          "type": "boolean"
+        },
+        "exitCode": {
+          "type": ["integer", "null"]
+        },
+        "stdout": {
+          "type": "string"
+        },
+        "stderr": {
+          "type": "string"
+        },
+        "reason": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "typedSession": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "schemaVersion",
+        "type",
+        "capabilityId",
+        "createdAt",
+        "updatedAt",
+        "userId",
+        "goal",
+        "domain",
+        "subdomain",
+        "plan",
+        "steps",
+        "phase",
+        "revision",
+        "resolved",
+        "userIssueResolved",
+        "machineVerification",
+        "summary",
+        "recommendation",
+        "feedback",
+        "auditEvent"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 2
+        },
+        "type": {
+          "const": "typed_repair"
+        },
+        "capabilityId": {
+          "const": "windows.printSpooler.start.v1"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "userId": {
+          "type": ["string", "null"]
+        },
+        "goal": {
+          "type": "string"
+        },
+        "domain": {
+          "const": "windows"
+        },
+        "subdomain": {
+          "const": "printer"
+        },
+        "plan": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "tool",
+              "action",
+              "toolCallId",
+              "requestId",
+              "success",
+              "needsConfirmation",
+              "diagnosisId",
+              "verificationStatus",
+              "errorCode"
+            ],
+            "properties": {
+              "tool": {
+                "type": "string"
+              },
+              "action": {
+                "type": "string"
+              },
+              "toolCallId": {
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string"
+              },
+              "success": {
+                "type": ["boolean", "null"]
+              },
+              "needsConfirmation": {
+                "type": "boolean"
+              },
+              "diagnosisId": {
+                "type": ["string", "null"]
+              },
+              "verificationStatus": {
+                "type": ["string", "null"]
+              },
+              "errorCode": {
+                "type": ["string", "null"]
+              }
+            }
+          }
+        },
+        "phase": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "resolved": {
+          "const": false
+        },
+        "userIssueResolved": {
+          "type": "null"
+        },
+        "machineVerification": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["scope", "status"],
+          "properties": {
+            "scope": {
+              "const": "service_running"
+            },
+            "status": {
+              "enum": ["passed", "failed", "not_established"]
+            }
+          }
+        },
+        "summary": {
+          "type": "string"
+        },
+        "recommendation": {
+          "type": "string"
+        },
+        "feedback": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["worked", "note", "at"],
+              "properties": {
+                "worked": {
+                  "type": "boolean"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            }
+          ]
+        },
+        "auditEvent": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["eventId", "eventType", "stateRevision", "phase"],
+          "properties": {
+            "eventId": {
+              "type": "string"
+            },
+            "eventType": {
+              "enum": ["session.completed", "session.checkpoint"]
+            },
+            "stateRevision": {
+              "type": "integer"
+            },
+            "phase": {
+              "type": "string"
+            }
+          }
+        }
       }
     }
   }

@@ -43,7 +43,7 @@ User question ──► similarity search ──► cited context ──► Olla
    ollama pull llama3
    ```
 
-   Other supported chat models are `mistral`, `qwen3`, `deepseek-r1`, and `gemma3`.
+   Models are discovered from the local Ollama installation. Choose General and Windows Agent models in Settings → Models; computer actions require a model that declares tool support.
 
 ## Install and run
 
@@ -54,6 +54,16 @@ npm run dev
 ```
 
 Open `http://localhost:5173`. The local API listens only on `127.0.0.1:3001` and Vite proxies `/api` during development.
+
+## Localhost with desktop tools
+
+`npm run dev` now also starts a loopback tool host (`npm run dev:plain` is the old UI + API only mode), so the Windows Agent, app control and PowerShell/file/registry tools work from `http://localhost:5173`. Windows Repair execution, protected installs and Electron window features still need the installed app. See `docs/LOCALHOST_TOOL_MODE.md`.
+
+## Coding workspace
+
+Open **Code** in the sidebar or use the **Chat / Code** switch in the header. Connect an existing project folder, choose an installed model with tool support, and authorize workspace changes. Describe a task in the conversation; follow-up messages retain the previous task context. The adjacent panel provides a file explorer, source code, recorded diffs, action results, validation results and checkpoints. Narrow windows switch between the conversation and code using the **Chat / Code** tabs.
+
+Failed tasks display the error and a **Retry task** action. Configuration changes and checkpoint restores retain their separate approvals. Open **Run & packages** to enable project commands and optional package downloads for the selected workspace. Each run/install asks for one-use approval, shows actual output and exit status, and offers Stop and localhost preview controls. Python setup uses WinGet; npm ships with the EXE. Python packages install into the project. These commands run with your Windows account access, without an OS sandbox. A completed file edit does not claim that a build or test passed. See [coding runtime details](docs/CODING_RUNTIME_UPGRADE.md).
 
 ## Production build
 
@@ -66,15 +76,15 @@ Open `http://127.0.0.1:3001`. Express serves the compiled frontend and API from 
 
 ## API
 
-| Method | Route | Purpose |
-| --- | --- | --- |
-| `POST` | `/api/upload` | Multipart upload (`documents`) and local indexing |
-| `POST` | `/api/chat` | NDJSON streaming chat response with retrieved sources |
-| `GET` | `/api/models` | Supported and locally installed Ollama models |
-| `GET` | `/api/history` | Persisted conversation sessions and messages |
-| `GET` | `/api/documents` | Persisted local knowledge-library metadata |
+| Method | Route            | Purpose                                                                                                                                             |
+| ------ | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST` | `/api/upload`    | Multipart upload (`documents`) and local indexing                                                                                                   |
+| `POST` | `/api/chat`      | NDJSON streaming chat response with retrieved sources                                                                                               |
+| `GET`  | `/api/models`    | Supported and locally installed Ollama models                                                                                                       |
+| `GET`  | `/api/history`   | Persisted conversation sessions and messages                                                                                                        |
+| `GET`  | `/api/documents` | Persisted local knowledge-library metadata                                                                                                          |
 | `POST` | `/api/translate` | English/Hindi/Tamil/Kannada/Telugu/Malayalam translation via IndicTrans2 — see [docs/translation-architecture.md](docs/translation-architecture.md) |
-| `GET` | `/api/health` | Local API health check |
+| `GET`  | `/api/health`    | Local API health check                                                                                                                              |
 
 Example chat request:
 
@@ -104,15 +114,15 @@ For a stricter deployment, limit filesystem permissions on `backend/storage`, us
 
 Copy `.env.example` to `.env` and adjust:
 
-| Variable | Default |
-| --- | --- |
-| `PORT` | `3001` |
-| `OLLAMA_URL` | `http://127.0.0.1:11434` |
-| `DEFAULT_MODEL` | `llama3` |
-| `EMBEDDING_MODEL` | `nomic-embed-text` |
-| `MAX_FILE_SIZE_MB` | `25` |
-| `RAG_TOP_K` | `5` |
-| `FRONTEND_ORIGIN` | `http://localhost:5173` |
+| Variable           | Default                                      |
+| ------------------ | -------------------------------------------- |
+| `PORT`             | `3001`                                       |
+| `OLLAMA_URL`       | `http://127.0.0.1:11434`                     |
+| `DEFAULT_MODEL`    | empty; choose an installed model in Settings |
+| `EMBEDDING_MODEL`  | `nomic-embed-text`                           |
+| `MAX_FILE_SIZE_MB` | `25`                                         |
+| `RAG_TOP_K`        | `5`                                          |
+| `FRONTEND_ORIGIN`  | `http://localhost:5173`                      |
 
 ## Translator (IndicTrans2)
 
@@ -153,3 +163,19 @@ chanakya/
 ├── .env.example
 └── package.json
 ```
+
+## Desktop remediation release (8 October 2026)
+
+Chat attachments now stay scoped to their message/conversation. Profile, workspace and local model routing controls are available in Settings; advanced knowledge and application permission management remain available.
+
+The verified Windows release, source rationale, pass/fail evidence and remaining acceptance gaps are documented in [docs/DESKTOP_REMEDIATION_REPORT.md](docs/DESKTOP_REMEDIATION_REPORT.md). This is an unsigned release candidate tested on the development Windows PC, not a clean-machine installation certification.
+
+```powershell
+npm test
+npm run test:electron
+npm run electron:release -w frontend
+```
+
+The release command reuses the existing isolated offline backend dependencies and creates a fresh timestamped release-desktop output. It refuses to overwrite older release files or package user storage. Installed mutable data lives under Electron userData/backend-data, with copy-only legacy migration. No model/dependency download is implicit.
+
+The 24 October reliability and security fixes, verification results, and repair capability limits are documented in [REPAIR_REPORT.md](REPAIR_REPORT.md). Thinking is enabled by default for capable models and can be changed in Settings → Models. Installed desktop requests now also carry an independent per-launch client key.

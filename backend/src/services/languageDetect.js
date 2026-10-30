@@ -1,6 +1,6 @@
 // Lightweight source-language detection for the translator's `auto` mode.
 // Deliberately NOT a general-purpose language-ID library and NOT an LLM
-// call (per explicit requirement: don't rely on Qwen3 for this) — this
+// call (per explicit requirement: don't rely on Qwen for this) — this
 // app's supported language set has one crucial property that makes a
 // trivial approach reliable: five of the six languages each occupy a
 // distinct, non-overlapping Unicode script block (Devanagari/Tamil/
@@ -17,7 +17,7 @@ const SCRIPT_RANGES = [
   ['tel_Telu', /[ఀ-౿]/],
   ['kan_Knda', /[ಀ-೿]/],
   ['mal_Mlym', /[ഀ-ൿ]/],
-  [ENGLISH, /[A-Za-z]/]
+  [ENGLISH, /[A-Za-z]/],
 ];
 
 // Below this fraction of "winning script's letters / all recognized

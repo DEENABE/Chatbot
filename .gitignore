@@ -1,3 +1,4 @@
+
 # ─── Dependencies ───────────────────────────────────────────────
 node_modules/
 .pnp
@@ -79,7 +80,6 @@ coverage/
 
 # ─── Editor / OS ────────────────────────────────────────────────
 .vscode/*
-!.vscode/extensions.json
 .idea/
 *.swp
 *.swo
@@ -134,8 +134,7 @@ CLAUDE.md
  #---.env example---
     .env.example
 
-#---docs---
-docs
+
 
 # ─── IndicTrans2 microservice (Python) ──────────────────────────
 # Local virtualenv and downloaded model checkpoints (~6GB) — never
@@ -145,3 +144,44 @@ indictrans-service/models/
 indictrans-service/.env
 Chanakya_Codebase_Complete_Architecture_Guide.docx
 generate_doc_guide.py
+
+# ─── Added by the security review ───────────────────────────────
+# Installer outputs of `npm run electron:release` (electron-builder writes here, see scripts/build-release.cjs).
+frontend/release-security/
+frontend/release-latest/
+# FreeFileSync bookkeeping and local tool state — never part of the project.
+sync.ffs_db
+sync.ffs_lock
+*.ffs_lock
+.claude/settings.local.json
+# Local copies of helper scripts / secrets kept as backups next to the repo.
+*.ps1.bak
+*.pem
+*.pfx
+*.key
+# Any local user data written by the app at runtime.
+backend/data/
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+# Reversible cleanup archive (delete this folder once the demo is done)
+_cleanup_archive/
+
+# Desktop release outputs and isolated QA artifacts
+frontend/release-desktop*/
+.qa/
+.tmp/
+.astra-tmp/
+docs/
+indictrans-service
+demo-data
+test
+tests*
+!backend/tests/
+!frontend/electron/tests/
+!frontend/tools/tests/
+
+
+# Offline translator pack builds (about 5 GB each, see indictrans-service/README.md)
+translator-pack/

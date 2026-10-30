@@ -71,12 +71,17 @@ export async function loadGlbCharacter(url) {
   const morphMeshes = [];
   root.traverse((child) => {
     if (child.isMesh && child.morphTargetDictionary && child.morphTargetInfluences) {
-      morphMeshes.push({ mesh: child, dictionary: child.morphTargetDictionary });
+      morphMeshes.push({
+        mesh: child,
+        dictionary: child.morphTargetDictionary,
+      });
     }
   });
 
   if (morphMeshes.length === 0) {
-    console.warn(`[avatar3d] "${url}" loaded but has no morph targets — blink/talking will be static.`);
+    console.warn(
+      `[avatar3d] "${url}" loaded but has no morph targets — blink/talking will be static.`,
+    );
   }
 
   function setMorph(names, value) {

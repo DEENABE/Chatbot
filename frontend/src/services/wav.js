@@ -55,13 +55,13 @@ export function encodeWav(samples, sourceRate) {
   view.setUint32(4, 36 + pcm.length * 2, true);
   writeText(8, 'WAVE');
   writeText(12, 'fmt ');
-  view.setUint32(16, 16, true);        // PCM chunk size
-  view.setUint16(20, 1, true);         // format: PCM
-  view.setUint16(22, 1, true);         // channels: mono
+  view.setUint32(16, 16, true); // PCM chunk size
+  view.setUint16(20, 1, true); // format: PCM
+  view.setUint16(22, 1, true); // channels: mono
   view.setUint32(24, TARGET_RATE, true);
   view.setUint32(28, TARGET_RATE * 2, true); // byte rate
-  view.setUint16(32, 2, true);         // block align
-  view.setUint16(34, 16, true);        // bits per sample
+  view.setUint16(32, 2, true); // block align
+  view.setUint16(34, 16, true); // bits per sample
   writeText(36, 'data');
   view.setUint32(40, pcm.length * 2, true);
 

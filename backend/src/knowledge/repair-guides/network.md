@@ -1,6 +1,7 @@
 # Network / Wi-Fi Repair Guide
 
 ## Diagnose
+
 - Adapters and link state:
   `Get-NetAdapter | Select-Object Name, Status, LinkSpeed, ifIndex`
 - IP configuration:
@@ -32,6 +33,7 @@
   `Get-PnpDevice -Class Net | Select-Object Status, FriendlyName`
 
 ## Common fixes
+
 - DNS problems (can ping IPs but names fail):
   `Clear-DnsClientCache` and `ipconfig /flushdns`
 - Unreachable or slow resolver — set a reliable public DNS:
@@ -60,6 +62,7 @@ The prompt may name a narrower area, e.g. "network (dns-advanced)". Use the
 matching playbook; fall back to the general sections above when none fits.
 
 ### dns-advanced — resolution failures and slow lookups
+
 - Measure resolver latency:
   `Measure-Command { Resolve-DnsName <host> } | Select-Object TotalMilliseconds`
 - Query a specific server to isolate the resolver:
@@ -74,6 +77,7 @@ matching playbook; fall back to the general sections above when none fits.
   the fault — switch DNS rather than resetting the whole stack.
 
 ### vpn / proxy — tunnels and intercepted traffic
+
 - VPN-related services:
   `Get-Service RasMan, *vpn* -ErrorAction SilentlyContinue | Select-Object Name, Status`
 - System proxy:
@@ -86,6 +90,7 @@ matching playbook; fall back to the general sections above when none fits.
   uninstalled app silently black-holes all traffic — check this early.
 
 ### iis / server — local web services not responding
+
 - Site and app-pool state (needs the IIS module):
   `Get-Service W3SVC | Select-Object Status`
 - What is listening on a port:
@@ -98,6 +103,7 @@ matching playbook; fall back to the general sections above when none fits.
   at the firewall rule for that program.
 
 ## Notes
+
 - Prefer least-disruptive fixes first (flush DNS, renew IP) before resetting
   adapters or the TCP stack.
 - Adapter enable/disable/reset, `netsh` resets, power-management changes and

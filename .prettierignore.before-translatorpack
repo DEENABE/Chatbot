@@ -1,0 +1,13 @@
+node_modules
+dist
+release*
+frontend/release-security
+frontend/backend-runtime
+.astra-tmp
+.claude
+frontend/tools/repair
+backend/src/orchestrator/WindowsRepairContract.js
+package-lock.json
+*.ps1
+*.cs
+.qa

@@ -1,55 +1,304 @@
-import React, { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { motion } from 'framer-motion';
 import {
-  Folder as FolderIcon,
-  FolderPlus,
-  Pin,
-  Bookmark,
-  Search,
-  Plus,
-  Trash2,
-  Edit2,
-  ChevronDown,
-  ChevronRight,
-  Settings,
-  LogOut,
-  User,
-  Sparkles,
-  FileText,
-  Brain,
   Activity,
+  Brain,
+  ChevronRight,
+  Clock,
+  Code2,
+  FileText,
+  Folder,
+  FolderOpen,
   Languages,
+  Library,
+  LogOut,
+  MessageSquare,
   PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen,
+  Plus,
+  Settings,
+  ShieldCheck,
+  Sparkles,
 } from 'lucide-react';
 import { useAppStore } from '../stores/useAppStore.js';
-import SettingsModal from '../settings/SettingsModal.jsx';
-import ProfileDetails from '../profile/ProfileDetails.jsx';
+import { useNavStore } from '../stores/useNavStore.js';
+import * as apiService from '../services/api.js';
+import { formatBytes } from '../utils/attachments.js';
 import { presets } from '../animations/presets.js';
 
-export default function Sidebar({ activeTab, setActiveTab }) {
-  const [open, setOpen] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [editingFolderId, setEditingFolderId] = useState(null);
-  const [expandedFolders, setExpandedFolders] = useState({});
-  const [showProfile, setShowProfile] = useState(false);
-  
+// The four top-level sections. `title` is the tooltip / test hook, `label` is
+// what is shown and announced.
+const NAV_ITEMS = [
+  { id: 'chat', label: 'Chat', title: 'Chat', icon: MessageSquare },
+  { id: 'coding', label: 'Code', title: 'Code', icon: Code2 },
+  { id: 'workspace', label: 'Workspace', title: 'Workspace files', icon: FolderOpen },
+  { id: 'history', label: 'History', title: 'History', icon: Clock },
+  { id: 'settings', label: 'Settings', title: 'Settings', icon: Settings },
+];
+
+// Hovering "Workspace" opens a flyout with these shortcuts. The ids match the
+// sections of the Workspace page (stores/useNavStore.js WORKSPACE_TABS).
+const WORKSPACE_LINKS = [
+  { id: 'files', label: 'Files', hint: 'Folders indexed for chat', icon: FolderOpen },
+  { id: 'coding', label: 'Coding', hint: 'Local coding tasks and project changes', icon: Code2 },
+  { id: 'knowledge', label: 'Knowledge', hint: 'Documents every chat can use', icon: Library },
+  { id: 'memories', label: 'Memories', hint: 'What Chanakya remembers', icon: Brain },
+  { id: 'translator', label: 'Translator', hint: 'Offline translation', icon: Languages },
+  { id: 'apps', label: 'Apps', hint: 'App permissions', icon: ShieldCheck },
+  { id: 'diagnostics', label: 'Diagnostics', hint: 'System health and logs', icon: Activity },
+];
+
+const RECENT_LIMIT = 4;
+const FLYOUT_FILES = 5;
+const FLYOUT_WIDTH = 288;
+const FLYOUT_HEIGHT = 440; // approximate full height, used to keep it on-screen
+const FLYOUT_CACHE_MS = 30_000;
+
+/**
+ * "Workspace" entry of the sidebar. Click opens the Workspace page; hovering
+ * (or keyboard focus) shows a flyout with the active workspace's files and
+ * one-click shortcuts to every Workspace section.
+ */
+function WorkspaceNavItem({ item, open, active, accent, onOpen }) {
+  const openWorkspace = useNavStore((state) => state.openWorkspace);
+  const documents = useAppStore((state) => state.documents);
+  const [position, setPosition] = useState(null); // null = closed
+  const [snapshot, setSnapshot] = useState({ state: 'idle' });
+  const buttonRef = useRef(null);
+  const openTimer = useRef(null);
+  const closeTimer = useRef(null);
+  const suppressed = useRef(false); // set by a click, cleared when the pointer leaves
+  const loadedAt = useRef(0);
+  const mounted = useRef(true);
+
+  useEffect(
+    () => () => {
+      mounted.current = false;
+      clearTimeout(openTimer.current);
+      clearTimeout(closeTimer.current);
+    },
+    [],
+  );
+
+  const load = async () => {
+    if (Date.now() - loadedAt.current < FLYOUT_CACHE_MS) return;
+    loadedAt.current = Date.now();
+    setSnapshot((current) => (current.state === 'ready' ? current : { state: 'loading' }));
+    try {
+      const result = await apiService.workspaces.get();
+      const list = result.data.workspaces || [];
+      const workspace = list.find((entry) => entry.active) || null;
+      let files = [];
+      if (workspace) {
+        const response = await apiService.documents.get({
+          purpose: 'workspace',
+          workspaceId: workspace.id,
+        });
+        files = response.data.documents || [];
+      }
+      if (mounted.current) setSnapshot({ state: 'ready', workspace, files });
+    } catch {
+      loadedAt.current = 0; // try again on the next hover
+      if (mounted.current) setSnapshot({ state: 'error' });
+    }
+  };
+
+  const show = () => {
+    clearTimeout(closeTimer.current);
+    if (suppressed.current || position) return;
+    clearTimeout(openTimer.current);
+    openTimer.current = setTimeout(() => {
+      const rect = buttonRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      // Line the flyout up with the item, but slide it up when the window is short and
+      // let it scroll inside whatever height is left, so no shortcut is ever off-screen.
+      const top = Math.max(8, Math.min(rect.top - 6, window.innerHeight - FLYOUT_HEIGHT));
+      setPosition({
+        left: Math.min(rect.right + 8, Math.max(8, window.innerWidth - FLYOUT_WIDTH - 8)),
+        top,
+        maxHeight: window.innerHeight - top - 8,
+      });
+      load();
+    }, 140);
+  };
+
+  const hide = () => {
+    clearTimeout(openTimer.current);
+    clearTimeout(closeTimer.current);
+    closeTimer.current = setTimeout(() => setPosition(null), 200);
+  };
+
+  const leave = () => {
+    suppressed.current = false;
+    hide();
+  };
+
+  const choose = (section) => {
+    clearTimeout(openTimer.current);
+    setPosition(null);
+    suppressed.current = true;
+    if (section) openWorkspace(section);
+    else onOpen();
+  };
+
+  const Icon = item.icon;
+  const workspace = snapshot.state === 'ready' ? snapshot.workspace : null;
+  const files = snapshot.state === 'ready' ? snapshot.files : [];
+
+  return (
+    <div onMouseEnter={show} onMouseLeave={leave} onFocus={show} onBlur={hide}>
+      <button
+        ref={buttonRef}
+        type="button"
+        title={item.title}
+        aria-label={item.label}
+        aria-current={active ? 'page' : undefined}
+        aria-haspopup="menu"
+        aria-expanded={!!position}
+        onClick={() => choose(null)}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') setPosition(null);
+        }}
+        className={`flex h-10 w-full items-center rounded-xl text-xs font-semibold transition-all ${open ? 'gap-3 px-3' : 'justify-center'}`}
+        style={{
+          background: active
+            ? `linear-gradient(135deg, ${accent}25, ${accent}05)`
+            : position
+              ? 'rgba(255,255,255,0.04)'
+              : 'transparent',
+          border: active ? `1px solid ${accent}35` : '1px solid transparent',
+          color: active || position ? '#fff' : '#8b8b92',
+        }}
+      >
+        <Icon size={16} style={{ color: active ? accent : undefined }} />
+        {open && <span className="flex-1 text-left">{item.label}</span>}
+        {open && <ChevronRight size={13} className="text-stone-600" />}
+      </button>
+
+      {position &&
+        createPortal(
+          <motion.div
+            role="menu"
+            aria-label="Workspace sections"
+            initial={{ opacity: 0, x: -6 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.12 }}
+            onMouseEnter={() => clearTimeout(closeTimer.current)}
+            onMouseLeave={leave}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') setPosition(null);
+            }}
+            className="fixed z-[60] overflow-y-auto rounded-2xl border border-white/[0.08] bg-[#121214]/95 p-2 text-stone-300 shadow-2xl backdrop-blur-xl"
+            style={{
+              left: position.left,
+              top: position.top,
+              maxHeight: position.maxHeight,
+              width: FLYOUT_WIDTH,
+              maxWidth: 'calc(100vw - 16px)',
+            }}
+          >
+            {/* What is in the workspace right now */}
+            <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-2.5">
+              <div className="flex items-center gap-2">
+                <Folder size={14} className="shrink-0" style={{ color: accent }} />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-xs font-semibold text-stone-100">
+                    {workspace ? workspace.name : 'Workspace'}
+                  </div>
+                  <div className="truncate text-[10px] text-stone-500">
+                    {snapshot.state === 'loading' || snapshot.state === 'idle'
+                      ? 'Loading…'
+                      : snapshot.state === 'error'
+                        ? 'Could not read the workspace'
+                        : workspace
+                          ? `${files.length} file${files.length === 1 ? '' : 's'} indexed`
+                          : 'No workspace folder connected yet'}
+                  </div>
+                </div>
+              </div>
+              {files.length > 0 && (
+                <ul className="mt-2 space-y-0.5" aria-label="Workspace files">
+                  {files.slice(0, FLYOUT_FILES).map((file) => (
+                    <li
+                      key={file.id}
+                      className="flex items-center gap-2 rounded-md px-1 py-0.5 text-[11px] text-stone-400"
+                    >
+                      <FileText size={11} className="shrink-0 text-stone-600" />
+                      <span className="min-w-0 flex-1 truncate" title={file.name}>
+                        {file.name}
+                      </span>
+                      {file.size ? (
+                        <span className="shrink-0 text-[9px] text-stone-600">
+                          {formatBytes(file.size)}
+                        </span>
+                      ) : null}
+                    </li>
+                  ))}
+                  {files.length > FLYOUT_FILES && (
+                    <li className="px-1 pt-0.5 text-[10px] text-stone-600">
+                      +{files.length - FLYOUT_FILES} more in Files
+                    </li>
+                  )}
+                </ul>
+              )}
+            </div>
+
+            {/* Shortcuts */}
+            <div className="mt-1.5 space-y-0.5">
+              {WORKSPACE_LINKS.map((link) => {
+                const LinkIcon = link.icon;
+                const count = link.id === 'knowledge' && documents.length ? documents.length : null;
+                return (
+                  <button
+                    key={link.id}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => choose(link.id)}
+                    className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-white/[0.06] focus-visible:bg-white/[0.06] focus-visible:outline-none"
+                  >
+                    <span
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
+                      style={{ background: `${accent}18` }}
+                    >
+                      <LinkIcon size={14} style={{ color: accent }} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-xs font-semibold text-stone-100">
+                        {link.label}
+                      </span>
+                      <span className="block truncate text-[10px] text-stone-500">{link.hint}</span>
+                    </span>
+                    {count ? (
+                      <span className="shrink-0 rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[9px] text-stone-400">
+                        {count}
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          </motion.div>,
+          document.body,
+        )}
+    </div>
+  );
+}
+
+export default function Sidebar() {
+  const [open, setOpen] = useState(() => window.innerWidth >= 650);
+
+  const tab = useNavStore((state) => state.tab);
+  const setTab = useNavStore((state) => state.setTab);
+  const openSettings = useNavStore((state) => state.openSettings);
+
   const user = useAppStore((state) => state.user);
   const logout = useAppStore((state) => state.logout);
   const conversations = useAppStore((state) => state.conversations);
-  const folders = useAppStore((state) => state.folders);
   const activeChatId = useAppStore((state) => state.activeChatId);
+  const generatingChats = useAppStore((state) => state.generatingChats);
   const selectChat = useAppStore((state) => state.selectChat);
   const createChat = useAppStore((state) => state.createChat);
-  const deleteChat = useAppStore((state) => state.deleteChat);
-  const renameChat = useAppStore((state) => state.renameChat);
-  const pinChat = useAppStore((state) => state.pinChat);
-  const bookmarkChat = useAppStore((state) => state.bookmarkChat);
-  const moveChatToFolder = useAppStore((state) => state.moveChatToFolder);
-  
-  const createFolder = useAppStore((state) => state.createFolder);
-  const renameFolder = useAppStore((state) => state.renameFolder);
-  const deleteFolder = useAppStore((state) => state.deleteFolder);
   const fetchHistory = useAppStore((state) => state.fetchHistory);
   const settings = useAppStore((state) => state.settings);
 
@@ -57,419 +306,222 @@ export default function Sidebar({ activeTab, setActiveTab }) {
     fetchHistory();
   }, [fetchHistory]);
 
-  const toggleFolder = (folderId) => {
-    setExpandedFolders((prev) => ({
-      ...prev,
-      [folderId]: !prev[folderId]
-    }));
-  };
-
-  const handleCreateFolder = () => {
-    const name = prompt('Enter folder name:');
-    if (name?.trim()) {
-      createFolder(name);
-    }
-  };
-
-  const handleRenameFolder = (folderId, currentName) => {
-    const name = prompt('Rename folder to:', currentName);
-    if (name?.trim()) {
-      renameFolder(folderId, name);
-    }
-  };
-
-  const handleDeleteFolder = (folderId) => {
-    if (confirm('Are you sure you want to delete this folder? Chats will not be deleted.')) {
-      deleteFolder(folderId);
-    }
-  };
-
-  const handleRenameChat = (chatId, currentTitle) => {
-    const title = prompt('Rename conversation:', currentTitle);
-    if (title?.trim()) {
-      renameChat(chatId, title);
-    }
-  };
+  // Narrow windows get the icon rail automatically.
+  useEffect(() => {
+    const resize = () => {
+      if (window.innerWidth < 650) setOpen(false);
+    };
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, []);
 
   const accent = settings.accentColor || '#3b82f6';
+  const displayName = user?.displayName || user?.username || '';
+  const recent = conversations.slice(0, RECENT_LIMIT);
 
-  // Filter conversations by search query
-  const filteredConversations = conversations.filter((c) =>
-    (c.title || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  // Group conversations
-  const pinnedChats = filteredConversations.filter((c) => c.isPinned);
-  const bookmarkedChats = filteredConversations.filter((c) => c.isBookmarked);
-  
-  // Folder categorized conversations
-  const getChatsInFolder = (folderId) => {
-    return filteredConversations.filter((c) => c.folderId === folderId && !c.isPinned);
+  const startNewChat = () => {
+    createChat();
+    setTab('chat');
   };
 
   return (
     <motion.aside
-      animate={{ width: open ? 260 : 70 }}
+      animate={{ width: open ? 240 : 68 }}
       transition={presets.springSmooth}
-      className="relative z-20 flex h-full shrink-0 flex-col border-r border-white/[0.03] bg-[#0c0c0e]/60 backdrop-blur-xl"
+      aria-label="Main navigation"
+      className="relative z-20 flex h-full min-h-0 shrink-0 flex-col border-r border-white/[0.03] bg-[#0c0c0e]/60 backdrop-blur-xl"
     >
-      {/* Sidebar Header */}
-      <div className="flex h-14 items-center justify-between px-4 border-b border-white/[0.04]">
-        <div className="flex items-center gap-2 overflow-hidden cursor-pointer" onClick={() => { createChat(); setActiveTab('chat'); }}>
-          <div 
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border animate-[pulse_3s_infinite]"
-            style={{ 
-              borderColor: `${accent}40`, 
-              background: `linear-gradient(135deg, ${accent}20, transparent)`
+      {/* Brand + collapse */}
+      <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/[0.04] px-3">
+        <button
+          type="button"
+          onClick={startNewChat}
+          title="New conversation"
+          className="flex items-center gap-2 overflow-hidden rounded-lg px-1 py-1"
+        >
+          <span
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border"
+            style={{
+              borderColor: `${accent}40`,
+              background: `linear-gradient(135deg, ${accent}20, transparent)`,
             }}
           >
             <Sparkles size={14} style={{ color: accent }} />
-          </div>
+          </span>
           {open && (
-            <span className="text-sm font-extrabold tracking-widest bg-gradient-to-r from-white to-stone-400 bg-clip-text text-transparent">
+            <span className="whitespace-nowrap bg-gradient-to-r from-white to-stone-400 bg-clip-text text-sm font-extrabold tracking-widest text-transparent">
               CHANAKYA AI
             </span>
           )}
-        </div>
-        <button
-          onClick={() => setOpen(!open)}
-          className="rounded-lg p-1.5 text-stone-500 hover:bg-white/5 hover:text-white transition-colors"
-        >
-          {open ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
         </button>
-      </div>
-
-      {/* Main navigation icons */}
-      <div className="space-y-1.5 p-3">
-        <button
-          onClick={() => { createChat(); setActiveTab('chat'); }}
-          className="flex h-10 w-full items-center gap-3 rounded-xl px-3 transition-all text-xs font-semibold"
-          style={{
-            background: activeTab === 'chat' && !activeChatId ? `linear-gradient(135deg, ${accent}25, ${accent}05)` : 'transparent',
-            border: activeTab === 'chat' && !activeChatId ? `1px solid ${accent}35` : '1px solid transparent',
-            color: activeTab === 'chat' && !activeChatId ? '#fff' : '#888'
-          }}
-        >
-          <Plus size={16} style={{ color: activeTab === 'chat' && !activeChatId ? accent : undefined }} />
-          {open && <span>New conversation</span>}
-        </button>
-
-        <button
-          onClick={() => setActiveTab('documents')}
-          className="flex h-10 w-full items-center gap-3 rounded-xl px-3 transition-all text-xs font-semibold"
-          style={{
-            background: activeTab === 'documents' ? `linear-gradient(135deg, ${accent}25, ${accent}05)` : 'transparent',
-            border: activeTab === 'documents' ? `1px solid ${accent}35` : '1px solid transparent',
-            color: activeTab === 'documents' ? '#fff' : '#888'
-          }}
-        >
-          <FileText size={16} style={{ color: activeTab === 'documents' ? accent : undefined }} />
-          {open && <span>Knowledge base</span>}
-        </button>
-
-        <button
-          onClick={() => setActiveTab('memories')}
-          className="flex h-10 w-full items-center gap-3 rounded-xl px-3 transition-all text-xs font-semibold"
-          style={{
-            background: activeTab === 'memories' ? `linear-gradient(135deg, ${accent}25, ${accent}05)` : 'transparent',
-            border: activeTab === 'memories' ? `1px solid ${accent}35` : '1px solid transparent',
-            color: activeTab === 'memories' ? '#fff' : '#888'
-          }}
-        >
-          <Brain size={16} style={{ color: activeTab === 'memories' ? accent : undefined }} />
-          {open && <span>AI Memories</span>}
-        </button>
-
-        <button
-          onClick={() => setActiveTab('diagnostics')}
-          className="flex h-10 w-full items-center gap-3 rounded-xl px-3 transition-all text-xs font-semibold"
-          style={{
-            background: activeTab === 'diagnostics' ? `linear-gradient(135deg, ${accent}25, ${accent}05)` : 'transparent',
-            border: activeTab === 'diagnostics' ? `1px solid ${accent}35` : '1px solid transparent',
-            color: activeTab === 'diagnostics' ? '#fff' : '#888'
-          }}
-        >
-          <Activity size={16} style={{ color: activeTab === 'diagnostics' ? accent : undefined }} />
-          {open && <span>Diagnostics</span>}
-        </button>
-
-        <button
-          onClick={() => setActiveTab('translator')}
-          className="flex h-10 w-full items-center gap-3 rounded-xl px-3 transition-all text-xs font-semibold"
-          style={{
-            background: activeTab === 'translator' ? `linear-gradient(135deg, ${accent}25, ${accent}05)` : 'transparent',
-            border: activeTab === 'translator' ? `1px solid ${accent}35` : '1px solid transparent',
-            color: activeTab === 'translator' ? '#fff' : '#888'
-          }}
-        >
-          <Languages size={16} style={{ color: activeTab === 'translator' ? accent : undefined }} />
-          {open && <span>Translator</span>}
-        </button>
-      </div>
-
-      {open && <hr className="border-white/[0.04] mx-3 mb-2" />}
-
-      {/* Folders and Recent List */}
-      <AnimatePresence>
         {open && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="flex-1 overflow-y-auto px-3 space-y-4"
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            aria-label="Collapse sidebar"
+            className="rounded-lg p-1.5 text-stone-500 transition-colors hover:bg-white/5 hover:text-white"
           >
-            {/* Search Input */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-600" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search history..."
-                className="w-full rounded-xl border border-white/[0.05] bg-[#09090a]/50 py-1.5 pl-8 pr-3 text-xs text-stone-300 placeholder-stone-600 outline-none focus:border-white/10 focus:ring-0"
-              />
+            <PanelLeftClose size={15} />
+          </button>
+        )}
+      </div>
+
+      {/* Everything between the brand and the account card scrolls, so no item
+          is ever cut off in a short window. */}
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+        {!open && (
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            aria-label="Expand sidebar"
+            className="mx-auto mt-2 block rounded-lg p-1.5 text-stone-500 transition-colors hover:bg-white/5 hover:text-white"
+          >
+            <PanelLeftOpen size={15} />
+          </button>
+        )}
+
+        {/* New chat */}
+        <div className="px-3 pt-3">
+          <button
+            type="button"
+            onClick={startNewChat}
+            title="New conversation"
+            aria-label="New conversation"
+            className={`flex h-10 w-full items-center rounded-xl border text-xs font-semibold text-white transition-all hover:brightness-125 ${open ? 'gap-2 px-3' : 'justify-center'}`}
+            style={{
+              borderColor: `${accent}40`,
+              background: `linear-gradient(135deg, ${accent}30, ${accent}08)`,
+            }}
+          >
+            <Plus size={16} style={{ color: accent }} />
+            {open && <span>New chat</span>}
+          </button>
+        </div>
+
+        {/* The four sections */}
+        <nav className="space-y-1 p-3" aria-label="Sections">
+          {NAV_ITEMS.map((item) => {
+            const Icon = item.icon;
+            const active = tab === item.id;
+            if (item.id === 'workspace') {
+              return (
+                <WorkspaceNavItem
+                  key={item.id}
+                  item={item}
+                  open={open}
+                  active={active}
+                  accent={accent}
+                  onOpen={() => setTab('workspace')}
+                />
+              );
+            }
+            return (
+              <button
+                key={item.id}
+                type="button"
+                title={item.title}
+                aria-label={item.label}
+                aria-current={active ? 'page' : undefined}
+                onClick={() => setTab(item.id)}
+                className={`flex h-10 w-full items-center rounded-xl text-xs font-semibold transition-all ${open ? 'gap-3 px-3' : 'justify-center'}`}
+                style={{
+                  background: active
+                    ? `linear-gradient(135deg, ${accent}25, ${accent}05)`
+                    : 'transparent',
+                  border: active ? `1px solid ${accent}35` : '1px solid transparent',
+                  color: active ? '#fff' : '#8b8b92',
+                }}
+              >
+                <Icon size={16} style={{ color: active ? accent : undefined }} />
+                {open && <span>{item.label}</span>}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Quick access to the latest conversations; the full list is History */}
+        {open && recent.length > 0 && (
+          <div className="px-3 pb-3">
+            <div className="mb-1.5 border-t border-white/[0.04] px-2 pt-3 text-[9px] font-bold uppercase tracking-wider text-stone-600">
+              Recent
             </div>
-
-            {/* Pinned Chats */}
-            {pinnedChats.length > 0 && (
-              <div className="space-y-1">
-                <div className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wider text-stone-600 px-2 mb-1.5">
-                  <Pin size={10} className="text-amber-500" />
-                  <span>Pinned Conversations</span>
-                </div>
-                {pinnedChats.map((chat) => (
-                  <ChatRow
-                    key={chat.id}
-                    chat={chat}
-                    active={activeChatId === chat.id}
-                    onSelect={() => { setActiveTab('chat'); selectChat(chat.id); }}
-                    onRename={() => handleRenameChat(chat.id, chat.title)}
-                    onPin={() => pinChat(chat.id, false)}
-                    onBookmark={() => bookmarkChat(chat.id, !chat.isBookmarked)}
-                    onDelete={() => deleteChat(chat.id)}
-                    accent={accent}
-                  />
-                ))}
-              </div>
-            )}
-
-            {/* Folders categorized */}
-            <div className="space-y-1">
-              <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-wider text-stone-600 px-2 mb-1.5">
-                <span>Folders</span>
-                <button onClick={handleCreateFolder} className="hover:text-white transition-colors" title="Create Folder">
-                  <FolderPlus size={12} />
-                </button>
-              </div>
-
-              {folders.map((folder) => {
-                const folderChats = getChatsInFolder(folder.id);
-                const isExpanded = expandedFolders[folder.id];
+            <div className="space-y-0.5">
+              {recent.map((chat) => {
+                const active = tab === 'chat' && activeChatId === chat.id;
                 return (
-                  <div key={folder.id} className="space-y-1">
-                    <div 
-                      className="group flex items-center justify-between rounded-lg px-2 py-1.5 text-xs text-stone-500 hover:bg-white/[0.03] cursor-pointer"
-                      onClick={() => toggleFolder(folder.id)}
-                    >
-                      <div className="flex items-center gap-1.5 overflow-hidden">
-                        {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                        <FolderIcon size={13} style={{ color: accent }} />
-                        <span className="truncate text-stone-400 font-medium">{folder.name}</span>
-                      </div>
-                      
-                      {/* Folder settings */}
-                      <div className="hidden group-hover:flex items-center gap-1.5">
-                        <button onClick={(e) => { e.stopPropagation(); handleRenameFolder(folder.id, folder.name); }} title="Rename Folder">
-                          <Edit2 size={11} className="hover:text-stone-300" />
-                        </button>
-                        <button onClick={(e) => { e.stopPropagation(); handleDeleteFolder(folder.id); }} title="Delete Folder">
-                          <Trash2 size={11} className="hover:text-red-400" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {isExpanded && (
-                      <div className="pl-3 border-l border-white/[0.03] space-y-1 ml-3.5">
-                        {folderChats.length === 0 ? (
-                          <div className="text-[10px] text-stone-600 py-1 pl-2">Empty folder</div>
-                        ) : (
-                          folderChats.map((chat) => (
-                            <ChatRow
-                              key={chat.id}
-                              chat={chat}
-                              active={activeChatId === chat.id}
-                              onSelect={() => { setActiveTab('chat'); selectChat(chat.id); }}
-                              onRename={() => handleRenameChat(chat.id, chat.title)}
-                              onPin={() => pinChat(chat.id, !chat.isPinned)}
-                              onBookmark={() => bookmarkChat(chat.id, !chat.isBookmarked)}
-                              onDelete={() => deleteChat(chat.id)}
-                              accent={accent}
-                              onMoveToFolder={(fid) => moveChatToFolder(chat.id, fid)}
-                              folders={folders}
-                            />
-                          ))
-                        )}
-                      </div>
+                  <button
+                    key={chat.id}
+                    type="button"
+                    title={chat.title}
+                    onClick={() => {
+                      setTab('chat');
+                      selectChat(chat.id);
+                    }}
+                    className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-xs transition-colors hover:bg-white/[0.04]"
+                    style={{
+                      color: active ? '#fff' : '#a8a29e',
+                      background: active ? 'rgba(255,255,255,0.04)' : undefined,
+                    }}
+                  >
+                    <span className="min-w-0 flex-1 truncate">{chat.title || 'Untitled chat'}</span>
+                    {generatingChats[chat.id] && (
+                      <span
+                        className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-emerald-400"
+                        title="Answering in the background"
+                      />
                     )}
-                  </div>
+                  </button>
                 );
               })}
             </div>
-
-            {/* Uncategorized / Recent conversations */}
-            <div className="space-y-1">
-              <div className="text-[9px] font-bold uppercase tracking-wider text-stone-600 px-2 mb-1.5">
-                <span>Recent Conversations</span>
-              </div>
-              {getChatsInFolder(null).map((chat) => (
-                <ChatRow
-                  key={chat.id}
-                  chat={chat}
-                  active={activeChatId === chat.id}
-                  onSelect={() => { setActiveTab('chat'); selectChat(chat.id); }}
-                  onRename={() => handleRenameChat(chat.id, chat.title)}
-                  onPin={() => pinChat(chat.id, !chat.isPinned)}
-                  onBookmark={() => bookmarkChat(chat.id, !chat.isBookmarked)}
-                  onDelete={() => deleteChat(chat.id)}
-                  accent={accent}
-                  onMoveToFolder={(fid) => moveChatToFolder(chat.id, fid)}
-                  folders={folders}
-                />
-              ))}
-            </div>
-          </motion.div>
+            <button
+              type="button"
+              onClick={() => setTab('history')}
+              className="mt-1 w-full rounded-lg px-2 py-1.5 text-left text-[11px] text-stone-500 transition-colors hover:text-white"
+            >
+              View all history
+            </button>
+          </div>
         )}
-      </AnimatePresence>
+      </div>
 
-      {/* User profile dropdown and Settings buttons */}
-      <div className="mt-auto border-t border-white/[0.04] p-3 space-y-1">
-        {/* User Card */}
-        {user && open && (
-          <div className="mb-2 flex items-center gap-2.5 rounded-xl border border-white/[0.04] bg-[#121214]/40 px-2.5 py-2">
-            <div 
+      {/* Account */}
+      <div className="shrink-0 space-y-1.5 border-t border-white/[0.04] p-3">
+        {user && (
+          <button
+            type="button"
+            title="Profile"
+            aria-label="Open profile"
+            onClick={() => openSettings('profile')}
+            className={`flex w-full items-center rounded-xl border border-white/[0.04] bg-[#121214]/40 py-2 text-left transition-colors hover:bg-white/[0.04] ${open ? 'gap-2.5 px-2.5' : 'justify-center'}`}
+          >
+            <span
               className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-semibold text-black"
               style={{ background: accent }}
             >
-              {(user.displayName || user.username).charAt(0).toUpperCase()}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-xs font-semibold text-stone-200">{user.displayName || user.username}</div>
-              <div className="truncate text-[10px] text-stone-500">@{user.username}</div>
-            </div>
-          </div>
+              {displayName.charAt(0).toUpperCase()}
+            </span>
+            {open && (
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-xs font-semibold text-stone-200">
+                  {displayName}
+                </span>
+                <span className="block truncate text-[10px] text-stone-500">@{user.username}</span>
+              </span>
+            )}
+          </button>
         )}
-
-        <div className="flex items-center justify-between gap-1.5">
-          <button
-            onClick={() => setShowProfile(true)}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-white/[0.04] bg-white/[0.02] py-2 text-stone-500 hover:bg-white/5 hover:text-white transition-all cursor-pointer"
-            title="Profile details"
-          >
-            <User size={13} />
-            {open && <span className="text-[10px] font-medium">Profile</span>}
-          </button>
-          
-          <button
-            onClick={() => setEditingFolderId('settings')}
-            className="rounded-xl border border-white/[0.04] bg-white/[0.02] p-2 text-stone-500 hover:bg-white/5 hover:text-white transition-all"
-            title="Settings"
-          >
-            <Settings size={14} />
-          </button>
-          
-          <button
-            onClick={logout}
-            className="rounded-xl border border-red-500/10 bg-red-500/[0.02] p-2 text-red-400/60 hover:bg-red-500/10 hover:text-red-400 transition-all"
-            title="Logout"
-          >
-            <LogOut size={14} />
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={logout}
+          title="Logout"
+          aria-label="Logout"
+          className={`flex w-full items-center rounded-xl border border-red-500/10 bg-red-500/[0.02] py-2 text-red-400/70 transition-all hover:bg-red-500/10 hover:text-red-400 ${open ? 'gap-2 px-3' : 'justify-center'}`}
+        >
+          <LogOut size={14} />
+          {open && <span className="text-xs">Logout</span>}
+        </button>
       </div>
-      
-      {/* Settings Modal */}
-      <SettingsModal 
-        open={editingFolderId === 'settings'} 
-        onClose={() => setEditingFolderId(null)} 
-      />
-
-      {/* Profile Details Modal */}
-      <AnimatePresence>
-        {showProfile && (
-          <ProfileDetails onClose={() => setShowProfile(false)} />
-        )}
-      </AnimatePresence>
     </motion.aside>
-  );
-}
-
-// ChatRow Subcomponent
-function ChatRow({
-  chat,
-  active,
-  onSelect,
-  onRename,
-  onPin,
-  onBookmark,
-  onDelete,
-  accent,
-  onMoveToFolder,
-  folders = []
-}) {
-  const [showOptions, setShowOptions] = useState(false);
-
-  return (
-    <div
-      onMouseEnter={() => setShowOptions(true)}
-      onMouseLeave={() => setShowOptions(false)}
-      className="group relative flex items-center justify-between rounded-xl px-2 py-1.5 transition-all text-xs"
-      style={{
-        background: active ? `rgba(255, 255, 255, 0.03)` : 'transparent',
-        border: active ? `1px solid rgba(255, 255, 255, 0.05)` : '1px solid transparent'
-      }}
-    >
-      <button
-        onClick={onSelect}
-        className="flex-1 text-left truncate font-medium"
-        style={{ color: active ? '#fff' : '#a8a29e' }}
-      >
-        {chat.title}
-      </button>
-
-      {/* Action buttons */}
-      <div className={`flex items-center gap-1 ${showOptions ? 'opacity-100' : 'opacity-0'} transition-opacity ml-1.5 shrink-0 z-10 bg-inherit`}>
-        <button onClick={onPin} title={chat.isPinned ? 'Unpin' : 'Pin'}>
-          <Pin size={11} className={`${chat.isPinned ? 'text-amber-500' : 'text-stone-500'} hover:text-white`} />
-        </button>
-        <button onClick={onBookmark} title={chat.isBookmarked ? 'Remove Bookmark' : 'Bookmark'}>
-          <Bookmark size={11} className={`${chat.isBookmarked ? 'text-amber-500' : 'text-stone-500'} hover:text-white`} />
-        </button>
-
-        {/* Move to folder dropdown selector */}
-        {onMoveToFolder && folders.length > 0 && (
-          <select
-            onChange={(e) => {
-              const val = e.target.value;
-              onMoveToFolder(val === 'none' ? null : val);
-            }}
-            value={chat.folderId || 'none'}
-            className="bg-[#09090a] border border-white/5 rounded text-[9px] text-stone-500 outline-none p-0.5"
-            title="Move to Folder"
-          >
-            <option value="none">None</option>
-            {folders.map((f) => (
-              <option key={f.id} value={f.id}>{f.name}</option>
-            ))}
-          </select>
-        )}
-
-        <button onClick={onRename} title="Rename">
-          <Edit2 size={11} className="text-stone-500 hover:text-white" />
-        </button>
-        <button onClick={onDelete} title="Delete">
-          <Trash2 size={11} className="text-stone-600 hover:text-red-400" />
-        </button>
-      </div>
-    </div>
   );
 }

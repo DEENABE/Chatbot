@@ -10,13 +10,29 @@ import { modelsRouter } from './routes/models.js';
 import { historyRouter } from './routes/history.js';
 import { transcribeRouter } from './routes/transcribe.js';
 import { documentsRouter } from './routes/documents.js';
+import { workspaceRouter } from './routes/workspaces.js';
+import { codingRouter } from './routes/coding.js';
 import { authRouter } from './routes/auth.js';
 import { memoryRouter } from './routes/memory.js';
 import { statsRouter } from './routes/stats.js';
 import { agentRouter } from './routes/agent.js';
 import { repairRouter } from './routes/repair.js';
+import { orchestrateRouter } from './routes/orchestrate.js';
 import { translateRouter } from './routes/translate.js';
+import { fileAgentRouter } from './routes/fileAgent.js';
+import { createDocIntelRouter } from './routes/docintel.js';
+import {
+  docintelDeps,
+  jobs as docintelJobs,
+  results as docintelResults,
+} from './docintel/runtime.js';
+import { routeChatModel } from './services/modelRouter.js';
 import { askLimiter } from './middleware/rateLimiter.js';
+import {
+  isAllowedLocalOrigin,
+  isLoopbackHost,
+  hasDesktopClientKey,
+} from './middleware/localOrigin.js';
 
 export const app = express();
 app.disable('x-powered-by');
@@ -27,6 +43,14 @@ app.disable('x-powered-by');
 // tied to one server-side log line without needing to log anything sensitive
 // about the request itself.
 app.use((request, response, next) => {
+  if (
+    request.path.startsWith('/api/') &&
+    request.headers.origin === 'null' &&
+    process.env.CHANAKYA_DESKTOP_CHILD === '1' &&
+    request.method !== 'OPTIONS' &&
+    !hasDesktopClientKey(request.headers['x-chanakya-client'], process.env.CHANAKYA_CLIENT_SECRET)
+  )
+    return response.status(403).json({ error: 'Desktop API client authentication required.' });
   request.id = randomUUID();
   response.setHeader('X-Request-Id', request.id);
   next();
@@ -63,8 +87,8 @@ app.use(
         baseUri: ["'self'"],
         formAction: ["'self'"],
         frameAncestors: ["'none'"],
-        upgradeInsecureRequests: null
-      }
+        upgradeInsecureRequests: null,
+      },
     },
     // This app is never meant to be framed by anything — CSP's
     // frame-ancestors 'none' above is the modern directive, but older
@@ -72,37 +96,36 @@ app.use(
     // is looser than what this app actually needs.
     xFrameOptions: { action: 'deny' },
     crossOriginResourcePolicy: false,
-    crossOriginOpenerPolicy: false
-  })
+    crossOriginOpenerPolicy: false,
+  }),
 );
+
+app.use((request, response, next) => {
+  if (
+    !isLoopbackHost(request.headers.host) ||
+    !isAllowedLocalOrigin(request.headers.origin, {
+      frontendOrigin: config.frontendOrigin,
+      desktop: process.env.CHANAKYA_DESKTOP_CHILD === '1',
+      localPort: request.socket.localPort,
+    })
+  )
+    return response
+      .status(403)
+      .json({ error: 'This browser origin is not allowed to access the local API.' });
+  next();
+});
 
 app.use(
   cors({
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-      // A file://-loaded page (the packaged Electron renderer, always —
-      // `loadFile()` is the only load path this app has) is an opaque
-      // origin per RFC 6454 §6.2, and browsers serialize that as the
-      // literal string "null" in the Origin header — NOT "file://...".
-      // `origin.startsWith('file://')` never matches anything a real
-      // browser sends; confirmed empirically (a preflight from the real
-      // packaged app got no Access-Control-Allow-Origin header at all,
-      // silently blocking every request before it reached the server).
-      const allowed =
-        /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
-        origin === 'null' ||
-        origin.startsWith('file://');
-      callback(null, allowed);
-    },
-    credentials: true
-  })
+    // The middleware above rejects disallowed origins before any API handler runs.
+    origin: true,
+    credentials: true,
+  }),
 );
 
 app.use(express.json({ limit: '10mb' })); // Increased limit to support annotated image canvas contexts
 
-app.get('/api/health', (_request, response) =>
-  response.json({ status: 'ok', localOnly: true })
-);
+app.get('/api/health', (_request, response) => response.json({ status: 'ok', localOnly: true }));
 
 app.use('/api/auth', authRouter);
 app.use('/api/upload', uploadRouter);
@@ -114,17 +137,35 @@ app.use('/api/models', modelsRouter);
 app.use('/api/history', historyRouter);
 app.use('/api/transcribe', transcribeRouter);
 app.use('/api/documents', documentsRouter);
+app.use('/api/workspaces', workspaceRouter);
+app.use('/api/coding', codingRouter);
 app.use('/api/memory', memoryRouter);
 app.use('/api/stats', statsRouter);
 app.use('/api/agent', askLimiter, agentRouter);
 app.use('/api/repair', askLimiter, repairRouter);
+app.use('/api/orchestrate', askLimiter, orchestrateRouter);
 app.use('/api/translate', translateRouter);
+app.use('/api/file-agent', fileAgentRouter);
+// Document Intelligence Agent: exact search/range/filter/aggregate with source references,
+// plus conversion/generation jobs (see src/docintel/). The local model is resolved only
+// for jobs that need prose (summaries, explanations, new documents).
+app.use(
+  '/api/docintel',
+  createDocIntelRouter({
+    makeDeps: (request) =>
+      docintelDeps({
+        resolveRouting: () => routeChatModel({ userId: request.userId, hasAttachments: true }),
+      }),
+    jobs: docintelJobs,
+    results: docintelResults,
+  }),
+);
 
 app.use('/ocr', express.static(config.ocrDir));
 app.use(express.static(config.frontendDist));
 
 // Handle SPAs by routing matches to index.html
-app.get('/{*path}', (request, response, next) => {
+app.get('*', (request, response, next) => {
   if (request.path.startsWith('/api/')) return next();
   response.sendFile(path.join(config.frontendDist, 'index.html'), (error) => error && next());
 });
@@ -159,7 +200,9 @@ app.use((error, request, response, _next) => {
     return response.status(413).json({ error: 'File is larger than the allowed upload size.' });
   }
   if (error.code === 'LIMIT_FILE_COUNT') {
-    return response.status(413).json({ error: 'That folder has more than 500 files — upload it in smaller batches.' });
+    return response.status(413).json({
+      error: 'That folder has more than 500 files — upload it in smaller batches.',
+    });
   }
   if (Number.isInteger(error.status) && error.status >= 400 && error.status < 500) {
     return response.status(error.status).json({ error: error.message });

@@ -10,7 +10,7 @@ import { askLimiter } from '../middleware/rateLimiter.js';
 
 const audioUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 15 * 1024 * 1024, files: 1 }
+  limits: { fileSize: 15 * 1024 * 1024, files: 1 },
 });
 
 export const transcribeRouter = Router();
@@ -38,5 +38,5 @@ transcribeRouter.post(
     } finally {
       await fs.rm(audioPath, { force: true }).catch(() => {});
     }
-  }
+  },
 );

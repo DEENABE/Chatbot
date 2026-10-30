@@ -9,7 +9,7 @@ export const askLimiter = rateLimit({
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many requests, please slow down.' }
+  message: { error: 'Too many requests, please slow down.' },
 });
 
 // ── Auth abuse protection ────────────────────────────────────────────────
@@ -37,7 +37,9 @@ export const askLimiter = rateLimit({
 // something can force-restart the backend at will — on this machine,
 // nothing but the user can.
 
-const RATE_LIMIT_MESSAGE = { error: 'Too many attempts. Wait a few minutes and try again.' };
+const RATE_LIMIT_MESSAGE = {
+  error: 'Too many attempts. Wait a few minutes and try again.',
+};
 
 function rateLimitHandler(eventName) {
   // express-rate-limit's default handler already sends the safe generic
@@ -59,7 +61,7 @@ export const ipAuthLimiter = rateLimit({
   max: config.rateLimits.ipMaxAttempts,
   standardHeaders: true,
   legacyHeaders: false,
-  handler: rateLimitHandler('AUTH_IP_RATE_LIMITED')
+  handler: rateLimitHandler('AUTH_IP_RATE_LIMITED'),
 });
 
 // Login: ip+username keyed, and only failed attempts count
@@ -76,7 +78,7 @@ export const loginLimiter = rateLimit({
   legacyHeaders: false,
   skipSuccessfulRequests: true,
   keyGenerator: (request) => `${request.ip}:${request.body?.username || ''}`,
-  handler: rateLimitHandler('LOGIN_RATE_LIMITED')
+  handler: rateLimitHandler('LOGIN_RATE_LIMITED'),
 });
 
 // Forgot-password: ip+username keyed. Coordinates with, rather than
@@ -92,7 +94,7 @@ export const resetRequestLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (request) => `${request.ip}:${request.body?.username || ''}`,
-  handler: rateLimitHandler('PASSWORD_RESET_RATE_LIMITED')
+  handler: rateLimitHandler('PASSWORD_RESET_RATE_LIMITED'),
 });
 
 // Reset-password (confirm step): ip-only. Phase 4 deliberately removed
@@ -106,7 +108,7 @@ export const resetConfirmLimiter = rateLimit({
   max: config.rateLimits.resetConfirmMaxAttempts,
   standardHeaders: true,
   legacyHeaders: false,
-  handler: rateLimitHandler('RESET_ATTEMPT_RATE_LIMITED')
+  handler: rateLimitHandler('RESET_ATTEMPT_RATE_LIMITED'),
 });
 
 // Registration: ip-only — there's no account yet to key on. A longer
@@ -131,7 +133,7 @@ export const registerLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skipFailedRequests: true,
-  handler: rateLimitHandler('REGISTER_RATE_LIMITED')
+  handler: rateLimitHandler('REGISTER_RATE_LIMITED'),
 });
 
 // Translator: keyed by the authenticated userId (requireAuth runs before
@@ -146,8 +148,10 @@ export const translateLimiter = rateLimit({
   keyGenerator: (request) => request.userId || request.ip,
   handler: (_request, response) => {
     console.log('[translate] TRANSLATE_RATE_LIMITED');
-    response.status(429).json({ error: 'Too many translation requests. Wait a minute and try again.' });
-  }
+    response.status(429).json({
+      error: 'Too many translation requests. Wait a minute and try again.',
+    });
+  },
 });
 
 // Progressive delay for login, layered on top of (not instead of)
@@ -160,7 +164,8 @@ export const translateLimiter = rateLimit({
 // it ever reaches the hard 429 limit.
 export function progressiveLoginDelay(request, _response, next) {
   const current = request.rateLimit?.current ?? 0;
-  const { progressiveDelayThreshold, progressiveDelayStepMs, progressiveDelayMaxMs } = config.rateLimits;
+  const { progressiveDelayThreshold, progressiveDelayStepMs, progressiveDelayMaxMs } =
+    config.rateLimits;
   if (current <= progressiveDelayThreshold) return next();
   // Earlier visibility than the hard 429 in loginLimiter: this fires the
   // moment failures start piling up, not only once the account is fully

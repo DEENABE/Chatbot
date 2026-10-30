@@ -1,6 +1,9 @@
 import axios from 'axios';
+import { readNdjson } from './ndjson.js';
 
-const API_BASE = 'http://127.0.0.1:3001/api';
+export const API_BASE =
+  window.electronAPI?.getApiBaseUrl?.() ||
+  (/^https?:$/.test(window.location.protocol) ? '/api' : 'http://127.0.0.1:3001/api');
 
 // In-memory fallback for the non-Electron dev path (`npm run dev`, a plain
 // Vite/browser tab with no preload script). Same "gone on reload" property
@@ -38,9 +41,11 @@ export async function clearSession() {
 }
 
 export const api = axios.create({ baseURL: API_BASE, timeout: 120000 });
+const apiClientKey = window.electronAPI?.getApiClientKey?.() || '';
 
 // Attach the session token to every request
 api.interceptors.request.use(async (config) => {
+  if (apiClientKey) config.headers['X-Chanakya-Client'] = apiClientKey;
   const token = await getToken();
   if (token) {
     config.headers['Authorization'] = `Bearer ${token}`;
@@ -62,12 +67,16 @@ api.interceptors.response.use(
       }
     }
     return Promise.reject(error);
-  }
+  },
 );
 
-export async function streamChat(payload, { onToken, onSources, onDone, onToolCall, signal }) {
+export async function streamChat(
+  payload,
+  { onToken, onSources, onDone, onToolCall, onMemory, onRoute, onSoftwareChoice, onStatus, signal },
+) {
   const token = await getToken();
   const headers = { 'Content-Type': 'application/json' };
+  if (apiClientKey) headers['X-Chanakya-Client'] = apiClientKey;
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
@@ -76,7 +85,7 @@ export async function streamChat(payload, { onToken, onSources, onDone, onToolCa
     method: 'POST',
     headers,
     body: JSON.stringify(payload),
-    signal
+    signal,
   });
 
   if (!response.ok) {
@@ -94,31 +103,26 @@ export async function streamChat(payload, { onToken, onSources, onDone, onToolCa
     throw new Error('Chat response body is empty');
   }
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      let event;
-      try {
-        event = JSON.parse(line);
-      } catch {
-        throw new Error('The local server returned an incomplete stream. Restart the backend and try again.');
-      }
+  let finished = false;
+  await readNdjson(
+    response,
+    (event) => {
+      if (event.type === 'done') finished = true;
       if (event.type === 'token') onToken(event.text);
       if (event.type === 'sources') onSources(event.sources);
+      if (event.type === 'memory') onMemory?.(event.decision);
+      if (event.type === 'route') onRoute?.(event);
+      if (event.type === 'software_choice') onSoftwareChoice?.(event);
+      if (event.type === 'status') onStatus?.(event.text);
       if (event.type === 'tool_call' && onToolCall) onToolCall(event.toolCall);
       if (event.type === 'done') onDone(event.message, event.conversationId);
       if (event.type === 'error') throw new Error(event.error);
-    }
-  }
+    },
+    { signal },
+  );
+  // A stream that just stops (backend restarted, connection dropped) used to leave an empty bubble.
+  if (!finished && !signal?.aborted)
+    throw new Error('The response ended before the model finished. Please ask again.');
 }
 
 export async function streamRepair(payload, handlers) {
@@ -132,6 +136,7 @@ export async function streamAgent(payload, handlers) {
 async function streamNdjson(url, payload, { onEvent, signal }) {
   const token = await getToken();
   const headers = { 'Content-Type': 'application/json' };
+  if (apiClientKey) headers['X-Chanakya-Client'] = apiClientKey;
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
@@ -140,39 +145,36 @@ async function streamNdjson(url, payload, { onEvent, signal }) {
     method: 'POST',
     headers,
     body: JSON.stringify(payload),
-    signal
+    signal,
   });
 
   if (!response.ok) {
     const raw = await response.text();
     let detail = raw;
-    try { detail = JSON.parse(raw).error; } catch { /* keep raw */ }
+    try {
+      detail = JSON.parse(raw).error;
+    } catch {
+      /* keep raw */
+    }
     throw new Error(detail || `Agent server returned HTTP ${response.status}.`);
   }
   if (!response.body) {
     throw new Error('Agent response body is empty');
   }
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      let event;
-      try { event = JSON.parse(line); } catch { continue; }
+  let finished = false;
+  await readNdjson(
+    response,
+    (event) => {
+      if (['final', 'error', 'aborted'].includes(event.type)) finished = true;
       onEvent(event);
-    }
-  }
-  if (buffer.trim()) {
-    try { onEvent(JSON.parse(buffer)); } catch { /* ignore trailing */ }
-  }
+    },
+    { signal },
+  );
+  if (!finished)
+    throw new Error(
+      'The diagnostic stream ended before a final result. Check Diagnostics before retrying.',
+    );
 }
 
 // Auth API calls
@@ -186,8 +188,7 @@ export const auth = {
     api.post('/auth/change-password', { currentPassword, newPassword }),
   deleteAccount: (password) => api.delete('/auth/account', { data: { password } }),
   forgotPassword: (username) => api.post('/auth/forgot-password', { username }),
-  resetPassword: (token, newPassword) =>
-    api.post('/auth/reset-password', { token, newPassword })
+  resetPassword: (token, newPassword) => api.post('/auth/reset-password', { token, newPassword }),
 };
 
 // History API calls
@@ -196,16 +197,16 @@ export const history = {
   search: (q) => api.get(`/history/search?q=${encodeURIComponent(q)}`),
   delete: (id) => api.delete(`/history/${id}`),
   update: (id, updates) => api.patch(`/history/${id}`, updates),
-  
+
   createFolder: (name) => api.post('/history/folders', { name }),
   updateFolder: (id, name) => api.patch(`/history/folders/${id}`, { name }),
-  deleteFolder: (id) => api.delete(`/history/folders/${id}`)
+  deleteFolder: (id) => api.delete(`/history/folders/${id}`),
 };
 
 // Documents API calls
 export const documents = {
-  get: () => api.get('/documents'),
-  upload: (formData, onUploadProgress) =>
+  get: (params) => api.get('/documents', { params }),
+  upload: (formData, onUploadProgress, signal) =>
     // A folder can contain many documents, and each one is parsed and
     // embedded (via Ollama) synchronously before the response comes back.
     // If Ollama's model was idle-unloaded (see unloadIdleModel), the first
@@ -214,42 +215,122 @@ export const documents = {
     // docx whenever that cold-load happened, so uploads get a much longer
     // budget than every other request.
     api.post('/upload', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
       onUploadProgress,
-      timeout: 600000
+      signal,
+      timeout: 600000,
     }),
-  delete: (id) => api.delete(`/documents/${id}`)
+  delete: (id) => api.delete(`/documents/${id}`),
+};
+
+// File agent: generated files (PDF, Word, Excel, CSV…) and folder organize plans.
+export const fileAgent = {
+  download: (id) =>
+    api.get(`/file-agent/outputs/${encodeURIComponent(id)}`, { responseType: 'blob', timeout: 300000 }),
+  plan: (id) => api.get(`/file-agent/plans/${encodeURIComponent(id)}`),
+  apply: (id) => api.post(`/file-agent/plans/${encodeURIComponent(id)}/apply`, {}, { timeout: 300000 }),
+  undo: (id) => api.post(`/file-agent/plans/${encodeURIComponent(id)}/undo`, {}, { timeout: 300000 }),
+};
+
+export const docintel = {
+  capabilities: () => api.get('/docintel/capabilities'),
+  inspect: (id) => api.get(`/docintel/documents/${encodeURIComponent(id)}`),
+  result: (id, page = 1, pageSize = 100) =>
+    api.get(`/docintel/results/${encodeURIComponent(id)}`, { params: { page, pageSize } }),
+  job: (id) => api.get(`/docintel/jobs/${encodeURIComponent(id)}`),
+  cancel: (id) => api.post(`/docintel/jobs/${encodeURIComponent(id)}/cancel`),
+};
+
+export const workspaces = {
+  get: () => api.get('/workspaces'),
+  create: (data) => api.post('/workspaces', data),
+  update: (id, data) => api.patch(`/workspaces/${encodeURIComponent(id)}`, data),
+  activate: (id) => api.post(`/workspaces/${encodeURIComponent(id)}/activate`),
+  files: (id) => api.get(`/workspaces/${encodeURIComponent(id)}/files`),
+  status: (id) => api.get(`/workspaces/${encodeURIComponent(id)}/status`),
+  index: (id, data = {}) =>
+    api.post(`/workspaces/${encodeURIComponent(id)}/index`, data, { timeout: 600000 }),
+  pause: (id) => api.post(`/workspaces/${encodeURIComponent(id)}/pause`),
+  removeIndex: (id) => api.delete(`/workspaces/${encodeURIComponent(id)}/index`),
+  // Native Windows folder dialog opened by the local backend (browser/localhost mode).
+  chooseDirectory: () => api.post('/workspaces/choose-directory', {}, { timeout: 310000 }),
+};
+
+// Coding operations stay in the authenticated local backend; renderer code
+// never receives filesystem handles or a shell execution bridge.
+export const coding = {
+  createProject: (payload) => api.post('/coding/projects', payload),
+  runtime: (workspaceId, signal) =>
+    api.get(`/coding/workspaces/${encodeURIComponent(workspaceId)}/runtime`, { signal }),
+  executionPolicy: (workspaceId, policy) =>
+    api.post(`/coding/workspaces/${encodeURIComponent(workspaceId)}/execution-policy`, policy),
+  stopProcess: (workspaceId, jobId) =>
+    api.post(
+      `/coding/workspaces/${encodeURIComponent(workspaceId)}/processes/${encodeURIComponent(jobId)}/stop`,
+    ),
+  openPreview: (workspaceId, jobId) =>
+    api.post(
+      `/coding/workspaces/${encodeURIComponent(workspaceId)}/processes/${encodeURIComponent(jobId)}/open`,
+    ),
+  models: (signal) => api.get('/coding/models', { signal }),
+  tasks: (signal) => api.get('/coding/tasks', { signal }),
+  tree: (workspaceId, signal) =>
+    api.get(`/coding/workspaces/${encodeURIComponent(workspaceId)}/tree`, { signal }),
+  file: (workspaceId, path, signal) =>
+    api.get(`/coding/workspaces/${encodeURIComponent(workspaceId)}/file`, {
+      params: { path },
+      signal,
+    }),
+  authorize: (workspaceId, write = true) =>
+    api.post(`/coding/workspaces/${encodeURIComponent(workspaceId)}/authorize`, { write }),
+  start: (payload) => api.post('/coding/tasks', payload),
+  task: (taskId, signal) => api.get(`/coding/tasks/${encodeURIComponent(taskId)}`, { signal }),
+  approve: (taskId, approvalId, approved) =>
+    api.post(`/coding/tasks/${encodeURIComponent(taskId)}/approval`, { approvalId, approved }),
+  cancel: (taskId) => api.post(`/coding/tasks/${encodeURIComponent(taskId)}/cancel`),
+  tool: (workspaceId, tool, params = {}) =>
+    api.post(
+      `/coding/workspaces/${encodeURIComponent(workspaceId)}/tools`,
+      { tool, params },
+      { timeout: 915000 },
+    ),
+  approveTool: (workspaceId, approvalId, approved) =>
+    api.post(
+      `/coding/workspaces/${encodeURIComponent(workspaceId)}/approvals/${encodeURIComponent(approvalId)}`,
+      { approved },
+      { timeout: 915000 },
+    ),
 };
 
 // Models API
 export const models = {
   get: () => api.get('/models'),
   loaded: () => api.get('/models/loaded'),
-  unload: () => api.post('/models/unload')
+  unload: () => api.post('/models/unload'),
 };
 
 // Memory API
 export const memories = {
-  get: (type) =>
-    api.get(`/memory${type ? `?type=${type}` : ''}`),
-  create: (content, type) =>
-    api.post('/memory', { content, type }),
+  longTerm: () => api.get('/memory/long-term'),
+  saveLongTerm: (value) => api.post('/memory/long-term', value),
+  updateLongTerm: (id, value) => api.patch(`/memory/long-term/${encodeURIComponent(id)}`, value),
+  deleteLongTerm: (id) => api.delete(`/memory/long-term/${encodeURIComponent(id)}`),
+  get: (type) => api.get(`/memory${type ? `?type=${type}` : ''}`),
+  create: (content, type) => api.post('/memory', { content, type }),
   delete: (id) => api.delete(`/memory/${id}`),
-  clear: (type) =>
-    api.delete(`/memory${type ? `?type=${type}` : ''}`)
+  clear: (type) => api.delete(`/memory${type ? `?type=${type}` : ''}`),
 };
 
 // Transcribe API
 export const transcribe = {
   audio: (formData) =>
     api.post('/transcribe', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
 };
 
 // Stats API
 export const stats = {
-  get: () => api.get('/stats')
+  get: () => api.get('/stats'),
 };
 
 // Translator API
@@ -259,13 +340,22 @@ export const translate = {
   // backend config.js's translate.timeoutMs, now 180s) — this must be at
   // least that long, or the client would give up before the server does.
   text: ({ text, sourceLanguage, targetLanguage }) =>
-    api.post('/translate', { text, sourceLanguage, targetLanguage }, { timeout: 200000 })
+    api.post('/translate', { text, sourceLanguage, targetLanguage }, { timeout: 200000 }),
 };
 
 // Repair feedback / dataset API
 export const repair = {
+  inspect: (id) => api.get(`/orchestrate/checkpoints/${encodeURIComponent(id)}`),
+  resume: (id, body, signal) =>
+    api.post(`/orchestrate/checkpoints/${encodeURIComponent(id)}/resume`, body, { signal }),
+  renew: (id, body) =>
+    api.post(`/orchestrate/checkpoints/${encodeURIComponent(id)}/confirmation/renew`, body),
+  cancel: (id, requestId) =>
+    api.post(`/orchestrate/checkpoints/${encodeURIComponent(id)}/cancel`, {
+      requestId,
+    }),
   feedback: (sessionId, worked, note = '') =>
     api.post('/repair/feedback', { sessionId, worked, note }),
   sessions: () => api.get('/repair/sessions'),
-  dataset: () => api.get('/repair/dataset')
+  dataset: () => api.get('/repair/dataset'),
 };

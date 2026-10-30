@@ -59,7 +59,14 @@ app.whenReady().then(async () => {
   const fixturePath = path.join(fixtureDir, 'index.html');
   fs.writeFileSync(fixturePath, '<html><body>fixture</body></html>');
 
-  const win = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  const win = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
 
   // The exact same two handlers added to WindowManager.js.
   win.webContents.on('will-navigate', (event, navigationUrl) => {
@@ -80,20 +87,36 @@ app.whenReady().then(async () => {
 
   // ── Check 1: a clicked-link-style navigation to an external URL ──
   openExternalCalls = [];
-  win.webContents.executeJavaScript("location.href = 'https://evil.example.com/steal'").catch(() => {});
+  win.webContents
+    .executeJavaScript("location.href = 'https://evil.example.com/steal'")
+    .catch(() => {});
   await new Promise((r) => setTimeout(r, 800));
   check('a clicked-link-style navigation to an external URL is prevented, not followed', () => {
-    assert.equal(win.webContents.getURL(), loadedUrl, 'window must still show the original app page');
-    assert.deepEqual(openExternalCalls, ['https://evil.example.com/steal'], 'http(s) target must be forwarded to the system browser');
+    assert.equal(
+      win.webContents.getURL(),
+      loadedUrl,
+      'window must still show the original app page',
+    );
+    assert.deepEqual(
+      openExternalCalls,
+      ['https://evil.example.com/steal'],
+      'http(s) target must be forwarded to the system browser',
+    );
   });
 
   // ── Check 2: window.open() never creates a second privileged window ──
   openExternalCalls = [];
   const countBefore = BrowserWindow.getAllWindows().length;
-  await win.webContents.executeJavaScript("window.open('https://evil.example.com/popup')").catch(() => {});
+  await win.webContents
+    .executeJavaScript("window.open('https://evil.example.com/popup')")
+    .catch(() => {});
   await new Promise((r) => setTimeout(r, 300));
   check('window.open() to an external URL never creates a second privileged window', () => {
-    assert.equal(BrowserWindow.getAllWindows().length, countBefore, 'no new BrowserWindow should exist');
+    assert.equal(
+      BrowserWindow.getAllWindows().length,
+      countBefore,
+      'no new BrowserWindow should exist',
+    );
     assert.deepEqual(openExternalCalls, ['https://evil.example.com/popup']);
   });
 
@@ -102,10 +125,21 @@ app.whenReady().then(async () => {
   const fileUrl = 'file:///' + fixturePath.replace(/\\/g, '/');
   win.webContents.executeJavaScript(`location.href = ${JSON.stringify(fileUrl)}`).catch(() => {});
   await new Promise((r) => setTimeout(r, 800));
-  check('a non-http(s) scheme navigation is blocked and never forwarded to the system browser', () => {
-    assert.equal(win.webContents.getURL(), loadedUrl, 'even a same-scheme navigation attempt is blocked — this SPA never legitimately re-navigates');
-    assert.equal(openExternalCalls.length, 0, 'a non-http(s) target must never reach shell.openExternal');
-  });
+  check(
+    'a non-http(s) scheme navigation is blocked and never forwarded to the system browser',
+    () => {
+      assert.equal(
+        win.webContents.getURL(),
+        loadedUrl,
+        'even a same-scheme navigation attempt is blocked — this SPA never legitimately re-navigates',
+      );
+      assert.equal(
+        openExternalCalls.length,
+        0,
+        'a non-http(s) target must never reach shell.openExternal',
+      );
+    },
+  );
 
   shell.openExternal = realOpenExternal;
   win.destroy();

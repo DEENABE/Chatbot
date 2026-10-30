@@ -19,7 +19,12 @@ import * as WindowManager from '../managers/WindowManager.js';
  */
 export function isTrustedSender(event) {
   const mainWindow = WindowManager.getMainWindow();
-  return !!mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents;
+  return (
+    !!mainWindow &&
+    !mainWindow.isDestroyed() &&
+    event.sender === mainWindow.webContents &&
+    event.senderFrame === mainWindow.webContents.mainFrame
+  );
 }
 
 /**
@@ -32,7 +37,13 @@ export function isTrustedSender(event) {
 export function requireTrustedSender(handler) {
   return (event, ...args) => {
     if (!isTrustedSender(event)) {
-      return { success: false, error: { code: 'UNTRUSTED_SENDER', message: 'This request did not originate from the application window.' } };
+      return {
+        success: false,
+        error: {
+          code: 'UNTRUSTED_SENDER',
+          message: 'This request did not originate from the application window.',
+        },
+      };
     }
     return handler(event, ...args);
   };
