@@ -12,7 +12,7 @@ function walk(directory) {
     if (item.isDirectory()) walk(full);
     else if (
       /\.test\.(?:js|mjs|cjs)$/.test(item.name) &&
-      !['ipcTrust.test.mjs', 'navigationGuard.test.mjs'].includes(item.name)
+      !['ipcTrust.test.mjs', 'navigationGuard.test.mjs', 'windowModes.test.mjs'].includes(item.name)
     )
       files.push(full);
   }

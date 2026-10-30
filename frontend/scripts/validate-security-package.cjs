@@ -171,10 +171,12 @@ function validateSecurityPackage(output, frontend = path.resolve(__dirname, '..'
     'tools/apps/SaveAsDialog.js',
     'tools/apps/Phase2ApplicationPolicy.js',
     'tools/apps/SettingsCatalog.js',
+    'tools/apps/AppIntentCatalog.js',
   );
   backendFiles.push(
     'src/orchestrator/AstraTask.js',
     'src/orchestrator/AstraRunner.js',
+    'src/orchestrator/AppIntents.js',
     'src/orchestrator/ComputerTaskPolicy.js',
     'src/routes/chat.js',
   );

@@ -9,7 +9,7 @@ test('coding manifest has fixed unique tools, complete schemas, risks and bounde
     assert.equal(tool.inputSchema.additionalProperties, false);
     assert.ok(tool.outputSchema.required.includes('success'));
     assert.deepEqual(tool.allowedScopes, ['coding']);
-    assert.ok(tool.timeout > 0 && tool.timeout <= 300000);
+    assert.ok(tool.timeout > 0 && tool.timeout <= 900000);
   }
   assert.throws(() => validateCall({ tool: 'process.startProcess', params: {} }), {
     code: 'TOOL_DENIED',

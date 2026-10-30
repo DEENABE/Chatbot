@@ -2,6 +2,10 @@ import React, { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import DataTable from './DataTable.jsx';
 import { splitMarkdownTables } from './markdownTables.js';
+import FileAgentLink from './FileAgentLink.jsx';
+
+// File-agent downloads and folder-plan buttons arrive as #chanakya-… links.
+const MARKDOWN_COMPONENTS = { a: FileAgentLink };
 
 /**
  * Assistant message body: normal markdown for text, a real data table for any
@@ -18,7 +22,9 @@ export default function RichMessage({ content, accent }) {
           );
         }
         return segment.text.trim() ? (
-          <ReactMarkdown key={index}>{segment.text}</ReactMarkdown>
+          <ReactMarkdown key={index} components={MARKDOWN_COMPONENTS}>
+            {segment.text}
+          </ReactMarkdown>
         ) : null;
       })}
     </>

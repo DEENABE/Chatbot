@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { appLaunchTask } from './AppLaunchTask.js';
+import { expandIntents } from './AppIntents.js';
 
 // This module is also loaded by the renderer (computerTask() -> astraTask()), where it only classifies a request. So it has
 // no Node-only named imports and no model client: the backend supplies `complete` (see AstraRunner), and everything that
@@ -159,6 +160,21 @@ export function extractSavePath(message, app = '', { now = new Date(), home, exi
     text.match(
       /["“'‘]?([\w\-()]{1,80}\.(?:txt|md|csv|json|html?|log|py|js|ts|ini|xml|docx?|rtf|xlsx?|pptx?|png|jpe?g|bmp|gif))["”'’]?(?=[\s,;!]|\.?\s*$)/i,
     )?.[1];
+  // "file name sample", "named sample", "save as sample", "sample nu save": a name without an
+  // extension used to be dropped, so the save went to a generated chanakya-<date> name.
+  let fileName = named;
+  if (!fileName) {
+    const NOT_A_NAME =
+      /^(?:it|this|that|the|a|an|file|text|document|in|on|to|at|into|la|le|il|nu|drive|folder|location|path|here|there|same|new|desktop|documents?|downloads?|pictures|music|videos|[A-Za-z]|and|then|save|saved|pannu|panni)$/i;
+    const bare = [
+      /\b(?:file\s*-?\s*name|filename|named?|called|peyar(?:il)?)\s*(?:is\s+|as\s+|:\s*|=\s*)?["“'‘]?([\w\-()]{1,80})["”'’]?/i,
+      /\bsave\s+(?:it\s+|this\s+|the\s+file\s+)?as\s+["“'‘]?([\w\-()]{1,80})["”'’]?/i,
+      /["“'‘]?([\w\-()]{1,80})["”'’]?\s+(?:nu|endru)\s+(?:save|peyar)/i,
+    ]
+      .map((re) => text.match(re)?.[1])
+      .find((name) => name && !NOT_A_NAME.test(name));
+    if (bare) fileName = `${bare}${defaultExtension(app)}`;
+  }
   let base = null,
     literal = null;
   if (m) {
@@ -190,8 +206,8 @@ export function extractSavePath(message, app = '', { now = new Date(), home, exi
   if (!literal || !win32.extname(leaf) || base.endsWith('\\') || /^[A-Za-z]:\\?$/.test(base)) {
     // A folder (or a drive root): add the requested file name, or a dated default one.
     const stamp = now.toISOString().slice(0, 16).replace(/[-:]/g, '').replace('T', '-');
-    const file = named
-      ? win32.basename(named.replace(/\//g, '\\'))
+    const file = fileName
+      ? win32.basename(fileName.replace(/\//g, '\\'))
       : `chanakya-${stamp}${defaultExtension(app)}`;
     return { path: win32.join(base, file), literal };
   }
@@ -305,7 +321,7 @@ function plainAppLaunch(message) {
     /^(?:wi-?fi|wireless|bluetooth|network|internet|ethernet|vpn|proxy|airplane mode|flight mode|hotspot|mobile hotspot|display|screen|resolution|brightness|night light|sound|audio|volume|speaker|microphone|notifications|power|battery|sleep|storage|disk space|storage sense|multitasking|snap|about|pc info|system info|device specs|devices|privacy|location|personalization|taskbar|firewall|updates?|system|windows|computer|pc|printers?|keyboard|mouse|touchpad)$/i.test(
       app,
     ) ||
-    /\b(?:and|then|with|using|in|into|to|as|type|write|paste|enter|save|install|download|play|click|press|select|scroll|open|launch|start|run|pannu|panni|seiyavum)\b/i.test(
+    /\b(?:and|then|with|using|in|into|to|as|type|write|paste|enter|save|install|download|play|click|press|select|scroll|open|launch|start|run|pannu|panni|seiyavum|schedule|book|join|call|message|chat|send|compose|reply|create|add|search|find|record|share|post|meeting|meet|la|le|kulla)\b/i.test(
       app,
     ) ||
     /(?:^|\s)(?:[^\s.]+\.)+[a-z]{2,}(?:\s|$)/i.test(app)
@@ -338,6 +354,37 @@ export function astraTask(message, { now, home, exists } = {}) {
       rules: true,
       plainOpen: true,
     };
+  // Tanglish "teams la meeting schedule pannu", "whatsapp la amma ku hi anuppu": app + goal, installed or not.
+  const local = raw.match(
+    /^(?:(?:please|pls)\s+)?([\p{L}\p{N}][\p{L}\p{N} +.#-]{1,40}?)\s+(?:la|le|il|kulla|lla)\s+(.{3,400})$/iu,
+  );
+  if (
+    local &&
+    !SAVE.test(raw) &&
+    /\b(?:pann\w*|podu|vai|anuppu|seiy\w*|create|schedule|send|book|join|call|start|play|search|open)\b/i.test(
+      local[2],
+    ) &&
+    /\b(?:schedule|meeting|meet|call|message|msg|send|anuppu|chat|create|new|book|join|play|search|post)\b/i.test(
+      local[2],
+    )
+  ) {
+    const app = clean(local[1].replace(/\b(?:app|application)\b/gi, ' '));
+    if (
+      app.length >= 2 &&
+      !STOP_APPS.test(app) &&
+      !app.split(' ').some((w) => VERB.test(w) || STOP_APPS.test(w)) &&
+      !/\b(?:settings?|desktop|explorer|folder|file|browser|chrome|edge|firefox|google|youtube|website|windows)\b/i.test(
+        app,
+      )
+    )
+      return {
+        app,
+        steps: [{ op: 'goal', goal: clean(local[2]) }],
+        install: true,
+        task: raw,
+        rules: true,
+      };
+  }
   const saveTarget = SAVE.test(raw) ? extractSavePath(raw, '', { now, home, exists }) : null;
   const wantsInstall = INSTALL.test(raw);
   const typed = extractText(raw);
@@ -447,14 +494,12 @@ export function validatePlan(plan, request, { fallback } = {}) {
   return { app, steps, install: true, task: request };
 }
 
-/** Rules first; the local model only for requests the rules could not fully read. */
-export async function planAstraTask({
-  task,
-  admission = astraTask(task),
-  model,
-  signal,
-  complete,
-} = {}) {
+/** Rules first; the local model only for requests the rules could not fully read. A goal that matches a documented app
+ * deep link (AppIntents.js) becomes an intent step, so the app opens straight at the pre-filled form. */
+export async function planAstraTask(options = {}) {
+  return expandIntents(await planAstraSteps(options), { now: options.now || new Date() });
+}
+async function planAstraSteps({ task, admission = astraTask(task), model, signal, complete } = {}) {
   if (!admission) return { error: 'This is not a multi-step application task.' };
   if (admission.rules)
     return {

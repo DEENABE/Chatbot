@@ -55,11 +55,15 @@ npm run dev
 
 Open `http://localhost:5173`. The local API listens only on `127.0.0.1:3001` and Vite proxies `/api` during development.
 
+## Localhost with desktop tools
+
+`npm run dev` now also starts a loopback tool host (`npm run dev:plain` is the old UI + API only mode), so the Windows Agent, app control and PowerShell/file/registry tools work from `http://localhost:5173`. Windows Repair execution, protected installs and Electron window features still need the installed app. See `docs/LOCALHOST_TOOL_MODE.md`.
+
 ## Coding workspace
 
 Open **Code** in the sidebar or use the **Chat / Code** switch in the header. Connect an existing project folder, choose an installed model with tool support, and authorize workspace changes. Describe a task in the conversation; follow-up messages retain the previous task context. The adjacent panel provides a file explorer, source code, recorded diffs, action results, validation results and checkpoints. Narrow windows switch between the conversation and code using the **Chat / Code** tabs.
 
-Failed tasks display the error and a **Retry task** action. Configuration changes and checkpoint restores retain their separate approvals. Project command execution still requires a verified confinement provider; use your terminal for dependency installation, builds and tests when the runtime reports that execution is unavailable. A completed file edit does not claim that a build or test passed.
+Failed tasks display the error and a **Retry task** action. Configuration changes and checkpoint restores retain their separate approvals. Open **Run & packages** to enable project commands and optional package downloads for the selected workspace. Each run/install asks for one-use approval, shows actual output and exit status, and offers Stop and localhost preview controls. Python setup uses WinGet; npm ships with the EXE. Python packages install into the project. These commands run with your Windows account access, without an OS sandbox. A completed file edit does not claim that a build or test passed. See [coding runtime details](docs/CODING_RUNTIME_UPGRADE.md).
 
 ## Production build
 

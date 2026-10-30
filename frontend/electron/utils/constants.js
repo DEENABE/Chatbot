@@ -4,6 +4,9 @@
 export const BUBBLE_SIZE = 80;
 export const CHAT_WIDTH = 420;
 export const CHAT_HEIGHT = 680;
+// Smallest windowed (compact) size; the renderer's resize handles use the same floor.
+export const MIN_CHAT_WIDTH = 380;
+export const MIN_CHAT_HEIGHT = 500;
 // Hover mode has to fit, bottom to top: the bubble (80), five quick actions
 // (5x40 + gaps = 232), and the speech bubble Chanakya greets you with (~80).
 // Oversizing this makes the invisible window area trigger stray mouse-leave

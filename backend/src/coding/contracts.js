@@ -193,6 +193,83 @@ const specs = [
     command,
   ],
   [
+    'runtime.inspect',
+    'READ',
+    'Inspect installed Node/Python/npm and the Rust, Go, .NET, Java, C/C++, SQL and embedded toolchains, project execution permissions and owned running apps.',
+    object(),
+  ],
+  [
+    'runtime.install',
+    'DANGEROUS',
+    'With download permission and exact approval, install a language runtime or build tool (Python, Rust, Go, .NET, JDK, Maven, Gradle, CMake, Ninja, GCC, Conan, SQLite, Arm GNU) through Windows Package Manager or a checksum-verified download. The app never elevates or bypasses security checks.',
+    object(
+      {
+        runtime: {
+          type: 'string',
+          enum: [
+            'python',
+            'rust',
+            'go',
+            'dotnet',
+            'java',
+            'maven',
+            'gradle',
+            'cmake',
+            'ninja',
+            'mingw',
+            'conan',
+            'sqlite',
+            'arm',
+          ],
+        },
+      },
+      ['runtime'],
+    ),
+  ],
+  [
+    'preview.start',
+    'DANGEROUS',
+    'Preview an existing HTML file and guarded relative assets on localhost. No package installation or npm script is required. Omit port to select a free port.',
+    object({ path: str(), port: { type: 'integer', minimum: 1024, maximum: 65535 } }, ['path']),
+  ],
+  [
+    'deps.install',
+    'DANGEROUS',
+    'Install missing named packages into this project (npm, PyPI, crates.io, Go modules, NuGet, Maven, Gradle, Conan, vcpkg); runs without a prompt once the project has package downloads enabled. Omit packages to restore from package.json, requirements.txt, Cargo.toml, go.mod, the .csproj, pom.xml, build.gradle, conanfile or vcpkg.json (Maven, Gradle and Conan take no package names: edit their files). npm install scripts are disabled; pip uses binary wheels; dotnet adds one package per call; builds and runs are offline, so install first.',
+    object(
+      {
+        manager: {
+          type: 'string',
+          enum: ['npm', 'pip', 'cargo', 'go', 'dotnet', 'maven', 'gradle', 'conan', 'vcpkg'],
+        },
+        packages: { type: 'array', items: str(200), maxItems: 60 },
+        cwd: str(),
+      },
+      ['manager'],
+    ),
+  ],
+  [
+    'exec.start',
+    'DANGEROUS',
+    'Start a project app/server with approval; return an owned jobId. Use for GUI apps and long-running servers, not tests. Optional port produces a localhost preview link; bind the server to 127.0.0.1.',
+    object({ ...command.properties, port: { type: 'integer', minimum: 1024, maximum: 65535 } }, [
+      'executable',
+      'args',
+    ]),
+  ],
+  [
+    'exec.output',
+    'READ',
+    'Read actual output, exit code and running status of a job owned by this workspace.',
+    object({ jobId: str(100) }, ['jobId']),
+  ],
+  [
+    'exec.stop',
+    'SAFE_WRITE',
+    'Stop only an owned project app/server by its returned jobId; never accepts a system PID.',
+    object({ jobId: str(100) }, ['jobId']),
+  ],
+  [
     'checkpoint.create',
     'SAFE_WRITE',
     'Create a bounded project file snapshot in protected application storage.',
@@ -222,7 +299,9 @@ export const CODING_TOOLS = Object.freeze(
           error: { type: 'object' },
         },
       },
-      timeout: ['exec.run', 'tests.run'].includes(name) ? 300000 : 30000,
+      timeout: ['exec.run', 'tests.run', 'deps.install', 'runtime.install'].includes(name)
+        ? 900000
+        : 30000,
       allowedScopes: ['coding'],
     }),
   ),

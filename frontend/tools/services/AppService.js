@@ -14,6 +14,8 @@ import { validateTarget } from '../apps/AppTargetPolicy.js';
 import { checkCancellation, executionContext } from '../ExecutionContext.js';
 import { AppPermissionStore, PERMISSION_LEVELS, levelSummary } from '../apps/AppPermissionStore.js';
 import { isThirdPartyApp, isCatalogApp, catalogEntry, describeApp } from '../apps/AppCatalog.js';
+import { APP_INTENTS, INTENT_IDS, buildIntentUri } from '../apps/AppIntentCatalog.js';
+import { spawn as spawnIntent } from 'node:child_process';
 const publicApp = (a) => ({
   id: a.id,
   name: a.name,
@@ -87,6 +89,14 @@ export class AppService extends BaseToolService {
       openApp: action(
         (p) => this.openApp(p),
         'Open a discovered installed application by name; never supply paths.',
+      ),
+      openIntent: action(
+        (p) => this.openIntent(p),
+        'Open an installed application directly at a task screen through a fixed, validated deep link (for example a pre-filled Teams meeting form). Only opens the form; sending or saving still needs a confirmed UI action.',
+        {
+          intentId: { type: 'enum', required: true, values: [...INTENT_IDS] },
+          slots: { type: 'object', required: true },
+        },
       ),
       listApps: action(
         (p) => this.listApps(p),
@@ -626,6 +636,93 @@ export class AppService extends BaseToolService {
         message: error.message,
       };
     }
+  }
+  /** Open a catalogued deep link (AppIntentCatalog). The URI is built here from validated slots, never supplied. */
+  async openIntent({ intentId, slots }) {
+    let built;
+    try {
+      built = buildIntentUri(intentId, slots);
+    } catch (error) {
+      return {
+        success: false,
+        status: error.code || 'INTENT_INVALID',
+        code: error.code || 'INTENT_INVALID',
+        message: error.message,
+      };
+    }
+    const { uri, intent } = built;
+    const resolved = await this.resolve(intent.appQuery);
+    if (!resolved.success)
+      return { ...resolved, success: false, status: resolved.status || 'APP_NOT_INSTALLED' };
+    const app = resolved.app;
+    const denied = this.permissionFailure(app);
+    if (denied) return denied;
+    if (this.permissions.levelFor(app) === 'read')
+      return {
+        success: false,
+        status: 'APP_PERMISSION_DENIED',
+        code: 'APP_PERMISSION_DENIED',
+        permission: levelSummary('read'),
+        message: `${app.name} is set to “read” in App Permissions; opening a pre-filled form needs “interact”.`,
+      };
+    // The scheme must be registered by the installed application (HKCR\<scheme> with "URL Protocol").
+    const scheme = intent.scheme.replace(/[^a-z0-9-]/gi, '');
+    const registered = await this.processService
+      ._runPS(
+        `$k='Registry::HKEY_CLASSES_ROOT\\${scheme}';$r=(Test-Path $k) -and ($null -ne (Get-Item $k).GetValue('URL Protocol'));@{registered=[bool]$r}|ConvertTo-Json -Compress`,
+        8000,
+      )
+      .catch(() => null);
+    if (registered?.registered !== true)
+      return {
+        success: false,
+        status: 'INTENT_HANDLER_MISSING',
+        code: 'INTENT_HANDLER_MISSING',
+        message: `${app.name} has not registered its ${scheme}: links on this PC. Open ${app.name} once (and sign in), then try again.`,
+      };
+    checkCancellation();
+    const explorer = path.win32.join(process.env.SystemRoot || 'C:\\Windows', 'explorer.exe');
+    const child = spawnIntent(explorer, [uri], {
+      shell: false,
+      windowsHide: false,
+      detached: true,
+      stdio: 'ignore',
+    });
+    await new Promise((resolve, reject) => {
+      child.once('spawn', resolve);
+      child.once('error', reject);
+    });
+    child.unref();
+    // Readiness: the app's process has a window. The form itself is verified later by observing the UI.
+    const names = String(intent.processHint.source)
+      .replace(/^\^\(|\)\$$/g, '')
+      .split('|')
+      .filter((n) => /^[A-Za-z0-9_-]+$/.test(n))
+      .map((n) => `'${n}'`)
+      .join(',');
+    const evidence = await this.processService
+      ._runPS(
+        `$deadline=[DateTime]::UtcNow.AddSeconds(20);do{$p=Get-Process -Name ${names} -ErrorAction SilentlyContinue|Where-Object {$_.MainWindowHandle -ne 0}|Select-Object -First 1 Id,MainWindowTitle;if($p){$p|ConvertTo-Json -Compress;break};Start-Sleep -Milliseconds 400}while([DateTime]::UtcNow -lt $deadline)`,
+        25000,
+      )
+      .catch(() => null);
+    const ready = Number.isInteger(evidence?.Id) && evidence.Id > 0;
+    return {
+      success: ready,
+      status: ready ? 'APP_INTENT_OPENED' : 'INTENT_NOT_VERIFIED',
+      intentId,
+      app: publicApp(app),
+      processId: evidence?.Id,
+      readiness: {
+        status: ready ? 'ready' : 'not_ready',
+        criterion: 'intent_process_window',
+        pid: evidence?.Id,
+        observedAt: new Date().toISOString(),
+      },
+      message: ready
+        ? `${app.name}: ${intent.description.replace(/\.\s*Does not send anything\.$/, '')}.`
+        : `${app.name} did not show a window after the link was opened.`,
+    };
   }
   async openApp({ query }, { inspect = true } = {}) {
     let result = await this.resolve(query);

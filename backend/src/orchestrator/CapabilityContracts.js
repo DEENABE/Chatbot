@@ -5,6 +5,7 @@ import { validSoftwareQuery } from './SoftwareTask.js';
 import { verifiedSoftwareInstall, verifiedSoftwareDownload } from './SoftwareRunner.js';
 
 import { validateRepair, verified } from './WindowsRepairContract.js';
+import { INTENT_IDS } from './AppIntents.js';
 
 const string = (v) => typeof v === 'string' && v.trim().length > 0 && v.length <= 4096;
 
@@ -339,6 +340,23 @@ export const capabilitySchemas = {
 
   'app.openApp': { query: (v) => string(v) && v.length <= 200 },
 
+  // Slot values are validated again (strictly) by the desktop app's AppIntentCatalog before any link is built.
+  'app.openIntent': {
+    intentId: oneOf(INTENT_IDS),
+    slots: (v) =>
+      !!v &&
+      typeof v === 'object' &&
+      !Array.isArray(v) &&
+      Object.keys(v).length <= 8 &&
+      Object.values(v).every(
+        (x) =>
+          (typeof x === 'string' && x.length <= 1000) ||
+          (Array.isArray(x) &&
+            x.length <= 30 &&
+            x.every((y) => typeof y === 'string' && y.length <= 254)),
+      ),
+  },
+
   'systemSettings.list': {},
 
   'systemSettings.get': { id: oneOf(SETTING_IDS) },
@@ -569,9 +587,11 @@ export function validateCapability(tool, action, params) {
                     ? ['id']
                     : key === 'process.startProcess'
                       ? ['command']
-                      : key === 'network.ping'
-                        ? ['host']
-                        : [])
+                      : key === 'app.openIntent'
+                        ? ['intentId', 'slots']
+                        : key === 'network.ping'
+                          ? ['host']
+                          : [])
     if (!Object.hasOwn(params, name)) return `Missing required parameter: ${name}`;
 
   return null;
@@ -750,6 +770,13 @@ export const verificationPredicates = {
     string(d.target.path || d.target.value),
 
   'app.openWithTarget': (d, p) => targetEvidence(d, p.target, p.app),
+
+  'app.openIntent': (d, p) =>
+    d.success === true &&
+    d.status === 'APP_INTENT_OPENED' &&
+    d.intentId === p.intentId &&
+    integer(1, Number.MAX_SAFE_INTEGER)(d.processId) &&
+    d.readiness?.status === 'ready',
 
   'app.openApp': (d) =>
     d.success === true &&

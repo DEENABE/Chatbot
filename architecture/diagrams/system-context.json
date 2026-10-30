@@ -1,0 +1,23 @@
+{
+  "name": "System Context",
+  "level": 1,
+  "meta": { "direction": "TB" },
+  "nodes": [
+    { "id": "desktop-user", "label": "Desktop User", "meta": { "type": "person" } },
+    {
+      "id": "chanakya-ai",
+      "label": "Chanakya AI Desktop Assistant",
+      "subDiagramId": "containers",
+      "meta": { "type": "system", "technology": "electron" }
+    },
+    { "id": "ollama", "label": "Ollama (local LLM runtime)", "meta": { "type": "external", "technology": "ollama" } },
+    { "id": "windows-os", "label": "Windows OS & Installed Apps", "meta": { "type": "external", "technology": "windows" } },
+    { "id": "software-sources", "label": "Software Sources (winget / Microsoft Store)", "meta": { "type": "external" } }
+  ],
+  "edges": [
+    { "id": "e-desktop-user-chanakya-ai", "source": "desktop-user", "target": "chanakya-ai", "label": "chats, uploads docs, codes, approves actions", "meta": { "type": "calls" } },
+    { "id": "e-chanakya-ai-ollama", "source": "chanakya-ai", "target": "ollama", "label": "HTTP chat / embed / tags (127.0.0.1:11434)", "meta": { "type": "calls" } },
+    { "id": "e-chanakya-ai-windows-os", "source": "chanakya-ai", "target": "windows-os", "label": "PowerShell, UI Automation, services", "meta": { "type": "calls" } },
+    { "id": "e-chanakya-ai-software-sources", "source": "chanakya-ai", "target": "software-sources", "label": "discovers & installs software (user-approved)", "meta": { "type": "calls" } }
+  ]
+}

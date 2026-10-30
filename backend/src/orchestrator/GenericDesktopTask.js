@@ -48,7 +48,7 @@ export function genericDesktopTask(message) {
   // Keep the app name separate from the goal before registry resolution.
   if (!m) {
     m = text.match(
-      /^(?:(?:can|could|would) you\s+)?(?:please\s+)?(?:open|launch|start|run)\s+(?:my\s+|the\s+)?(.+?)\s+((?:add|calculate|type|write|enter|paste|play|pause|search|find|click|select|press|scroll|save|draw|create)\s+.+)$/i,
+      /^(?:(?:can|could|would) you\s+)?(?:please\s+)?(?:open|launch|start|run)\s+(?:my\s+|the\s+)?(.+?)\s+((?:add|calculate|type|write|enter|paste|play|pause|search|find|click|select|press|scroll|save|draw|create|schedule|book|join|call|message|chat|send|compose|reply|forward|new|set|record|share|post|upload|edit|delete|rename|make)\s+.+)$/i,
     );
     implicitGoal = !!m;
   }

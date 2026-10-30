@@ -33,6 +33,10 @@ import { nextDesktopDecision } from '../orchestrator/GenericAppPlanner.js';
 import { nextAstraDecision } from '../orchestrator/AstraRunner.js';
 import { planKey } from '../orchestrator/AstraTask.js';
 import { nextSoftwareDecision } from '../orchestrator/SoftwareRunner.js';
+import { nextExplorerDecision } from '../orchestrator/ExplorerTask.js';
+import { detectFileTask, runFileAgent } from '../fileagent/index.js';
+import { fileAgentDeps } from '../fileagent/runtime.js';
+import { listTables } from '../docqa/structuredStore.js';
 
 export const chatRouter = Router();
 
@@ -240,7 +244,10 @@ chatRouter.post('/', requireAuth, async (request, response) => {
     !/\b(?:in|from|about|according to)\s+(?:the\s+)?(?:attached|uploaded|workspace|document|file|pdf|report)\b/i.test(
       originalTask,
     );
-  const computerRequest = hasAttachments && !explicitAction ? null : computerTask(originalTask);
+  // Folder organize/rename requests belong to the file agent (plan + Apply), not desktop automation.
+  const organizeRequest = detectFileTask(originalTask, {})?.kind === 'organize';
+  const computerRequest =
+    organizeRequest || (hasAttachments && !explicitAction) ? null : computerTask(originalTask);
   const evidence = currentToolEvidence(history);
 
   response.status(200);
@@ -384,6 +391,48 @@ chatRouter.post('/', requireAuth, async (request, response) => {
                 success: decision.success === true,
                 waiting: decision.waiting === true,
               },
+            });
+            return;
+          }
+          if (computerRequest?.explorer) {
+            const decision = hasTools
+              ? nextExplorerDecision({ admission: computerRequest.explorer, evidence })
+              : {
+                  success: false,
+                  message: 'File Explorer tools are unavailable in this running desktop app.',
+                };
+            if (decision.call) {
+              const name = `${decision.call.tool}_${decision.call.action}`;
+              if (tools.some((tool) => tool.function?.name === name)) {
+                const toolCall = {
+                  id: randomUUID(),
+                  type: 'function',
+                  function: { name, arguments: decision.call.params },
+                };
+                send({ type: 'tool_call', toolCall });
+                send({
+                  type: 'done',
+                  conversationId,
+                  hasToolCall: true,
+                  toolCalls: [toolCall],
+                  message: null,
+                });
+                return;
+              }
+              decision.message = `The ${name} capability is unavailable. Restart the updated desktop app.`;
+            }
+            const answer = decision.message || 'The File Explorer request could not be completed.';
+            const saved = await appendHistory(
+              { conversationId, role: 'assistant', content: answer },
+              userId,
+            );
+            send({ type: 'token', text: answer });
+            send({
+              type: 'done',
+              conversationId,
+              hasToolCall: false,
+              toolCalls: [],
+              message: saved,
             });
             return;
           }
@@ -594,6 +643,47 @@ chatRouter.post('/', requireAuth, async (request, response) => {
               userId,
             );
             send({ type: 'token', text: answer });
+            send({
+              type: 'done',
+              conversationId,
+              hasToolCall: false,
+              toolCalls: [],
+              message: saved,
+            });
+            return;
+          }
+          // File agent: summarize / convert / extract / table jobs and PDF, Word, Excel output for
+          // attached files, plus organize/rename for a folder. Ordinary questions about attachments
+          // fall through to docqa retrieval below.
+          const fileTask = computerRequest
+            ? null
+            : detectFileTask(trimmedMessage, {
+                hasTextAttachments,
+                hasTables: hasTextAttachments && listTables(userId, textDocumentIds).length > 0,
+                attachmentsOnly:
+                  !String(message || '').trim() &&
+                  attachmentIds.length > 0 &&
+                  !imageAttachmentIds.length,
+              });
+          if (fileTask) {
+            console.log(
+              `[chat] file agent: ${fileTask.kind}${fileTask.format ? ` → ${fileTask.format}` : ''}`,
+            );
+            const fileContent = await runFileAgent({
+              task: fileTask,
+              message: trimmedMessage,
+              userId,
+              documentIds: textDocumentIds,
+              workspaceId,
+              signal,
+              emit: (text) => send({ type: 'token', text }),
+              status: (text) => send({ type: 'status', text }),
+              deps: fileAgentDeps({ routing, signal, keepAlive: '5m' }),
+            });
+            const saved = await appendHistory(
+              { conversationId, role: 'assistant', content: fileContent },
+              userId,
+            );
             send({
               type: 'done',
               conversationId,

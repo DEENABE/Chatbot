@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { percentValue, executionModeLabel } from '../utils/metricsDisplay.js';
-import { ChevronDown, Circle, Settings, Minimize2, Square, X, BarChart2 } from 'lucide-react';
+import { ChevronDown, Circle, BarChart2 } from 'lucide-react';
+import WindowControls from './WindowControls.jsx';
 import { useAppStore } from '../stores/useAppStore.js';
 import { useNavStore } from '../stores/useNavStore.js';
 import { presets } from '../animations/presets.js';
@@ -14,8 +15,7 @@ export default function Topbar({ section = 'Chat' }) {
   const fetchModels = useAppStore((state) => state.fetchModels);
   const isModelsLoading = useAppStore((state) => state.isModelsLoading);
 
-  const toggleExpand = useAppStore((state) => state.toggleExpand);
-  const collapseToBubble = useAppStore((state) => state.collapseToBubble);
+  const windowMode = useAppStore((state) => state.windowMode);
   const selectedAgentProfile = useAppStore((state) => state.selectedAgentProfile);
   const selectAgentProfile = useAppStore((state) => state.selectAgentProfile);
 
@@ -36,18 +36,6 @@ export default function Topbar({ section = 'Chat' }) {
     return () => clearInterval(interval);
   }, [fetchModels, fetchMetrics]);
 
-  // Both actions shrink the window back to the bubble in the main process, so
-  // mirror that in the store to keep the rendered view in sync on restore.
-  const handleMinimize = () => {
-    if (window.electronAPI) window.electronAPI.minimize();
-    collapseToBubble();
-  };
-
-  const handleClose = () => {
-    if (window.electronAPI) window.electronAPI.close();
-    collapseToBubble();
-  };
-
   const handleModelChange = (e) => {
     selectModel(e.target.value);
   };
@@ -60,7 +48,7 @@ export default function Topbar({ section = 'Chat' }) {
   const handleHeaderMouseDown = (e) => {
     // Avoid dragging when clicking select inputs or window buttons
     const target = e.target;
-    if (target.closest('select') || target.closest('button')) return;
+    if (windowMode === 'full' || target.closest('select') || target.closest('button')) return;
 
     if (window.electronAPI) {
       window.electronAPI.dragStart();
@@ -78,7 +66,7 @@ export default function Topbar({ section = 'Chat' }) {
   return (
     <header
       onMouseDown={handleHeaderMouseDown}
-      className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-white/[0.05] px-3 sm:px-4 select-none relative cursor-move"
+      className={`flex h-14 shrink-0 items-center justify-between gap-2 border-b border-white/[0.05] px-3 sm:px-4 select-none relative ${windowMode === 'full' ? '' : 'cursor-move'}`}
       style={{
         background: themeDark ? 'rgba(20, 20, 22, 0.4)' : 'rgba(255, 255, 255, 0.4)',
       }}
@@ -228,31 +216,7 @@ export default function Topbar({ section = 'Chat' }) {
         <hr className="mx-1 hidden h-4 border-l border-white/5 sm:block" />
 
         {/* Window controls */}
-        <div className="flex shrink-0 items-center gap-0.5">
-          <button
-            onClick={handleMinimize}
-            className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-white/5 text-stone-500 hover:text-white transition-colors cursor-pointer"
-            title="Minimize"
-          >
-            <Minimize2 size={13} />
-          </button>
-
-          <button
-            onClick={() => toggleExpand()}
-            className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-white/5 text-stone-500 hover:text-white transition-colors cursor-pointer"
-            title="Collapse to Bubble"
-          >
-            <Square size={11} />
-          </button>
-
-          <button
-            onClick={handleClose}
-            className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-red-500/20 text-stone-500 hover:text-red-400 transition-colors cursor-pointer"
-            title="Hide window"
-          >
-            <X size={14} />
-          </button>
-        </div>
+        <WindowControls />
       </div>
     </header>
   );

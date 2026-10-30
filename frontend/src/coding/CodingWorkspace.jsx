@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import {
-  ArrowUp,
   Check,
   ChevronRight,
   Code2,
@@ -16,16 +15,18 @@ import {
   MessageSquare,
   PanelRightClose,
   PanelRightOpen,
+  Play,
   RefreshCw,
   RotateCcw,
-  Settings2,
+  SquarePen,
   ShieldCheck,
-  Square,
   Terminal,
   X,
 } from 'lucide-react';
 import { conversationTurns, taskActivity, taskDiagnostic } from './codingPresentation.js';
 import './coding.css';
+import RuntimePanel from './RuntimePanel.jsx';
+import CodingComposer from './CodingComposer.jsx';
 
 const list = (value) => (Array.isArray(value) ? value : []);
 const asText = (value) => (typeof value === 'string' ? value : JSON.stringify(value, null, 2));
@@ -248,7 +249,11 @@ export default function CodingWorkspace(props) {
     contextChoices,
     loading,
     connected,
+    modelsLoading,
+    modelError,
     writeAuthorized,
+    runtimeInfo,
+    runtimeError,
     busy,
     running,
     error,
@@ -269,6 +274,12 @@ export default function CodingWorkspace(props) {
     onWorkspaceName,
     workspaceRoot,
     onWorkspaceRoot,
+    newProjectName,
+    onNewProjectName,
+    onCreateProject,
+    newProjectParent,
+    onNewProjectParent,
+    onChooseProjectParent,
     onConnect,
     onChooseFolder,
     onRefreshModels,
@@ -281,15 +292,27 @@ export default function CodingWorkspace(props) {
     onToolDecision,
     onCheckpoint,
     onRestore,
+    onRuntimeAction,
+    onExecutionPolicy,
+    onStopProcess,
+    onOpenPreview,
+    attachments = [],
+    onAttachFiles,
+    onRemoveAttachment,
+    accessMode,
+    onAccessMode,
+    onOpenFolder,
+    onOpenPath,
+    onNewTask,
+    runningWorkspaces,
+    usage,
   } = props;
-  const [showSettings, setShowSettings] = useState(false);
   const [panel, setPanel] = useState('code');
   const [mobilePane, setMobilePane] = useState('chat');
   const [showFiles, setShowFiles] = useState(true);
   const [showArtifact, setShowArtifact] = useState(true);
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState('');
-  const bottom = useRef(null);
   const scroll = useRef(null);
   const pinned = useRef(true);
   const allTurns = conversationTurns(turns, snapshot);
@@ -299,8 +322,22 @@ export default function CodingWorkspace(props) {
     ).values(),
   ];
   const selectedChange = changes.find((change) => change.path === selectedFile?.path);
+  const runnablePath =
+    selectedFile?.path ||
+    [...changes]
+      .reverse()
+      .find(
+        (change) =>
+          /\.(?:html?|py|[cm]?js)$/i.test(change.path) &&
+          !/(?:^|\/)(?:test_|tests\/)/i.test(change.path),
+      )?.path;
   const validations = list(snapshot?.validation);
-  const ready = !loading && workspaceId && model && writeAuthorized && connected !== false;
+  const ready =
+    !loading &&
+    workspaceId &&
+    usableModels.some((item) => item.id === model) &&
+    writeAuthorized &&
+    connected === true;
   const locked = busy || running || Boolean(toolApproval);
   const selectFile = (path, diff = false) => {
     onSelectFile(path);
@@ -309,12 +346,21 @@ export default function CodingWorkspace(props) {
     setMobilePane('code');
   };
   useEffect(() => {
-    if (pinned.current) bottom.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    const conversation = scroll.current;
+    if (pinned.current && conversation)
+      conversation.scrollTo({ top: conversation.scrollHeight, behavior: 'smooth' });
   }, [snapshot?.id, snapshot?.events?.length, snapshot?.status, turns.length]);
   useEffect(() => {
     setCopied(false);
     setCopyError('');
   }, [selectedFile?.path, panel]);
+  useEffect(() => {
+    if (toolApproval || approvals.length) {
+      setMobilePane('chat');
+      pinned.current = true;
+      scroll.current?.scrollTo({ top: scroll.current.scrollHeight, behavior: 'smooth' });
+    }
+  }, [toolApproval?.approvalId, approvals[0]?.approvalId]);
 
   return (
     <div className="coding-workbench">
@@ -324,10 +370,11 @@ export default function CodingWorkspace(props) {
             <Code2 size={17} />
           </span>
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-stone-100">Code</h2>
-            <p className="truncate text-[11px] text-stone-500">
-              {active?.name || 'Your local coding workspace'}
-            </p>
+            <h2 className="text-sm font-semibold text-stone-100">Code workspace</h2>
+            <span className="coding-project-name" title={active?.root || ''}>
+              {active?.name || 'No project open'}
+              {active?.root && <span className="coding-project-root">{active.root}</span>}
+            </span>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -338,13 +385,12 @@ export default function CodingWorkspace(props) {
             {connected === false ? 'Ollama offline' : 'Local workspace'}
           </span>
           <button
-            className="coding-icon-button"
-            title="Project settings"
-            aria-label="Project settings"
-            aria-expanded={showSettings}
-            onClick={() => setShowSettings(!showSettings)}
+            className="coding-new-task"
+            title={running ? 'Wait for this task, or switch project from the folder menu' : 'Start a fresh conversation in this project'}
+            disabled={running || busy || !workspaceId}
+            onClick={onNewTask}
           >
-            <Settings2 size={16} />
+            <SquarePen size={14} /> New task
           </button>
           <button
             className="coding-icon-button coding-artifact-toggle"
@@ -356,151 +402,18 @@ export default function CodingWorkspace(props) {
           </button>
         </div>
       </header>
-
-      {(showSettings ||
-        !workspaceId ||
-        !model ||
-        !writeAuthorized ||
-        showConnect ||
-        connected === false) && (
-        <section className="coding-project-settings" aria-label="Project setup">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label>
-              Project workspace
-              <select
-                value={workspaceId}
-                disabled={locked}
-                onChange={(e) => onWorkspace(e.target.value)}
-              >
-                <option value="">Select a project</option>
-                {workspaces.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Installed coding model
-              <select
-                value={model}
-                disabled={busy || running}
-                onChange={(e) => onModel(e.target.value)}
-              >
-                <option value="">Select a model with tool support</option>
-                {usableModels.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.label || item.id}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          {active && <p className="mt-2 break-all text-[11px] text-stone-500">{active.root}</p>}
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button
-              className="coding-button"
-              disabled={locked}
-              onClick={() => onShowConnect(!showConnect)}
-            >
-              <FolderOpen size={13} /> Connect project folder
-            </button>
-            <button
-              className="coding-icon-button"
-              aria-label="Refresh installed models"
-              title="Refresh installed models"
-              disabled={busy}
-              onClick={onRefreshModels}
-            >
-              <RefreshCw size={14} />
-            </button>
-            {workspaceId && (
-              <button
-                className={`coding-button ${!writeAuthorized ? 'coding-button-primary' : ''}`}
-                disabled={busy}
-                onClick={onAuthorize}
-              >
-                <ShieldCheck size={13} />
-                {writeAuthorized ? 'Revoke workspace changes' : 'Authorize workspace changes'}
-              </button>
-            )}
-            <label className="coding-context-label">
-              Context
-              <select
-                aria-label="Maximum coding context tokens"
-                value={contextWindow}
-                disabled={busy || running}
-                onChange={(e) => onContext(Number(e.target.value))}
-              >
-                {contextChoices.map((size) => (
-                  <option key={size} value={size}>
-                    {size.toLocaleString()}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          {loading && (
-            <p className="mt-3 text-xs text-stone-500">Loading local projects and models…</p>
-          )}
-          {connected === false && (
-            <p className="mt-3 text-xs text-amber-300">
-              Start Ollama, then refresh the installed models.
-            </p>
-          )}
-          {connected !== false && !loading && !usableModels.length && (
-            <p className="mt-3 text-xs text-amber-300">
-              No installed model reports tool support. Install a compatible model in Ollama, then
-              refresh.
-            </p>
-          )}
-          {showConnect && (
-            <form className="coding-connect-form" onSubmit={onConnect}>
-              <label>
-                Workspace name
-                <input
-                  value={workspaceName}
-                  required
-                  maxLength={120}
-                  onChange={(e) => onWorkspaceName(e.target.value)}
-                  placeholder="My project"
-                />
-              </label>
-              <label>
-                Existing local project folder
-                <input
-                  value={workspaceRoot}
-                  required
-                  maxLength={4096}
-                  onChange={(e) => onWorkspaceRoot(e.target.value)}
-                  placeholder="D:\\projects\\my-app"
-                />
-              </label>
-              <div className="flex gap-2">
-                {window.workspaceAPI && (
-                  <button
-                    type="button"
-                    className="coding-button"
-                    disabled={busy}
-                    onClick={onChooseFolder}
-                  >
-                    Choose folder
-                  </button>
-                )}
-                <button className="coding-button coding-button-primary" disabled={busy}>
-                  Connect workspace
-                </button>
-              </div>
-            </form>
-          )}
-        </section>
+      {(modelError || (!modelsLoading && connected === true && !usableModels.length)) && (
+        <div className="coding-model-status" role="status">
+          {modelError ||
+            'No local model with tool support was found. Install one in Ollama, then refresh.'}
+        </div>
       )}
       {error && (
         <div className="coding-global-error" role="alert">
           {error}
         </div>
       )}
-      {notice && (
+      {notice && notice !== error && (
         <div className="coding-notice" role="status">
           {notice}
         </div>
@@ -542,16 +455,13 @@ export default function CodingWorkspace(props) {
                 <span className="coding-welcome-icon">
                   <Code2 size={28} strokeWidth={1.4} />
                 </span>
-                <h3>What would you like to build?</h3>
-                <p>
-                  Describe your idea, fix a bug, or improve your project.
-                  <br />
-                  Follow the conversation here. Review the code alongside it.
-                </p>
+                <h3>Let’s build something.</h3>
+                <p>Your idea, working code, one conversation.</p>
                 <div className="coding-suggestions">
                   {[
                     'Explain this project',
                     'Create a React + Vite website',
+                    'Build a Python calculator',
                     'Find and fix a bug',
                   ].map((suggestion) => (
                     <button
@@ -591,73 +501,69 @@ export default function CodingWorkspace(props) {
             {toolApproval && (
               <Approval approval={toolApproval} busy={busy} onDecision={onToolDecision} />
             )}
-            <div ref={bottom} />
           </div>
-          <form
-            className="coding-composer-wrap"
-            onSubmit={(e) => {
-              e.preventDefault();
+          <CodingComposer
+            {...{
+              taskText,
+              onTaskText,
+              ready,
+              locked,
+              busy,
+              running,
+              usableModels,
+              model,
+              onModel,
+              modelsLoading,
+              modelError,
+              connected,
+              onRefreshModels,
+              workspaces,
+              workspaceId,
+              onWorkspace,
+              onOpenFolder,
+              onOpenPath,
+              runningWorkspaces,
+              activeName: active?.name,
+              contextWindow,
+              contextChoices,
+              onContext,
+              usage,
+              newProjectName,
+              onNewProjectName,
+              newProjectParent,
+              onNewProjectParent,
+              onChooseProjectParent,
+              onCreateProject,
+              attachments,
+              onAttachFiles,
+              onRemoveAttachment,
+              accessMode,
+              onAccessMode,
+            }}
+            placeholder={
+              allTurns.length
+                ? 'Ask for a change or continue building…'
+                : 'Describe a task or ask a question'
+            }
+            hint={
+              !workspaceId
+                ? 'Click + to open a project folder.'
+                : !writeAuthorized
+                  ? 'Read only — switch to Manual or Automatic to let the agent work.'
+                  : !usableModels.some((item) => item.id === model)
+                    ? 'Choose a local model.'
+                    : connected !== true
+                      ? 'Start Ollama to continue.'
+                      : accessMode === 'editonly'
+                        ? 'Commands are off: packages cannot be installed or built. Switch to Manual or Auto.'
+                        : ''
+            }
+            onSubmit={() => {
               pinned.current = true;
               onStart();
             }}
-          >
-            <div className="coding-composer">
-              <textarea
-                aria-label="Message the coding agent"
-                value={taskText}
-                onChange={(e) => onTaskText(e.target.value)}
-                maxLength={12000}
-                disabled={running}
-                placeholder={
-                  allTurns.length
-                    ? 'Ask for a change or continue building…'
-                    : 'Describe what you want to build…'
-                }
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                    e.preventDefault();
-                    if (ready && !locked && taskText.trim()) e.currentTarget.form.requestSubmit();
-                  }
-                }}
-              />
-              <div className="coding-composer-toolbar">
-                <span className="min-w-0 truncate text-[11px] text-stone-500">
-                  {model || 'Choose a coding model'}
-                  {ready && ' · Project access enabled'}
-                </span>
-                {running ? (
-                  <button
-                    type="button"
-                    className="coding-send coding-stop"
-                    aria-label="Stop task"
-                    disabled={busy}
-                    onClick={onStop}
-                  >
-                    <Square size={14} fill="currentColor" />
-                  </button>
-                ) : (
-                  <button
-                    type="submit"
-                    className="coding-send"
-                    aria-label="Send coding message"
-                    title={
-                      !ready
-                        ? 'Connect a project, choose a model and authorize changes first'
-                        : 'Send message (Enter)'
-                    }
-                    disabled={locked || !ready || !taskText.trim()}
-                  >
-                    {busy ? <Loader2 size={17} className="animate-spin" /> : <ArrowUp size={19} />}
-                  </button>
-                )}
-              </div>
-            </div>
-            <p className="coding-composer-caption">
-              {!ready
-                ? 'Connect a project and enable workspace changes to begin.'
-                : 'Changes stay on this computer. Review approvals before continuing.'}
-            </p>
-          </form>
+            onStop={onStop}
+          />
         </section>
 
         {showArtifact && (
@@ -744,6 +650,7 @@ export default function CodingWorkspace(props) {
                     ['diff', 'Diff', GitCompareArrows],
                     ['activity', 'Activity', Terminal],
                     ['checks', 'Checks', ShieldCheck],
+                    ['run', 'Run', Play],
                   ].map(([id, label, Icon]) => (
                     <button
                       key={id}
@@ -862,6 +769,21 @@ export default function CodingWorkspace(props) {
                     )}
                   </div>
                 )}
+                {panel === 'run' && (
+                  <RuntimePanel
+                    info={runtimeInfo}
+                    error={runtimeError}
+                    writeAuthorized={writeAuthorized}
+                    busy={busy}
+                    locked={locked}
+                    selectedPath={runnablePath}
+                    entries={entries}
+                    onPolicy={onExecutionPolicy}
+                    onAction={onRuntimeAction}
+                    onStop={onStopProcess}
+                    onOpen={onOpenPreview}
+                  />
+                )}
                 {panel === 'checks' && (
                   <div className="coding-inspector-scroll">
                     <h3 className="mb-3 text-xs font-medium text-stone-200">Validation & tests</h3>
@@ -880,8 +802,8 @@ export default function CodingWorkspace(props) {
                       ))
                     ) : (
                       <p className="text-xs leading-5 text-stone-500">
-                        No build or test command has run. Run project commands in your terminal;
-                        this runtime supports guarded file changes.
+                        No build or test command has run yet. Enable project commands in Run
+                        controls to execute checks here.
                       </p>
                     )}
                     <div className="mt-7 flex items-center justify-between gap-2">

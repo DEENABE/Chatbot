@@ -494,9 +494,16 @@ export class GenericDesktopService extends BaseToolService {
     }
     const element = r.snapshot.elements.find((e) => e.elementId === params.elementId);
     const available = (op) => element?.actions.some((a) => a.operation === op);
+    // Prefer an operation this application's permission level actually allows; fall back to any exposed one so
+    // the grounder still reports the precise permission failure instead of a generic "not available".
+    const permitted = (op) =>
+      element?.actions.some(
+        (a) => a.operation === op && a.allowed !== false && a.permission !== 'CRITICAL',
+      );
+    const CLICK_OPS = ['invoke', 'click', 'toggle', 'select', 'expand'];
     const operation =
       name === 'click'
-        ? ['invoke', 'toggle', 'select', 'expand', 'click'].find(available)
+        ? CLICK_OPS.find(permitted) || CLICK_OPS.find(available)
         : name === 'scroll'
           ? `scroll${params.direction[0].toUpperCase() + params.direction.slice(1)}`
           : name;
@@ -853,11 +860,24 @@ export class GenericDesktopService extends BaseToolService {
           followOwned: true,
           focus: false,
         });
+      // While a modal Save As dialog is being created/closed the owner window is briefly
+      // disabled or re-parented and an observation can report WINDOW_NOT_FOUND /
+      // AMBIGUOUS_WINDOW. That is a moment, not a failure: keep polling until the deadline.
+      const TRANSIENT = new Set(['WINDOW_NOT_FOUND', 'AMBIGUOUS_WINDOW', 'STALE_SNAPSHOT']);
+      const lookSoftly = async () => {
+        try {
+          return await look();
+        } catch (error) {
+          if (TRANSIENT.has(error?.code) || TRANSIENT.has(error?.message)) return null;
+          throw error;
+        }
+      };
       const until = async (test, ms) => {
         const end = Date.now() + ms;
         do {
           checkCancellation();
-          const hit = test(await look());
+          const raw = await lookSoftly();
+          const hit = raw && test(raw);
           if (hit) return hit;
           await sleep(250);
         } while (Date.now() < end);
@@ -901,7 +921,7 @@ export class GenericDesktopService extends BaseToolService {
       const started = Date.now();
 
       // 1. Open Save As: an already open dialog, else Ctrl+Shift+S (Save As in most apps), else Ctrl+S (untitled documents).
-      let dialog = findSaveDialog(await look(), scope);
+      let dialog = findSaveDialog(await lookSoftly(), scope);
       for (const chord of ['ctrl+shift+s', 'ctrl+s']) {
         if (dialog) break;
         const sent = await key(main, chord);
@@ -931,15 +951,15 @@ export class GenericDesktopService extends BaseToolService {
         (raw.controls || []).some(
           (c) => c.locator === dialog.field.locator && c.valueHash === digest(file),
         );
-      let ok = false;
-      if (dialog.field.actions?.includes('setValue'))
-        ok = named(await act(dialog, dialog.field, 'setValue', file));
-      if (!ok) {
+      // Typed keystrokes first, the way a person does it. A UIA SetValue can change the box's
+      // text without the dialog taking it: Windows 11 Notepad then saved under its own
+      // suggestion (the first line, e.g. "deena.txt") in the last folder (Documents).
+      const typeName = async () => {
         if (dialog.field.actions?.includes('focus')) await act(dialog, dialog.field, 'focus');
-        dialog = findSaveDialog(await look(), scope) || dialog;
+        dialog = findSaveDialog(await lookSoftly(), scope) || dialog;
         await key(dialog.raw.windowId, 'ctrl+a');
-        dialog = findSaveDialog(await look(), scope) || dialog;
-        ok = named(
+        dialog = findSaveDialog(await lookSoftly(), scope) || dialog;
+        return named(
           await this.reader({
             action: 'input',
             ...base,
@@ -950,7 +970,15 @@ export class GenericDesktopService extends BaseToolService {
             signature: dialog.field.signature,
           }),
         );
+      };
+      let ok = false;
+      try {
+        ok = await typeName();
+      } catch (error) {
+        if (!dialog.field.actions?.includes('setValue')) throw error;
       }
+      if (!ok && dialog.field.actions?.includes('setValue'))
+        ok = named(await act(dialog, dialog.field, 'setValue', file));
       if (!ok)
         throw failure(
           'SAVE_NAME_NOT_SET',
@@ -958,7 +986,7 @@ export class GenericDesktopService extends BaseToolService {
         );
 
       // 3. Submit. Enter in the focused name field is asynchronous; Invoke on Save can block while a replace prompt is up.
-      dialog = findSaveDialog(await look(), scope) || dialog;
+      dialog = findSaveDialog(await lookSoftly(), scope) || dialog;
       if (dialog.field.focused) await key(dialog.raw.windowId, 'enter');
       else await act(dialog, dialog.button, 'invoke');
 
@@ -976,7 +1004,11 @@ export class GenericDesktopService extends BaseToolService {
       for (const end = Date.now() + 25000; Date.now() < end;) {
         checkCancellation();
         if ((saved = await found())) break;
-        const raw = await look();
+        const raw = await lookSoftly();
+        if (!raw) {
+          await sleep(300);
+          continue;
+        }
         const prompt = findReplacePrompt(raw, { processId: pid });
         if (prompt) {
           const d = { raw };
@@ -996,11 +1028,20 @@ export class GenericDesktopService extends BaseToolService {
         lastMessage = message;
         await sleep(300);
       }
-      if (!saved)
+      if (!saved) {
+        // Say where it went instead, when the app saved it somewhere else.
+        const title = (await lookSoftly())?.windowTitle || '';
+        const shown = title
+          .replace(/^\*/, '')
+          .split(/\s+[-\u2013]\s+/)[0]
+          .trim();
         throw failure(
           'SAVE_NOT_VERIFIED',
-          'The Save As dialog was submitted but the file did not appear on disk.',
+          shown && shown.toLowerCase() !== path.win32.basename(file).toLowerCase()
+            ? `${r.app.name} saved the document as "${shown}" in its own default folder, not as ${file}. Nothing was written to ${path.win32.dirname(file)}.`
+            : 'The Save As dialog was submitted but the file did not appear on disk.',
         );
+      }
       const after = await look().catch(() => null);
       const next =
         after?.success && after.processId === pid ? this.save(after, r.app, r.query) : null;

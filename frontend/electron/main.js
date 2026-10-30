@@ -8,9 +8,14 @@ import * as ClipboardManager from './managers/ClipboardManager.js';
 import * as ShortcutManager from './managers/ShortcutManager.js';
 import { waitForBackend } from './services/BackendHealth.js';
 import { logger } from './utils/logger.js';
+import { applyGpuSafeMode, installCrashGuard } from './utils/crashGuard.js';
 
 // Allows isolated QA profiles without touching the user's installed app data.
 if (process.env.CHANAKYA_USER_DATA_DIR) app.setPath('userData', process.env.CHANAKYA_USER_DATA_DIR);
+
+// Crashes go to <userData>/electron.log; GPU crashes switch on GPU safe mode next launch.
+applyGpuSafeMode(app);
+installCrashGuard(app, { getWindow: () => WindowManager.getMainWindow() });
 
 // IPC registration
 import { registerWindowIPCHandlers } from './ipc/window.ipc.js';

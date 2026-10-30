@@ -14,6 +14,7 @@ import {
 import { useAppStore } from '../stores/useAppStore.js';
 import { presets } from '../animations/presets.js';
 import ChanakyaAvatar from './ChanakyaAvatar.jsx';
+import WindowControls from './WindowControls.jsx';
 
 // Mirrors authService.js's assertValidPassword / username-length rules so a
 // bad value is caught here, with an immediate, specific message, instead of
@@ -151,6 +152,8 @@ export default function LoginScreen() {
       </div>
 
       <div className="noise pointer-events-none absolute inset-0" />
+
+      <WindowControls className="absolute right-3 top-3 z-20" />
 
       {/* Login Card */}
       <motion.div

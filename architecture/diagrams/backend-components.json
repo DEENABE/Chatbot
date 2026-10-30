@@ -1,0 +1,23 @@
+{
+  "name": "Backend API – Components",
+  "level": 3,
+  "meta": { "direction": "TB" },
+  "nodes": [
+    { "id": "http-api", "label": "HTTP Routes & Auth Middleware", "path": "backend/src/routes/", "meta": { "type": "gateway", "technology": "express" } },
+    { "id": "model-routing", "label": "Model Routing & Inference", "meta": { "type": "service", "technology": "ollama" } },
+    { "id": "docqa-rag", "label": "Document Q&A / RAG", "path": "backend/src/docqa/", "meta": { "type": "service" } },
+    { "id": "memory-layer", "label": "Memory Layer", "path": "backend/src/memory/", "meta": { "type": "service" } },
+    { "id": "translation-client", "label": "Translation Service Client", "path": "backend/src/services/translationService.js", "meta": { "type": "service" } },
+    { "id": "agent-runtimes", "label": "Agent Runtimes", "subDiagramId": "backend-agents", "meta": { "type": "service" } }
+  ],
+  "edges": [
+    { "id": "e-http-api-model-routing", "source": "http-api", "target": "model-routing", "label": "routeChatModel / streamChat", "meta": { "type": "calls" } },
+    { "id": "e-http-api-docqa-rag", "source": "http-api", "target": "docqa-rag", "label": "indexDocumentFiles / retrieveDocumentContext", "meta": { "type": "calls" } },
+    { "id": "e-http-api-memory-layer", "source": "http-api", "target": "memory-layer", "label": "memoryRequest / memoryManager", "meta": { "type": "calls" } },
+    { "id": "e-http-api-translation-client", "source": "http-api", "target": "translation-client", "label": "translateText", "meta": { "type": "calls" } },
+    { "id": "e-http-api-agent-runtimes", "source": "http-api", "target": "agent-runtimes", "label": "runRepair / CodingAgentService / runFileAgent", "meta": { "type": "calls" } },
+    { "id": "e-docqa-rag-model-routing", "source": "docqa-rag", "target": "model-routing", "label": "embed + query-planner completions", "meta": { "type": "calls" } },
+    { "id": "e-translation-client-model-routing", "source": "translation-client", "target": "model-routing", "label": "Ollama fallback (resolveGeneralModel)", "meta": { "type": "calls" } },
+    { "id": "e-agent-runtimes-model-routing", "source": "agent-runtimes", "target": "model-routing", "label": "next-step decisions", "meta": { "type": "calls" } }
+  ]
+}

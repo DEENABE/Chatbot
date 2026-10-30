@@ -48,9 +48,12 @@ test('app names and action suffixes stay separate and enter the grounded desktop
     ['open Notepad type hello', 'Notepad'],
     ['launch VLC play the movie', 'VLC'],
   ]) {
+    // App + goal requests run as Astra tasks (open, installing when missing, then the grounded goal loop).
     const action = computerTask(message);
-    assert.equal(action.genericDesktop.query, app, message);
-    const decision = await nextDesktopDecision({ task: message, intent: action.genericDesktop });
+    assert.equal(action.astra.app, app, message);
+    assert.equal(action.astra.steps[0].op, 'goal', message);
+    const intent = { query: app, goal: action.astra.steps[0].goal, task: message };
+    const decision = await nextDesktopDecision({ task: message, intent });
     assert.deepEqual(decision.call, { tool: 'desktop', action: 'open', params: { query: app } });
   }
 });

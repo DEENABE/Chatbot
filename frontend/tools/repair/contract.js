@@ -217,6 +217,24 @@ export function modelPolicy(tool, action, params = {}) {
     ].includes(action)
   )
     return null;
+  if (
+    tool === "explorer" &&
+    [
+      "listDrives",
+      "listApprovedRoots",
+      "resolveLocation",
+      "openLocation",
+      "approveRoot",
+      "revokeRoot",
+      "listDirectory",
+      "getFileMetadata",
+      "calculateFolderSize",
+      "searchFiles",
+      "getDirectoryTree",
+      "readFile",
+    ].includes(action)
+  )
+    return null;
   if (tool === "windowsRepair") return validateRepair(action, params);
   if (tool === "_system" && ["getTools", "cancel"].includes(action))
     return null;

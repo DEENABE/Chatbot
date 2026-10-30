@@ -2,40 +2,92 @@ import { BrowserWindow, screen, shell } from 'electron';
 import path from 'path';
 import { getPreloadPath, isPacked, rootDir } from '../utils/pathHelper.js';
 import { getBackendApiBaseUrl, getApiClientKey } from '../utils/runtimeEndpoint.js';
+import { loadCompactBounds, saveCompactBounds } from '../utils/windowState.js';
 import {
   BUBBLE_SIZE,
   CHAT_WIDTH,
   CHAT_HEIGHT,
+  MIN_CHAT_WIDTH,
+  MIN_CHAT_HEIGHT,
   TOOLBAR_HEIGHT,
   HOVER_WIDTH,
 } from '../utils/constants.js';
 
+export const WINDOW_MODES = ['full', 'compact', 'bubble'];
+
 let mainWindow = null;
-let isExpanded = false;
+// full    — fills the screen's work area (where the app goes after sign-in)
+// compact — the small floating chat window, at the size the user left it
+// bubble  — the 80px avatar in the screen corner
+let windowMode = 'bubble';
+// Which of full/compact the bubble reopens into.
+let lastExpandedMode = 'full';
 let isToolbarMode = false;
 let isDragging = false;
 let dragOffset = { x: 0, y: 0 };
 let preOcrBounds = null;
+// The compact window's last bounds, so switching to full and back (or
+// restarting the app) restores the size the user chose.
+let compactBounds = null;
 // Where the bubble sat before the chat opened, so collapsing puts it back
 // instead of deriving a new spot from the (possibly resized) chat window.
 let preExpandBubblePos = null;
+let onDisplayMetricsChanged = null;
 
 export function getMainWindow() {
   return mainWindow;
 }
 
-export function createWindow() {
-  const { width: screenW, height: screenH } = screen.getPrimaryDisplay().workAreaSize;
+export function getWindowMode() {
+  return windowMode;
+}
 
-  const startX = screenW - BUBBLE_SIZE - 20;
-  const startY = screenH - BUBBLE_SIZE - 20;
+function workArea() {
+  return screen.getPrimaryDisplay().workArea;
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+/** Keep a bounds rectangle inside a display's work area at a usable size. */
+function fitToArea(bounds, area) {
+  const width = clamp(bounds.width, Math.min(MIN_CHAT_WIDTH, area.width), area.width);
+  const height = clamp(bounds.height, Math.min(MIN_CHAT_HEIGHT, area.height), area.height);
+  return {
+    x: clamp(bounds.x, area.x, area.x + area.width - width),
+    y: clamp(bounds.y, area.y, area.y + area.height - height),
+    width,
+    height,
+  };
+}
+
+function notifyMode() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('window-mode-changed', windowMode);
+  }
+}
+
+function rememberCompactBounds() {
+  if (!mainWindow || windowMode !== 'compact') return;
+  compactBounds = mainWindow.getBounds();
+  saveCompactBounds(compactBounds);
+}
+
+export function createWindow() {
+  compactBounds = loadCompactBounds();
+  const area = workArea();
 
   mainWindow = new BrowserWindow({
+    // The app launches as the corner bubble; the renderer opens the sign-in
+    // window from it and goes full screen once the user is signed in.
+    x: area.x + area.width - BUBBLE_SIZE - 20,
+    y: area.y + area.height - BUBBLE_SIZE - 20,
     width: BUBBLE_SIZE,
     height: BUBBLE_SIZE,
-    x: startX,
-    y: startY,
     frame: false,
+    // Fixed at construction: the bubble needs a see-through window. In full and
+    // compact mode the renderer paints an opaque background over all of it.
     transparent: true,
     // Without an explicit fully-transparent colour the window paints an opaque
     // frame for a beat while resizing between bubble and chat size.
@@ -55,6 +107,8 @@ export function createWindow() {
       ],
     },
   });
+  windowMode = 'bubble';
+  lastExpandedMode = 'full';
 
   mainWindow.setMenuBarVisibility(false);
   mainWindow.loadFile(path.join(rootDir, 'dist', 'index.html'));
@@ -103,69 +157,117 @@ export function createWindow() {
     mainWindow.focus();
   });
 
+  // Full mode follows the screen: a resolution change or a moved taskbar would
+  // otherwise leave the window covering the wrong area.
+  onDisplayMetricsChanged = () => {
+    if (mainWindow && windowMode === 'full') mainWindow.setBounds(workArea());
+  };
+  screen.on('display-metrics-changed', onDisplayMetricsChanged);
+
+  mainWindow.on('close', rememberCompactBounds);
+
   mainWindow.on('closed', () => {
+    if (onDisplayMetricsChanged)
+      screen.removeListener('display-metrics-changed', onDisplayMetricsChanged);
+    onDisplayMetricsChanged = null;
     mainWindow = null;
   });
 
   return mainWindow;
 }
 
-export function toggleExpand(expand) {
-  if (!mainWindow) return false;
-  if (expand === isExpanded) return isExpanded;
-  isToolbarMode = false;
-  isExpanded = expand;
+function applyFull() {
+  mainWindow.setAlwaysOnTop(false);
+  mainWindow.setResizable(false);
+  mainWindow.setSkipTaskbar(false);
+  mainWindow.setBounds(workArea());
+}
 
-  const { width: screenW, height: screenH } = screen.getPrimaryDisplay().workAreaSize;
+function applyCompact(fromMode) {
+  const area = workArea();
+  const [currentX, currentY] = mainWindow.getPosition();
+  const [currentW, currentH] = mainWindow.getSize();
+  const width = compactBounds?.width ?? CHAT_WIDTH;
+  const height = compactBounds?.height ?? CHAT_HEIGHT;
+
+  let target;
+  if (fromMode === 'bubble') {
+    // Grow from the bubble's corner, then clamp so the whole chat stays on
+    // screen (a bubble near an edge would otherwise open half off-screen).
+    preExpandBubblePos = { x: currentX, y: currentY };
+    target = {
+      x: currentX - (width - currentW),
+      y: currentY - (height - currentH),
+      width,
+      height,
+    };
+  } else if (compactBounds) {
+    target = compactBounds;
+  } else {
+    target = {
+      x: area.x + area.width - width - 20,
+      y: area.y + area.height - height - 20,
+      width,
+      height,
+    };
+  }
+
+  mainWindow.setAlwaysOnTop(true);
+  mainWindow.setResizable(true);
+  mainWindow.setBounds(fitToArea(target, area));
+  mainWindow.setSkipTaskbar(false);
+}
+
+function applyBubble() {
+  const area = workArea();
   const [currentX, currentY] = mainWindow.getPosition();
   const [currentW, currentH] = mainWindow.getSize();
 
-  if (isExpanded) {
-    // Remember the bubble's spot so collapsing returns it there.
-    preExpandBubblePos = { x: currentX, y: currentY };
+  // Prefer the remembered position; fall back to the window's bottom-right
+  // corner when there is none (e.g. the app started in full mode).
+  const targetX = preExpandBubblePos
+    ? preExpandBubblePos.x
+    : Math.min(currentX + (currentW - BUBBLE_SIZE), area.x + area.width - BUBBLE_SIZE - 20);
+  const targetY = preExpandBubblePos
+    ? preExpandBubblePos.y
+    : Math.min(currentY + (currentH - BUBBLE_SIZE), area.y + area.height - BUBBLE_SIZE - 20);
+  preExpandBubblePos = null;
 
-    // Grow from the bubble's corner, then clamp so the whole chat stays on
-    // screen (a bubble near an edge would otherwise open half off-screen).
-    const newX = Math.max(
-      10,
-      Math.min(screenW - CHAT_WIDTH - 10, currentX - (CHAT_WIDTH - currentW)),
-    );
-    const newY = Math.max(
-      10,
-      Math.min(screenH - CHAT_HEIGHT - 10, currentY - (CHAT_HEIGHT - currentH)),
-    );
+  mainWindow.setResizable(false);
+  mainWindow.setAlwaysOnTop(true);
+  mainWindow.setBounds({
+    x: clamp(targetX, area.x + 10, area.x + area.width - BUBBLE_SIZE - 10),
+    y: clamp(targetY, area.y + 10, area.y + area.height - BUBBLE_SIZE - 10),
+    width: BUBBLE_SIZE,
+    height: BUBBLE_SIZE,
+  });
+  mainWindow.setSkipTaskbar(true);
+}
 
-    mainWindow.setResizable(true);
-    mainWindow.setBounds({
-      x: newX,
-      y: newY,
-      width: CHAT_WIDTH,
-      height: CHAT_HEIGHT,
-    });
-    mainWindow.setSkipTaskbar(false);
-  } else {
-    // Prefer the remembered position; fall back to the chat's bottom-right
-    // corner when there is none (e.g. the app started expanded).
-    const fallbackX = currentX + (currentW - BUBBLE_SIZE);
-    const fallbackY = currentY + (currentH - BUBBLE_SIZE);
-    const targetX = preExpandBubblePos ? preExpandBubblePos.x : fallbackX;
-    const targetY = preExpandBubblePos ? preExpandBubblePos.y : fallbackY;
-    preExpandBubblePos = null;
+/** Switch between the full-screen, windowed and bubble layouts. */
+export function setWindowMode(mode) {
+  if (!mainWindow || !WINDOW_MODES.includes(mode)) return windowMode;
+  if (mode === windowMode) return windowMode;
 
-    const newX = Math.max(10, Math.min(screenW - BUBBLE_SIZE - 10, targetX));
-    const newY = Math.max(10, Math.min(screenH - BUBBLE_SIZE - 10, targetY));
+  const fromMode = windowMode;
+  if (fromMode === 'compact') rememberCompactBounds();
+  isToolbarMode = false;
 
-    mainWindow.setResizable(false);
-    mainWindow.setBounds({
-      x: newX,
-      y: newY,
-      width: BUBBLE_SIZE,
-      height: BUBBLE_SIZE,
-    });
-    mainWindow.setSkipTaskbar(true);
-  }
+  if (mode === 'full') applyFull();
+  else if (mode === 'compact') applyCompact(fromMode);
+  else applyBubble();
 
-  return isExpanded;
+  windowMode = mode;
+  if (mode !== 'bubble') lastExpandedMode = mode;
+  notifyMode();
+  return windowMode;
+}
+
+/** Bubble <-> chat. Opening returns to whichever of full/compact was used last. */
+export function toggleExpand(expand) {
+  if (!mainWindow) return false;
+  setWindowMode(expand ? lastExpandedMode : 'bubble');
+  return windowMode !== 'bubble';
 }
 
 export function setOcrMode(enable) {
@@ -180,7 +282,8 @@ export function setOcrMode(enable) {
     mainWindow.setAlwaysOnTop(true);
   } else if (preOcrBounds) {
     mainWindow.setBounds(preOcrBounds, true);
-    if (!isExpanded) {
+    if (windowMode === 'full') mainWindow.setAlwaysOnTop(false);
+    if (windowMode !== 'compact') {
       mainWindow.setResizable(false);
     }
     preOcrBounds = null;
@@ -189,7 +292,7 @@ export function setOcrMode(enable) {
 }
 
 export function setToolbarMode(enable) {
-  if (!mainWindow || isExpanded) return false;
+  if (!mainWindow || windowMode !== 'bubble') return false;
   if (enable === isToolbarMode) return isToolbarMode;
   isToolbarMode = enable;
 
@@ -218,7 +321,8 @@ export function setToolbarMode(enable) {
 }
 
 export function handleDragStart() {
-  if (!mainWindow) return;
+  // A full-screen window has nowhere to be dragged to.
+  if (!mainWindow || windowMode === 'full') return;
   const cursor = screen.getCursorScreenPoint();
   const pos = mainWindow.getPosition();
   dragOffset = {
@@ -239,7 +343,7 @@ export function handleDragEnd() {
   isToolbarMode = false;
   if (!mainWindow) return;
 
-  if (!isExpanded) {
+  if (windowMode === 'bubble') {
     const { width: screenW, height: screenH } = screen.getPrimaryDisplay().workAreaSize;
     const [winX, winY] = mainWindow.getPosition();
 
@@ -250,45 +354,30 @@ export function handleDragEnd() {
   }
 }
 
-// Collapse back to the bubble before minimizing. Without this the window is
-// restored at chat size while the renderer still thinks it is expanded, so the
-// bubble and the chat state disagree and the UI comes back in a broken layout.
+/** Drag-resize from the renderer's corner handles; only the compact window resizes. */
+export function resizeWindow(width, height) {
+  if (!mainWindow || windowMode !== 'compact') return false;
+  if (!Number.isFinite(width) || !Number.isFinite(height)) return false;
+  const area = workArea();
+  mainWindow.setSize(
+    clamp(Math.round(width), MIN_CHAT_WIDTH, area.width),
+    clamp(Math.round(height), MIN_CHAT_HEIGHT, area.height),
+  );
+  return true;
+}
+
+// A real minimize to the taskbar. The window keeps its mode, so restoring it
+// brings back exactly the layout that was minimized.
 export function minimizeWindow() {
-  if (!mainWindow) return false;
-  if (isExpanded) collapseToBubble();
+  if (!mainWindow || windowMode === 'bubble') return false;
   mainWindow.minimize();
-  return isExpanded;
+  return true;
 }
 
-/** Shrink the window back to the corner bubble and reset the mode flags. */
-function collapseToBubble() {
-  isExpanded = false;
-  isToolbarMode = false;
-  const { width: screenW, height: screenH } = screen.getPrimaryDisplay().workAreaSize;
-  const [currentX, currentY] = mainWindow.getPosition();
-  const [currentW, currentH] = mainWindow.getSize();
-
-  // Same rule as toggleExpand: go back to where the bubble was, or the chat's
-  // bottom-right corner if we never recorded one.
-  const targetX = preExpandBubblePos ? preExpandBubblePos.x : currentX + (currentW - BUBBLE_SIZE);
-  const targetY = preExpandBubblePos ? preExpandBubblePos.y : currentY + (currentH - BUBBLE_SIZE);
-  preExpandBubblePos = null;
-
-  const newX = Math.max(10, Math.min(screenW - BUBBLE_SIZE - 10, targetX));
-  const newY = Math.max(10, Math.min(screenH - BUBBLE_SIZE - 10, targetY));
-
-  mainWindow.setResizable(false);
-  mainWindow.setBounds({
-    x: newX,
-    y: newY,
-    width: BUBBLE_SIZE,
-    height: BUBBLE_SIZE,
-  });
-  mainWindow.setSkipTaskbar(true);
-}
-
+// Closing the window ends the app; the bubble button is the way to keep it
+// running in the background. window-all-closed in main.js does the shutdown.
 export function closeWindow() {
-  if (!mainWindow || !isExpanded) return false;
-  collapseToBubble();
-  return false;
+  if (!mainWindow || windowMode === 'bubble') return false;
+  mainWindow.close();
+  return true;
 }

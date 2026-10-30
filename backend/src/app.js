@@ -19,6 +19,7 @@ import { agentRouter } from './routes/agent.js';
 import { repairRouter } from './routes/repair.js';
 import { orchestrateRouter } from './routes/orchestrate.js';
 import { translateRouter } from './routes/translate.js';
+import { fileAgentRouter } from './routes/fileAgent.js';
 import { askLimiter } from './middleware/rateLimiter.js';
 import {
   isAllowedLocalOrigin,
@@ -130,13 +131,14 @@ app.use('/api/history', historyRouter);
 app.use('/api/transcribe', transcribeRouter);
 app.use('/api/documents', documentsRouter);
 app.use('/api/workspaces', workspaceRouter);
-app.use('/api/coding', askLimiter, codingRouter);
+app.use('/api/coding', codingRouter);
 app.use('/api/memory', memoryRouter);
 app.use('/api/stats', statsRouter);
 app.use('/api/agent', askLimiter, agentRouter);
 app.use('/api/repair', askLimiter, repairRouter);
 app.use('/api/orchestrate', askLimiter, orchestrateRouter);
 app.use('/api/translate', translateRouter);
+app.use('/api/file-agent', fileAgentRouter);
 
 app.use('/ocr', express.static(config.ocrDir));
 app.use(express.static(config.frontendDist));

@@ -72,7 +72,7 @@ api.interceptors.response.use(
 
 export async function streamChat(
   payload,
-  { onToken, onSources, onDone, onToolCall, onMemory, onRoute, onSoftwareChoice, signal },
+  { onToken, onSources, onDone, onToolCall, onMemory, onRoute, onSoftwareChoice, onStatus, signal },
 ) {
   const token = await getToken();
   const headers = { 'Content-Type': 'application/json' };
@@ -113,6 +113,7 @@ export async function streamChat(
       if (event.type === 'memory') onMemory?.(event.decision);
       if (event.type === 'route') onRoute?.(event);
       if (event.type === 'software_choice') onSoftwareChoice?.(event);
+      if (event.type === 'status') onStatus?.(event.text);
       if (event.type === 'tool_call' && onToolCall) onToolCall(event.toolCall);
       if (event.type === 'done') onDone(event.message, event.conversationId);
       if (event.type === 'error') throw new Error(event.error);
@@ -221,6 +222,15 @@ export const documents = {
   delete: (id) => api.delete(`/documents/${id}`),
 };
 
+// File agent: generated files (PDF, Word, Excel, CSV…) and folder organize plans.
+export const fileAgent = {
+  download: (id) =>
+    api.get(`/file-agent/outputs/${encodeURIComponent(id)}`, { responseType: 'blob', timeout: 300000 }),
+  plan: (id) => api.get(`/file-agent/plans/${encodeURIComponent(id)}`),
+  apply: (id) => api.post(`/file-agent/plans/${encodeURIComponent(id)}/apply`, {}, { timeout: 300000 }),
+  undo: (id) => api.post(`/file-agent/plans/${encodeURIComponent(id)}/undo`, {}, { timeout: 300000 }),
+};
+
 export const workspaces = {
   get: () => api.get('/workspaces'),
   create: (data) => api.post('/workspaces', data),
@@ -232,11 +242,26 @@ export const workspaces = {
     api.post(`/workspaces/${encodeURIComponent(id)}/index`, data, { timeout: 600000 }),
   pause: (id) => api.post(`/workspaces/${encodeURIComponent(id)}/pause`),
   removeIndex: (id) => api.delete(`/workspaces/${encodeURIComponent(id)}/index`),
+  // Native Windows folder dialog opened by the local backend (browser/localhost mode).
+  chooseDirectory: () => api.post('/workspaces/choose-directory', {}, { timeout: 310000 }),
 };
 
 // Coding operations stay in the authenticated local backend; renderer code
 // never receives filesystem handles or a shell execution bridge.
 export const coding = {
+  createProject: (payload) => api.post('/coding/projects', payload),
+  runtime: (workspaceId, signal) =>
+    api.get(`/coding/workspaces/${encodeURIComponent(workspaceId)}/runtime`, { signal }),
+  executionPolicy: (workspaceId, policy) =>
+    api.post(`/coding/workspaces/${encodeURIComponent(workspaceId)}/execution-policy`, policy),
+  stopProcess: (workspaceId, jobId) =>
+    api.post(
+      `/coding/workspaces/${encodeURIComponent(workspaceId)}/processes/${encodeURIComponent(jobId)}/stop`,
+    ),
+  openPreview: (workspaceId, jobId) =>
+    api.post(
+      `/coding/workspaces/${encodeURIComponent(workspaceId)}/processes/${encodeURIComponent(jobId)}/open`,
+    ),
   models: (signal) => api.get('/coding/models', { signal }),
   tasks: (signal) => api.get('/coding/tasks', { signal }),
   tree: (workspaceId, signal) =>
@@ -254,11 +279,16 @@ export const coding = {
     api.post(`/coding/tasks/${encodeURIComponent(taskId)}/approval`, { approvalId, approved }),
   cancel: (taskId) => api.post(`/coding/tasks/${encodeURIComponent(taskId)}/cancel`),
   tool: (workspaceId, tool, params = {}) =>
-    api.post(`/coding/workspaces/${encodeURIComponent(workspaceId)}/tools`, { tool, params }),
+    api.post(
+      `/coding/workspaces/${encodeURIComponent(workspaceId)}/tools`,
+      { tool, params },
+      { timeout: 915000 },
+    ),
   approveTool: (workspaceId, approvalId, approved) =>
     api.post(
       `/coding/workspaces/${encodeURIComponent(workspaceId)}/approvals/${encodeURIComponent(approvalId)}`,
       { approved },
+      { timeout: 915000 },
     ),
 };
 

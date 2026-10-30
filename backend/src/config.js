@@ -39,6 +39,11 @@ export const config = {
   host,
   ollamaUrl,
   defaultModel: process.env.DEFAULT_MODEL || '',
+  // Coding agent: preferred installed model for the Coding panel (falls back to any
+  // installed *coder* model, then any tools-capable model, when this tag is missing).
+  codingModel: process.env.CODING_MODEL || 'qwen2.5-coder:14b',
+  // Per-step coding inference limit. 14B partly runs on CPU with a 6GB GPU, so allow longer.
+  codingModelTimeoutMs: seconds(process.env.CODING_MODEL_TIMEOUT_SECONDS, 600),
   embeddingModel: process.env.EMBEDDING_MODEL || 'nomic-embed-text',
   maxFileSize: Number(process.env.MAX_FILE_SIZE_MB || 25) * 1024 * 1024,
   ragTopK: Number(process.env.RAG_TOP_K || 5),

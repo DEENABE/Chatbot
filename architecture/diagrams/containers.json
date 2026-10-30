@@ -1,0 +1,39 @@
+{
+  "name": "Chanakya AI – Containers",
+  "level": 2,
+  "meta": { "direction": "TB" },
+  "nodes": [
+    { "id": "react-renderer", "label": "React Renderer (UI)", "path": "frontend/src/", "meta": { "type": "frontend", "technology": "react" } },
+    {
+      "id": "electron-main",
+      "label": "Electron Main Process + Tool Engine",
+      "path": "frontend/electron/",
+      "subDiagramId": "electron-components",
+      "meta": { "type": "service", "technology": "electron" }
+    },
+    {
+      "id": "backend-api",
+      "label": "Backend API (Express)",
+      "path": "backend/src/",
+      "subDiagramId": "backend-components",
+      "meta": { "type": "service", "technology": "express" }
+    },
+    { "id": "sqlite-db", "label": "SQLite (storage/db.sqlite)", "path": "backend/src/db/schema.sql", "meta": { "type": "database", "technology": "sqlite" } },
+    { "id": "lancedb-store", "label": "LanceDB Vector Store", "path": "backend/src/services/vectorService.js", "meta": { "type": "database" } },
+    { "id": "indictrans-service", "label": "IndicTrans2 Translation Service", "path": "indictrans-service/", "meta": { "type": "service", "technology": "fastapi" } },
+    { "id": "ollama-server", "label": "Ollama Server", "meta": { "type": "external", "technology": "ollama" } },
+    { "id": "windows-desktop", "label": "Windows Desktop & Services", "meta": { "type": "external", "technology": "windows" } }
+  ],
+  "edges": [
+    { "id": "e-react-renderer-backend-api", "source": "react-renderer", "target": "backend-api", "label": "REST + NDJSON streams (Bearer session token)", "meta": { "type": "calls" } },
+    { "id": "e-react-renderer-electron-main", "source": "react-renderer", "target": "electron-main", "label": "contextBridge IPC (tool:execute, auth:*, window-*)", "meta": { "type": "calls" } },
+    { "id": "e-electron-main-backend-api", "source": "electron-main", "target": "backend-api", "label": "spawns child process, READY handshake", "meta": { "type": "calls" } },
+    { "id": "e-backend-api-electron-main", "source": "backend-api", "target": "electron-main", "label": "Tool Bridge HTTP (loopback, per-launch secret)", "meta": { "type": "calls" } },
+    { "id": "e-backend-api-sqlite-db", "source": "backend-api", "target": "sqlite-db", "label": "reads/writes (better-sqlite3, WAL)", "meta": { "type": "writes" } },
+    { "id": "e-backend-api-lancedb-store", "source": "backend-api", "target": "lancedb-store", "label": "upsert embeddings / vector search", "meta": { "type": "writes" } },
+    { "id": "e-backend-api-ollama-server", "source": "backend-api", "target": "ollama-server", "label": "HTTP /api/chat, /api/embed, /api/tags", "meta": { "type": "calls" } },
+    { "id": "e-backend-api-indictrans-service", "source": "backend-api", "target": "indictrans-service", "label": "POST /translate (spawns process)", "meta": { "type": "calls" } },
+    { "id": "e-electron-main-windows-desktop", "source": "electron-main", "target": "windows-desktop", "label": "PowerShell, UIA, winget, service control", "meta": { "type": "calls" } },
+    { "id": "e-backend-api-windows-desktop", "source": "backend-api", "target": "windows-desktop", "label": "approved project commands (coding agent)", "meta": { "type": "calls" } }
+  ]
+}

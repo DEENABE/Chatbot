@@ -273,4 +273,14 @@ export function getDocumentChunks(documentIds, userId, limit = 6) {
   return hits;
 }
 
+/** Every chunk of one document in order (file agent: summaries, conversion, extraction). */
+export function getAllDocumentChunks(documentId, userId, limit = 2000) {
+  return db()
+    .prepare(
+      'SELECT text FROM doc_chunks WHERE documentId=? AND userId=? ORDER BY chunkIndex LIMIT ?',
+    )
+    .all(documentId, userId, limit)
+    .map((row) => row.text);
+}
+
 export { rowToText };

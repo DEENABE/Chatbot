@@ -6,7 +6,7 @@ const binary = path.join(root, 'node_modules', 'electron', 'dist', 'electron.exe
 let failed = false;
 const env = { ...process.env };
 delete env.ELECTRON_RUN_AS_NODE;
-for (const name of ['ipcTrust', 'navigationGuard']) {
+for (const name of ['ipcTrust', 'navigationGuard', 'windowModes']) {
   const result = spawnSync(
     binary,
     [path.join(root, 'frontend', 'electron', 'tests', `${name}.test.mjs`)],

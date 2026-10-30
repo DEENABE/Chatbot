@@ -784,28 +784,52 @@ export const useAppStore = create((set, get) => ({
   },
 
   // Window Size Toggles
-  isExpanded: false,
-  toggleExpand: async () => {
-    const nextMode = !get().isExpanded;
+  // The desktop app starts as the corner bubble and goes full-screen after
+  // sign-in; the main process owns the real window layout and reports it back.
+  // A plain browser tab has no bubble, so it starts full. windowMode is
+  // 'full' | 'compact' | 'bubble', and isExpanded is simply "not the bubble".
+  windowMode: typeof window !== 'undefined' && window.electronAPI ? 'bubble' : 'full',
+  isExpanded: !(typeof window !== 'undefined' && window.electronAPI),
+  // Follow a mode the main process has already applied (no IPC back).
+  syncWindowMode: (mode) => {
+    if (!['full', 'compact', 'bubble'].includes(mode)) return;
+    set({
+      windowMode: mode,
+      isExpanded: mode !== 'bubble',
+      ...(mode !== 'bubble' && { lastExpandedMode: mode }),
+    });
+  },
+  setWindowMode: async (mode) => {
+    const previous = get().windowMode;
+    if (mode === previous) return;
     // Swap the view BEFORE resizing the window. Awaiting the IPC first left the
-    // window at chat size while React still rendered the bubble, so the resize
-    // showed an empty pane for a frame or two.
-    set({ isExpanded: nextMode });
+    // window at the old size while React already rendered the new view, so the
+    // resize showed an empty pane for a frame or two.
+    get().syncWindowMode(mode);
     if (window.electronAPI) {
       try {
-        const expanded = await window.electronAPI.toggleExpand(nextMode);
-        // Reconcile only if the main process disagreed (e.g. a rejected toggle).
-        if (expanded !== nextMode) set({ isExpanded: expanded });
+        const applied = await window.electronAPI.setWindowMode(mode);
+        // Reconcile only if the main process disagreed (e.g. a rejected change).
+        if (applied !== mode) get().syncWindowMode(applied);
       } catch {
-        set({ isExpanded: !nextMode });
+        get().syncWindowMode(previous);
       }
     }
   },
+  // Bubble <-> chat; opening returns to full or compact, whichever was last used.
+  // Signing in happens in the small window; full screen is for signed-in use.
+  toggleExpand: () => {
+    const { isExpanded, user, lastExpandedMode } = get();
+    return get().setWindowMode(isExpanded ? 'bubble' : user ? lastExpandedMode : 'compact');
+  },
+  lastExpandedMode: 'full',
 
-  // Minimize / close both collapse the window back to the bubble, so the store
-  // has to follow suit — otherwise the app restores as an expanded chat while
-  // the renderer is still rendering the collapsed view.
-  collapseToBubble: () => set({ isExpanded: false }),
+  // Full <-> windowed (compact) size.
+  toggleWindowSize: () => {
+    const { windowMode, setWindowMode } = get();
+    if (windowMode === 'bubble') return;
+    return setWindowMode(windowMode === 'full' ? 'compact' : 'full');
+  },
 
   // Input Text prompt
   inputText: '',
@@ -1408,6 +1432,10 @@ export const useAppStore = create((set, get) => ({
             },
             onSoftwareChoice: (choice) => {
               softwareChoice = choice;
+            },
+            // File agent progress ("Reading report.pdf: part 3 of 9").
+            onStatus: (text) => {
+              if (onScreen() && typeof text === 'string') set({ generationStatus: text.slice(0, 200) });
             },
             onMemory: (decision) => {
               const notice =

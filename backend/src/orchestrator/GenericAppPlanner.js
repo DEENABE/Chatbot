@@ -118,6 +118,78 @@ export function requestedTypedText(task, text) {
   return text;
 }
 
+const CLICK_OPS = ['invoke', 'click', 'toggle', 'select', 'expand'];
+const usableAction = (a) => a.allowed !== false && a.permission !== 'CRITICAL';
+const capitalize = (v) =>
+  String(v || '')
+    .charAt(0)
+    .toUpperCase() + String(v || '').slice(1);
+/** The operation a primitive maps to on one element, honoring the application's permission level. */
+function primitiveOperation(kind, element, direction) {
+  if (!element || element.enabled === false) return null;
+  const has = (op) => element.actions?.some((a) => a.operation === op && usableAction(a));
+  if (kind === 'click') return CLICK_OPS.find(has) || null;
+  if (kind === 'scroll')
+    return has(`scroll${capitalize(direction)}`) ? `scroll${capitalize(direction)}` : null;
+  return has(kind) ? kind : null;
+}
+/**
+ * Small local models often pick the text label inside a button, list item or tab instead of the control itself.
+ * Ground the proposal on the nearest element that really exposes a permitted operation: the element, then up to four
+ * ancestors, then its single actionable child. focus/select on a control that only offers invoke/click becomes a click.
+ * Returns {element, operation, kind} or {denied} when the control exists but App Permissions forbid it, or null.
+ */
+export function groundPrimitive(snapshot, element, kind, direction) {
+  if (!element) return null;
+  const byId = new Map((snapshot.elements || []).map((e) => [e.elementId, e]));
+  const chain = [element];
+  for (let p = element, i = 0; i < 4 && p?.parentId && byId.has(p.parentId); i++) {
+    p = byId.get(p.parentId);
+    chain.push(p);
+  }
+  const kinds = ['focus', 'select'].includes(kind) ? [kind, 'click'] : [kind];
+  for (const k of kinds) {
+    for (const candidate of chain) {
+      const operation = primitiveOperation(k, candidate, direction);
+      if (operation) return { element: candidate, operation, kind: k };
+    }
+    const children = (snapshot.elements || []).filter(
+      (e) => e.parentId === element.elementId && primitiveOperation(k, e, direction),
+    );
+    if (children.length === 1)
+      return {
+        element: children[0],
+        operation: primitiveOperation(k, children[0], direction),
+        kind: k,
+      };
+  }
+  // The control is real but this application's App Permissions level forbids the operation.
+  const blocked = chain.some(
+    (c) =>
+      c.enabled !== false &&
+      c.actions?.some(
+        (a) =>
+          a.allowed === false &&
+          a.permission !== 'CRITICAL' &&
+          (kind === 'click' ? CLICK_OPS.includes(a.operation) : a.operation.startsWith(kind)),
+      ),
+  );
+  return blocked ? { denied: true } : null;
+}
+const describeProposal = (p) =>
+  JSON.stringify({
+    action: p?.kind,
+    ...(p?.elementId ? { elementId: p.elementId } : {}),
+    ...(p?.operation ? { operation: p.operation } : {}),
+    ...(p?.keys || p?.key ? { keys: p.keys || p.key } : {}),
+  }).slice(0, 200);
+const retry = (reason) => ({ retry: String(reason).slice(0, 300) });
+const permissionDenied = (snapshot, what) => ({
+  status: 'APP_PERMISSION_DENIED',
+  message: `This application is set to “${snapshot.permission?.level || 'a restricted level'}” in App Permissions, which does not allow ${what}. Raise it to “interact” (or “modify” for saving/sending) in App Permissions if you want this done.`,
+  success: false,
+});
+
 export async function nextDesktopDecision({
   task,
   evidence = [],
@@ -212,57 +284,101 @@ export async function nextDesktopDecision({
         'UI_AUTOMATION_INSUFFICIENT: no useful accessible controls were exposed. Visual automation is not configured.',
       success: false,
     };
-  const request = {
-    system,
-    prompt: JSON.stringify({
-      USER_TASK: task,
-      UNTRUSTED_UI_DATA: compactSnapshot(snapshot),
-      previousAction: last.data.operation || null,
-      previousResult: last.data.status,
-      recentAttempts: history.slice(-3).map((h) => ({
-        status: h.data?.status,
-        error: h.error?.code,
-        operation: h.data?.operation,
-        targetLabel: h.data?.targetLabel,
-      })),
-    }),
-    snapshot,
-    model,
-    signal,
-    think: false,
-    history,
+  const base = {
+    USER_TASK: task,
+    UNTRUSTED_UI_DATA: compactSnapshot(snapshot),
+    previousAction: last.data.operation || null,
+    previousResult: last.data.status,
+    recentAttempts: history.slice(-3).map((h) => ({
+      status: h.data?.status,
+      error: h.error?.code,
+      operation: h.data?.operation,
+      targetLabel: h.data?.targetLabel,
+    })),
   };
-  const proposal = await (complete ? complete(request) : toolChat(request));
+  // One bad proposal from a small local model must not end the task: explain the rejection and ask again.
+  const rejected = [];
+  const MAX_PROPOSALS = Number(process.env.DESKTOP_MAX_PROPOSALS) || 3;
+  for (let attempt = 0; attempt < MAX_PROPOSALS; attempt++) {
+    const request = {
+      system,
+      prompt: JSON.stringify(
+        rejected.length
+          ? {
+              ...base,
+              REJECTED_PROPOSALS: rejected,
+              NOTE: 'Your earlier proposals were rejected for the reasons given. Choose a DIFFERENT element or action that is listed with an allowed operation.',
+            }
+          : base,
+      ),
+      snapshot,
+      model,
+      signal,
+      think: false,
+      history,
+    };
+    let proposal;
+    try {
+      proposal = await (complete ? complete(request) : toolChat(request));
+    } catch (error) {
+      if (signal?.aborted || error?.name === 'AbortError') throw error;
+      if (error?.code !== 'INVALID_MODEL_TOOL_CALL') throw error;
+      rejected.push({ proposal: 'invalid tool call', reason: error.message });
+      continue;
+    }
+    const outcome = await interpretProposal(proposal, {
+      task,
+      snapshot,
+      history,
+      last,
+      intent,
+      model,
+      signal,
+      complete,
+    });
+    if (outcome?.retry) {
+      rejected.push({ proposal: describeProposal(proposal), reason: outcome.retry });
+      continue;
+    }
+    return outcome;
+  }
+  return {
+    success: false,
+    status: 'NO_PERMITTED_ACTION',
+    message: `I could not find a permitted control for this step after ${rejected.length} tries. Last reason: ${rejected.at(-1)?.reason || 'unknown'}.`,
+  };
+}
+
+async function interpretProposal(
+  proposal,
+  { task, snapshot, history, last, intent, model, signal, complete },
+) {
+  if (!proposal || typeof proposal !== 'object') return retry('No action was proposed.');
   if (proposal.kind === 'type') proposal.text = requestedTypedText(task, proposal.text);
   if (
     proposal.primitive &&
     ['click', 'doubleClick', 'select', 'focus', 'scroll', 'read', 'waitFor'].includes(proposal.kind)
   ) {
-    const element = snapshot.elements.find(
+    const picked = snapshot.elements.find(
       (e) => e.elementId === fullId(snapshot, proposal.elementId),
     );
-    const operation =
-      proposal.kind === 'click'
-        ? ['invoke', 'toggle', 'select', 'expand', 'click'].find((op) =>
-            element?.actions.some((a) => a.operation === op),
-          )
-        : proposal.kind === 'scroll'
-          ? `scroll${String(proposal.direction || '')[0]?.toUpperCase() + String(proposal.direction || '').slice(1)}`
-          : proposal.kind;
-    const readOnly = ['read', 'waitFor'].includes(proposal.kind),
-      action = element?.actions.find((a) => a.operation === operation);
-    if (
-      !element ||
-      (!readOnly &&
-        (!element.enabled ||
-          !action ||
-          action.permission === 'CRITICAL' ||
-          action.allowed === false))
-    )
-      return {
-        success: false,
-        message: 'The proposed primitive is not available in the current UI or permission level.',
-      };
+    if (!picked)
+      return retry(
+        `${proposal.elementId} is not an element of the current UI. Use an eN id from the list.`,
+      );
+    const readOnly = ['read', 'waitFor'].includes(proposal.kind);
+    let element = picked,
+      operation = proposal.kind,
+      kind = proposal.kind;
+    if (!readOnly) {
+      const grounded = groundPrimitive(snapshot, picked, proposal.kind, proposal.direction);
+      if (grounded?.denied) return permissionDenied(snapshot, `“${proposal.kind}” on that control`);
+      if (!grounded)
+        return retry(
+          `${proposal.elementId} (“${String(picked.label || picked.role).slice(0, 60)}”) has no permitted ${proposal.kind} operation and no clickable parent. Pick an element whose ops column lists ${proposal.kind === 'click' ? 'invoke/click/toggle/select/expand' : proposal.kind}.`,
+        );
+      ({ element, operation, kind } = grounded);
+    }
     if (
       history
         .slice(-4)
@@ -273,21 +389,18 @@ export async function nextDesktopDecision({
             h.data.targetLabel === element.label,
         )
     )
-      return {
-        success: false,
-        status: 'ACTION_COMPLETED_BUT_NOT_VERIFIED',
-        message:
-          'That action already made no verified progress. Re-observe or choose another observed control.',
-      };
+      return retry(
+        `“${operation}” on “${element.label}” already made no visible change. Choose another control or a keyboard shortcut.`,
+      );
     return {
       call: {
         tool: 'desktop',
-        action: proposal.kind,
+        action: kind,
         params: {
           snapshotId: snapshot.snapshotId,
           elementId: element.elementId,
-          ...(proposal.kind === 'scroll' ? { direction: proposal.direction } : {}),
-          ...(proposal.kind === 'waitFor' && proposal.timeoutMs !== undefined
+          ...(kind === 'scroll' ? { direction: proposal.direction } : {}),
+          ...(kind === 'waitFor' && proposal.timeoutMs !== undefined
             ? { timeoutMs: proposal.timeoutMs }
             : {}),
         },
@@ -296,10 +409,7 @@ export async function nextDesktopDecision({
   }
   if (proposal.primitive && ['launch', 'observe', 'find', 'close'].includes(proposal.kind)) {
     if (proposal.kind === 'launch')
-      return {
-        success: false,
-        message: 'The requested app is already bound. Use the current observation.',
-      };
+      return retry('The application is already open. Act on the current UI instead of launching.');
     return {
       call: {
         tool: 'desktop',
@@ -333,49 +443,48 @@ export async function nextDesktopDecision({
       success: false,
     };
   if (proposal.kind === 'act') {
-    const element = proposal.target
+    const picked = proposal.target
       ? resolveElement(proposal.target, snapshot)
       : snapshot.elements.find((e) => e.elementId === fullId(snapshot, proposal.elementId));
-    const action = element?.actions.find((a) => a.operation === proposal.operation);
-    if (!element?.enabled || !action || action.permission === 'CRITICAL')
-      return {
-        message: 'The proposed action is not an available permitted control.',
-        success: false,
-      };
-    if (action.allowed === false)
-      return {
-        status: 'APP_PERMISSION_DENIED',
-        message: `This application is set to “${snapshot.permission?.level || 'a restricted level'}” in App Permissions, which does not allow that action. Ask the user to raise the permission if they want it done.`,
-        success: false,
-      };
+    let element = picked,
+      action = picked?.actions.find((a) => a.operation === proposal.operation);
+    // Same grounding as primitives: a label inside a button acts through the button.
+    if (picked && (!action || !usableAction(action) || picked.enabled === false)) {
+      const kind = CLICK_OPS.includes(proposal.operation) ? 'click' : proposal.operation;
+      const grounded = groundPrimitive(snapshot, picked, kind);
+      if (grounded?.element && !grounded.denied) {
+        element = grounded.element;
+        action = element.actions.find((a) => a.operation === grounded.operation);
+      }
+    }
+    if (!element || element.enabled === false || !action || action.permission === 'CRITICAL')
+      return retry(
+        `${proposal.elementId || 'That target'} has no permitted “${proposal.operation}” operation. Use an element and an operation from its ops column.`,
+      );
+    if (action.allowed === false) return permissionDenied(snapshot, 'that action');
     if (
-      proposal.operation === 'setValue' &&
+      action.operation === 'setValue' &&
       (typeof proposal.value !== 'string' || !proposal.value || !task.includes(proposal.value))
     )
-      return {
-        message: 'Provide the exact value to enter in the application.',
-        success: false,
-      };
-    const stalled = history
-      .slice(-4)
-      .find(
-        (h) =>
-          h.data?.status === 'UI_NO_VERIFIED_CHANGE' &&
-          h.data.operation === proposal.operation &&
-          h.data.targetLabel === element.label,
+      return retry('setValue needs a value copied exactly from USER_TASK.');
+    if (
+      history
+        .slice(-4)
+        .some(
+          (h) =>
+            h.data?.status === 'UI_NO_VERIFIED_CHANGE' &&
+            h.data.operation === action.operation &&
+            h.data.targetLabel === element.label,
+        )
+    )
+      return retry(
+        `“${action.operation}” on “${element.label}” already made no verified progress. Choose another observed control.`,
       );
-    if (stalled)
-      return {
-        status: 'ACTION_COMPLETED_BUT_NOT_VERIFIED',
-        message:
-          'ACTION_COMPLETED_BUT_NOT_VERIFIED: the same action made no verified progress. Choose another observed control.',
-        success: false,
-      };
     const params = {
       snapshotId: snapshot.snapshotId,
       elementId: element.elementId,
       operation: action.operation,
-      ...(proposal.operation === 'setValue' ? { value: proposal.value } : {}),
+      ...(action.operation === 'setValue' ? { value: proposal.value } : {}),
     };
     return {
       call: {
@@ -387,13 +496,7 @@ export async function nextDesktopDecision({
   }
   if (proposal.kind === 'type' || proposal.kind === 'key') {
     const input = snapshot.input;
-    if (!input?.keys?.allowed)
-      return {
-        status: 'APP_PERMISSION_DENIED',
-        message: `This application is set to “${snapshot.permission?.level || 'a restricted level'}” in App Permissions, which does not allow keyboard input. Ask the user to raise the permission if they want it done.`,
-        success: false,
-      };
-    const target = proposal.kind === 'type' ? 'text' : String(proposal.keys || '');
+    if (!input?.keys?.allowed) return permissionDenied(snapshot, 'keyboard input');
     const stalled = history
       .slice(-4)
       .find(
@@ -403,18 +506,12 @@ export async function nextDesktopDecision({
           (proposal.kind === 'type' || h.data.targetLabel === parseChord(proposal.keys)?.text),
       );
     if (stalled)
-      return {
-        status: 'ACTION_COMPLETED_BUT_NOT_VERIFIED',
-        message:
-          'ACTION_COMPLETED_BUT_NOT_VERIFIED: the same input made no verified progress. Choose another observed control or key.',
-        success: false,
-      };
+      return retry(
+        'The same input made no verified progress. Choose another observed control or key.',
+      );
     if (proposal.kind === 'type') {
       if (!validTypedText(proposal.text) || !task.includes(proposal.text))
-        return {
-          message: 'Provide the exact single-line text to type, copied from your request.',
-          success: false,
-        };
+        return retry('Typed text must be a single line copied exactly from USER_TASK.');
       // Typing is not idempotent. If this exact text was already entered and verified, never type it again: check the outcome instead.
       const digest = createHash('sha256').update(String(proposal.text)).digest('hex');
       if (
@@ -426,12 +523,9 @@ export async function nextDesktopDecision({
         )
       ) {
         if (last.toolName === 'desktop_observe')
-          return {
-            success: false,
-            status: 'DUPLICATE_INPUT_REFUSED',
-            message:
-              'That text was already entered. Inspect the current UI and verify the rest of the task instead of typing it again.',
-          };
+          return retry(
+            'That text was already entered. Continue with the next requested action instead of typing it again.',
+          );
         return {
           call: {
             tool: 'desktop',
@@ -441,10 +535,10 @@ export async function nextDesktopDecision({
         };
       }
       if (!input.type?.allowed)
-        return {
-          message: input.type?.reason || 'No text field has focus, so text cannot be typed yet.',
-          success: false,
-        };
+        return retry(
+          input.type?.reason ||
+            'No text field has focus. Click/focus the text field first, then type.',
+        );
       return {
         call: {
           tool: 'desktop',
@@ -458,11 +552,7 @@ export async function nextDesktopDecision({
       };
     }
     const chord = parseChord(proposal.keys);
-    if (!chord)
-      return {
-        message: 'The proposed key or shortcut is not valid.',
-        success: false,
-      };
+    if (!chord) return retry('That key or shortcut is not valid.');
     const risk = chordRisk(chord, input.focusedTextField?.role || '');
     if (risk === 'CRITICAL')
       return {
@@ -504,10 +594,7 @@ export async function nextDesktopDecision({
       ids.length > 10 ||
       ids.some((id) => !snapshot.elements.some((e) => e.elementId === id))
     )
-      return {
-        message: 'Completion lacked current UI evidence.',
-        success: false,
-      };
+      return retry('complete needs evidenceIds of current elements that show the result.');
     // An independent assessment sees the user goal and evidence, not the first answer.
     // The reviewer sees only the cited elements and the verified actions, not the whole snapshot (prompt size = latency).
     const citedIds = new Set(
@@ -535,13 +622,11 @@ export async function nextDesktopDecision({
       numPredict: 128,
     });
     if (review.success !== true)
-      return {
-        status: 'ACTION_COMPLETED_BUT_NOT_VERIFIED',
-        message:
-          'ACTION_COMPLETED_BUT_NOT_VERIFIED: ' +
-          String(review.reason || 'insufficient UI evidence').slice(0, 500),
-        success: false,
-      };
+      return retry(
+        'Not complete yet: ' +
+          String(review.reason || 'insufficient UI evidence').slice(0, 200) +
+          '. Do the remaining step instead of claiming completion.',
+      );
     return {
       call: {
         tool: 'desktop',
@@ -554,8 +639,5 @@ export async function nextDesktopDecision({
       },
     };
   }
-  return {
-    message: 'The model did not propose a valid grounded action.',
-    success: false,
-  };
+  return retry('That is not one of the offered actions.');
 }

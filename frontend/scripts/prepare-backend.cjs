@@ -9,6 +9,22 @@ function assertChild(root, target) {
   const relative = path.relative(path.resolve(root), path.resolve(target));
   if (!relative || relative.startsWith('..') || path.isAbsolute(relative))
     throw new Error('Unsafe build path: ' + target);
+  const suffix = [];
+  let ancestor = path.resolve(target);
+  while (!fs.existsSync(ancestor)) {
+    suffix.unshift(path.basename(ancestor));
+    const parent = path.dirname(ancestor);
+    if (parent === ancestor) throw new Error('Unresolvable build path: ' + target);
+    ancestor = parent;
+  }
+  const resolved = path.join(fs.realpathSync(ancestor), ...suffix);
+  const canonicalRelative = path.relative(fs.realpathSync(root), resolved);
+  if (
+    !canonicalRelative ||
+    canonicalRelative.startsWith('..') ||
+    path.isAbsolute(canonicalRelative)
+  )
+    throw new Error('Build path escapes through a link: ' + target);
 }
 assertChild(frontendDir, out);
 if (fs.existsSync(path.join(out, 'storage')))
@@ -52,6 +68,23 @@ for (const name of ['src', 'scripts']) {
     });
 }
 fs.copyFileSync(path.join(backendSrc, 'package.json'), path.join(out, 'package.json'));
+// Ship the already-installed npm CLI (including its license), so the Electron
+// Node runtime can install project dependencies without a global Node install.
+const npmCandidates = [
+  path.join(path.dirname(process.execPath), 'node_modules/npm'),
+  path.join(path.dirname(process.execPath), '../node_modules/npm'),
+];
+const npmSource = npmCandidates.find((candidate) =>
+  fs.existsSync(path.join(candidate, 'bin/npm-cli.js')),
+);
+if (!npmSource)
+  throw new Error('An installed npm CLI is required for the packaged project runtime.');
+if (npmSource) {
+  const vendor = path.join(out, 'vendor/npm');
+  assertChild(out, vendor);
+  if (fs.existsSync(vendor)) fs.rmSync(vendor, { recursive: true, force: true });
+  fs.cpSync(npmSource, vendor, { recursive: true });
+}
 console.log(
   '[prepare-backend] clean source assembled with existing offline dependencies; no user data copied',
 );

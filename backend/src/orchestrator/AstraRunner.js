@@ -476,8 +476,30 @@ const handlers = {
       };
     },
   },
+  // Open the app straight at a task screen through a catalogued deep link (AppIntents.js). Only opens the form.
+  intent: {
+    init: () => ({}),
+    feed(s, e, ctx) {
+      if (e.toolName !== 'app_openIntent') return;
+      if (ok(e) && e.data?.status === 'APP_INTENT_OPENED') {
+        s.done = true;
+        const opened = e.data.message || `opened ${ctx.appName} at the requested screen`;
+        (ctx.goals ||= []).push(ctx.step.note ? `${opened} ${ctx.step.note}` : opened);
+        // The UI changed under us: the next goal step must observe again instead of reusing the old snapshot.
+        ctx.snapshotEvent = null;
+        ctx.snapshot = null;
+      } else s.failed = `Could not open ${ctx.appName} at the requested screen: ${why(e)}`;
+    },
+    next: (s, ctx) => ({
+      call: {
+        tool: 'app',
+        action: 'openIntent',
+        params: { intentId: ctx.step.intentId, slots: ctx.step.slots },
+      },
+    }),
+  },
   goal: {
-    init: (step, ctx) => ({ events: [], seed: ctx.snapshotEvent }),
+    init: (step, ctx) => ({ events: [], seed: step.fresh ? null : ctx.snapshotEvent }),
     feed(s, e, ctx) {
       if (!e.toolName?.startsWith('desktop_')) return;
       s.events.push(e);

@@ -51,6 +51,11 @@ function getLedger() {
         readRoots: [workspace, app.getPath('documents')],
         writeRoots: [workspace],
       },
+      explorerOptions: {
+        rootsFile: path.join(app.getPath('userData'), 'explorer-approved-roots.json'),
+        // Electron knows where Windows (and OneDrive) really keep Desktop, Documents...
+        knownFolder: (name) => app.getPath(name),
+      },
       auditDirectory: path.join(app.getPath('userData'), 'security-audit'),
       confirmationDirectory: path.join(app.getPath('userData'), 'tool-confirmations'),
       repairOptions: {

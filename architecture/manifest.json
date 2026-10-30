@@ -1,0 +1,8 @@
+{
+  "name": "Chanakya AI Desktop Assistant",
+  "description": "Chanakya AI is a local-first Windows desktop assistant built with Electron, React and an Express backend. It chats with the user, answers questions over uploaded documents and indexed folders, writes and runs code in an authorized workspace, translates between English and Indian languages, and operates or repairs Windows on request. Every language model runs on the user's machine through Ollama; the only optional internet use is software discovery and installation.\n\nThe Electron main process launches the backend as a child process with per-launch secrets and hosts the desktop Tool Engine, the only component allowed to touch Windows. The backend owns accounts (opaque Bearer session tokens, not JWT), chat routing, RAG over SQLite FTS5 plus per-user LanceDB vectors, a four-tier memory layer, and the coding, repair, app-control and file agents. Backend agents reach the desktop only through an authenticated loopback Tool Bridge, and every tool call is classified READ, SAFE_WRITE, DANGEROUS or CRITICAL, with DANGEROUS actions requiring explicit user approval.\n\nAn optional IndicTrans2 FastAPI service provides high-quality Indic translation, with automatic fallback to a local Ollama model. Component descriptions mark each feature as Implemented, Partially implemented, Planned or Unverified based on the source code at the time of writing.",
+  "source": "https://github.com/DEENABE/Chatbot",
+  "sourceHost": "github",
+  "topDiagram": "system-context",
+  "diagrams": ["system-context", "containers", "backend-components", "backend-agents", "electron-components"]
+}

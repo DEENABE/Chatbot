@@ -135,6 +135,7 @@ export async function startProjectPreview({ root, files, entryPath, port = 0 }, 
     });
   });
   const actualPort = server.address().port;
+  server.unref();
   return {
     port: actualPort,
     previewUrl: `http://127.0.0.1:${actualPort}${prefix}${encodeURIComponent(path.posix.basename(entryPath))}`,

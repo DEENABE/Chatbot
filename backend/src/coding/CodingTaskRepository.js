@@ -11,6 +11,9 @@ export class CodingTaskRepository {
       CREATE TABLE IF NOT EXISTS coding_grants(userId TEXT NOT NULL,workspaceId TEXT NOT NULL,binding TEXT NOT NULL,writeAllowed INTEGER NOT NULL,PRIMARY KEY(userId,workspaceId));
       CREATE TABLE IF NOT EXISTS coding_audit(id TEXT PRIMARY KEY,userId TEXT NOT NULL,workspaceId TEXT NOT NULL,taskId TEXT,event TEXT NOT NULL,createdAt TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS coding_tool_approvals(id TEXT PRIMARY KEY,userId TEXT NOT NULL,workspaceId TEXT NOT NULL,data TEXT NOT NULL);`);
+    db.exec(
+      'CREATE TABLE IF NOT EXISTS coding_execution_grants(userId TEXT NOT NULL,workspaceId TEXT NOT NULL,binding TEXT NOT NULL,commands INTEGER NOT NULL,downloads INTEGER NOT NULL,PRIMARY KEY(userId,workspaceId))',
+    );
   }
   save(userId, task) {
     this.db
@@ -71,6 +74,29 @@ export class CodingTaskRepository {
       .prepare('SELECT binding,writeAllowed FROM coding_grants WHERE userId=? AND workspaceId=?')
       .get(userId, workspaceId);
     return !!row?.writeAllowed && row.binding === binding;
+  }
+  executionPolicy(userId, workspaceId, binding) {
+    const row = this.db
+      .prepare(
+        'SELECT binding,commands,downloads FROM coding_execution_grants WHERE userId=? AND workspaceId=?',
+      )
+      .get(userId, workspaceId);
+    if (!row || row.binding !== binding || !this.writeAllowed(userId, workspaceId, binding))
+      return { commands: false, downloads: false };
+    return { commands: !!row.commands, downloads: !!row.downloads };
+  }
+  setExecutionPolicy(userId, workspaceId, binding, { commands, downloads }) {
+    if (typeof commands !== 'boolean' || typeof downloads !== 'boolean' || (downloads && !commands))
+      throw fail(
+        'INVALID_EXECUTION_POLICY',
+        'Package downloads require project command permission.',
+      );
+    this.db
+      .prepare(
+        'INSERT INTO coding_execution_grants(userId,workspaceId,binding,commands,downloads) VALUES(?,?,?,?,?) ON CONFLICT(userId,workspaceId) DO UPDATE SET binding=excluded.binding,commands=excluded.commands,downloads=excluded.downloads',
+      )
+      .run(userId, workspaceId, binding, commands ? 1 : 0, downloads ? 1 : 0);
+    return { commands, downloads };
   }
   audit(userId, workspaceId, taskId, event) {
     // Only action identity, versions, duration and error codes; no prompts/file content/credentials.

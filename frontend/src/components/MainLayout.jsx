@@ -27,6 +27,9 @@ export default function MainLayout() {
   // chat | workspace | history | settings (see stores/useNavStore.js)
   const activeTab = useNavStore((state) => state.tab);
   const resizeRef = useRef(null);
+  // Full-screen fills the display edge to edge; only the windowed layout gets
+  // rounded corners and drag-resize handles.
+  const isFull = useAppStore((state) => state.windowMode) === 'full';
 
   if (!user) {
     // The session token lives in the Electron main process, not localStorage,
@@ -108,7 +111,7 @@ export default function MainLayout() {
 
   return (
     <div
-      className="w-screen h-screen flex flex-col overflow-hidden relative select-none rounded-2xl border"
+      className={`w-screen h-screen flex flex-col overflow-hidden relative select-none ${isFull ? '' : 'rounded-2xl border'}`}
       style={{
         background: glassBg,
         borderColor: `${accent}20`,
@@ -161,19 +164,29 @@ export default function MainLayout() {
         </div>
       </div>
 
-      {/* Resize corner and edge drag handles */}
-      <div
-        onMouseDown={(e) => startResize(e, 'se')}
-        className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize z-50 flex items-end justify-end p-0.5 pointer-events-auto"
-      >
-        <svg width="8" height="8" viewBox="0 0 8 8" className="opacity-45" style={{ fill: accent }}>
-          <path d="M6 0l2 2-6 6h-2v-2z" />
-        </svg>
-      </div>
-      <div
-        onMouseDown={(e) => startResize(e, 's')}
-        className="absolute bottom-0 left-4 right-4 h-1.5 cursor-s-resize z-50"
-      />
+      {/* Resize corner and edge drag handles — windowed layout only */}
+      {!isFull && (
+        <>
+          <div
+            onMouseDown={(e) => startResize(e, 'se')}
+            className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize z-50 flex items-end justify-end p-0.5 pointer-events-auto"
+          >
+            <svg
+              width="8"
+              height="8"
+              viewBox="0 0 8 8"
+              className="opacity-45"
+              style={{ fill: accent }}
+            >
+              <path d="M6 0l2 2-6 6h-2v-2z" />
+            </svg>
+          </div>
+          <div
+            onMouseDown={(e) => startResize(e, 's')}
+            className="absolute bottom-0 left-4 right-4 h-1.5 cursor-s-resize z-50"
+          />
+        </>
+      )}
     </div>
   );
 }

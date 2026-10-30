@@ -20,6 +20,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   captureScreen: () => ipcRenderer.invoke('capture-screen'),
   getScreenSources: () => ipcRenderer.invoke('get-screen-sources'),
   toggleExpand: (expand) => ipcRenderer.invoke('window-toggle-expand', expand),
+  // 'full' | 'compact' | 'bubble'
+  setWindowMode: (mode) => ipcRenderer.invoke('window-set-mode', mode),
+  getWindowMode: () => ipcRenderer.invoke('window-get-mode'),
+  onWindowModeChanged: (callback) => {
+    const subscription = (_event, mode) => callback(mode);
+    ipcRenderer.on('window-mode-changed', subscription);
+    return () => ipcRenderer.removeListener('window-mode-changed', subscription);
+  },
 
   // Custom Dragging
   dragStart: () => ipcRenderer.send('window-drag-start'),

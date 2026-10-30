@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "diagramId": "containers",
+  "updatedAt": "2026-10-29T16:25:33.352Z",
+  "nodes": {
+    "react-renderer": {
+      "x": 131.16666666666666,
+      "y": 12
+    },
+    "electron-main": {
+      "x": 1153,
+      "y": 412
+    },
+    "backend-api": {
+      "x": 94.5,
+      "y": 212
+    },
+    "sqlite-db": {
+      "x": 853,
+      "y": 412
+    },
+    "lancedb-store": {
+      "x": 12,
+      "y": 412
+    },
+    "indictrans-service": {
+      "x": 362.1274458213984,
+      "y": 503.8967964811776
+    },
+    "ollama-server": {
+      "x": 553,
+      "y": 412
+    },
+    "windows-desktop": {
+      "x": 168.66666666666666,
+      "y": 612
+    }
+  }
+}

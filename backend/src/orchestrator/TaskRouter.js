@@ -74,7 +74,7 @@ function keywordRoute(task, { workspaceId } = {}) {
       confidence: 1,
       via: 'keyword',
     };
-  if (computerTask(text)?.genericDesktop)
+  if (computerTask(text)?.genericDesktop || computerTask(text)?.astra)
     return {
       mode: 'agentic',
       taskType: 'generic_desktop',

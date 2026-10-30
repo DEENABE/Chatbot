@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "diagramId": "electron-components",
+  "updatedAt": "2026-10-29T16:25:46.981Z",
+  "nodes": {
+    "ipc-handlers": {
+      "x": 121,
+      "y": 12
+    },
+    "backend-manager": {
+      "x": 901.5984555984556,
+      "y": 243.87644787644788
+    },
+    "desktop-shell": {
+      "x": 23,
+      "y": 212
+    },
+    "tool-bridge-server": {
+      "x": 534.6666666666667,
+      "y": 12
+    },
+    "tool-engine-router": {
+      "x": 498,
+      "y": 212
+    },
+    "tool-security": {
+      "x": 198,
+      "y": 412
+    },
+    "tool-services": {
+      "x": 498,
+      "y": 412
+    },
+    "repair-runner": {
+      "x": 552,
+      "y": 612
+    }
+  }
+}

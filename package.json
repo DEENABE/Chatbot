@@ -7,13 +7,15 @@
     "backend"
   ],
   "scripts": {
-    "dev": "concurrently -n API,UI -c yellow,cyan \"npm run dev -w backend\" \"npm run dev -w frontend\"",
+    "dev": "node scripts/dev-with-tools.mjs",
     "build": "npm run build -w frontend",
     "start": "npm run start -w backend",
     "test": "node scripts/run-tests.mjs",
     "test:electron": "node scripts/run-electron-tests.mjs",
     "format": "prettier --write . --ignore-path .prettierignore",
-    "format:check": "prettier --check . --ignore-path .prettierignore"
+    "format:check": "prettier --check . --ignore-path .prettierignore",
+    "dev:tools": "node scripts/dev-with-tools.mjs",
+    "dev:plain": "concurrently -n API,UI -c yellow,cyan \"npm run dev -w backend\" \"npm run dev -w frontend\""
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

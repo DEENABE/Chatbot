@@ -16,6 +16,7 @@ import {
 import { getDocuments, deleteDocument } from '../services/documentsStore.js';
 import { indexDocumentFiles } from '../services/documentIngestionService.js';
 import path from 'node:path';
+import { chooseFolderNative } from '../services/folderPicker.js';
 
 export const workspaceRouter = Router();
 workspaceRouter.use(requireAuth);
@@ -31,6 +32,19 @@ const route = (fn) => async (req, res, next) => {
 workspaceRouter.get(
   '/',
   route(async (req, res) => res.json({ workspaces: await listWorkspaces(req.userId) })),
+);
+// Browser (localhost) folder picker: opens a native Windows dialog on this PC.
+workspaceRouter.post(
+  '/choose-directory',
+  route(async (req, res) => {
+    const result = await chooseFolderNative();
+    if (result.unsupported)
+      return res.status(501).json({
+        cancelled: true,
+        error: 'The folder picker needs Windows. Type the full folder path instead.',
+      });
+    res.json(result);
+  }),
 );
 workspaceRouter.post(
   '/',

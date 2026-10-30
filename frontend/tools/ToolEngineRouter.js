@@ -40,6 +40,7 @@ import { RegistryService } from './services/RegistryService.js';
 import { HardwareService } from './services/HardwareService.js';
 import { ProcessService } from './services/ProcessService.js';
 import { NetworkService } from './services/NetworkService.js';
+import { ExplorerToolService } from './fileexplorer/ExplorerToolService.js';
 
 /**
  * @typedef {Object} ToolRequest
@@ -89,6 +90,7 @@ export class ToolEngineRouter {
     appChoices,
     desktopOptions,
     softwareOptions,
+    explorerOptions,
   } = {}) {
     /** @type {ConfirmationGate} */
     this.gate = new ConfirmationGate({ directory: confirmationDirectory });
@@ -176,6 +178,8 @@ export class ToolEngineRouter {
         elevator: new SettingsElevator(),
       }),
     );
+    // Drives, folder listing/sizes (read-only, per-location approval) and opening folder windows.
+    this.services.set('explorer', new ExplorerToolService(this.gate, explorerOptions));
     this.services.set(
       'winget',
       new WingetService(this.gate, { appService: this.services.get('app') }),

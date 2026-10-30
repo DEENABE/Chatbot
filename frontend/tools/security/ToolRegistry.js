@@ -136,6 +136,7 @@ const groups = {
     'app.open',
     'app.openApp',
     'app.openWithTarget',
+    'app.openIntent',
     'app.focusApp',
     'app.refreshAppRegistry',
   ],
@@ -193,6 +194,20 @@ groups.DANGEROUS.push(
   'webInstall.install',
   'systemSettings.setConfirmed',
 );
+groups.READ.push(
+  'explorer.listDrives',
+  'explorer.listApprovedRoots',
+  'explorer.resolveLocation',
+  'explorer.listDirectory',
+  'explorer.getFileMetadata',
+  'explorer.calculateFolderSize',
+  'explorer.searchFiles',
+  'explorer.getDirectoryTree',
+  'explorer.readFile',
+);
+// Opening a window shows the folder to the user only; reading inside it needs approveRoot.
+groups.SAFE_WRITE.push('explorer.openLocation', 'explorer.revokeRoot');
+groups.DANGEROUS.push('explorer.approveRoot');
 const mcpReads = new Set([
   'hardware.systemInfo',
   'hardware.cpuUsage',
@@ -242,24 +257,27 @@ export function createToolRegistry(services) {
             ? 1260000
             : name === 'webInstall.download' || name === 'software.download'
               ? 900000
-              : name === 'software.discoverOnline'
+              : name === 'software.discoverOnline' || name === 'explorer.calculateFolderSize'
                 ? 180000
-                : name === 'systemSettings.setConfirmed'
-                  ? 600000 // a UAC prompt plus Windows optional features can take minutes
-                  : tool === 'desktop'
-                    ? 90000
-                    : [
-                          'windowsRepair',
-                          'app',
-                          'uiAutomation',
-                          'browser',
-                          'winget',
-                          'webInstall',
-                          'systemSettings',
-                          'software',
-                        ].includes(tool)
-                      ? 60000
-                      : 30000,
+                : name === 'explorer.searchFiles'
+                  ? 90000
+                  : name === 'systemSettings.setConfirmed'
+                    ? 600000 // a UAC prompt plus Windows optional features can take minutes
+                    : tool === 'desktop'
+                      ? 90000
+                      : [
+                            'windowsRepair',
+                            'app',
+                            'uiAutomation',
+                            'browser',
+                            'winget',
+                            'webInstall',
+                            'systemSettings',
+                            'software',
+                            'explorer',
+                          ].includes(tool)
+                        ? 60000
+                        : 30000,
         verificationRequired: risk !== 'READ',
         mcpExposed: mcpReads.has(name),
       });

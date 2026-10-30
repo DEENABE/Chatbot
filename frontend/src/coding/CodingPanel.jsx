@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import CodingWorkspace from './CodingWorkspace.jsx';
 import * as apiService from '../services/api.js';
 import { useAppStore } from '../stores/useAppStore.js';
+import { isCodingModel, preferredCodingModel, retryDelay } from './codingRequests.js';
 
 const list = (value) => (Array.isArray(value) ? value : []);
 const message = (error) => {
@@ -11,6 +12,25 @@ const message = (error) => {
     : detail?.message || 'The coding action could not be completed.';
 };
 const body = (result) => result?.data || result || {};
+
+// Attached files travel inside the task text (backend limit 16000 chars; keep
+// room for an 8k-token context too).
+const ATTACH_BUDGET = 6000;
+export function withAttachments(text, files) {
+  if (!files?.length) return text;
+  let room = Math.min(ATTACH_BUDGET, 15500 - text.length);
+  const parts = [];
+  for (const file of files) {
+    if (room < 200) {
+      parts.push(`[Attached file ${file.name}: omitted, message too long]`);
+      continue;
+    }
+    const content = file.text.length > room ? `${file.text.slice(0, room)}\n…(truncated)` : file.text;
+    room -= content.length + file.name.length + 40;
+    parts.push(`[Attached file: ${file.name}]\n\`\`\`\n${content}\n\`\`\``);
+  }
+  return `${text}\n\n${parts.join('\n\n')}`;
+}
 const taskBody = (response) => response.data?.task || response.data;
 const terminal = (task) => {
   if (!task) return true;
@@ -27,14 +47,43 @@ export default function CodingPanel() {
   const user = useAppStore((state) => state.user);
   const activeWorkspaceId = useAppStore((state) => state.activeWorkspaceId);
   const setActiveWorkspaceId = useAppStore((state) => state.setActiveWorkspaceId);
-  const selectedModelId = useAppStore((state) => state.selectedModelId);
   const [workspaces, setWorkspaces] = useState([]);
   const [workspaceId, setWorkspaceId] = useState(activeWorkspaceId || '');
   const [models, setModels] = useState([]);
-  const [model, setModel] = useState(selectedModelId || '');
+  // The coding model is chosen separately from the chat model and remembered per viewer.
+  const [model, setModelState] = useState(() => {
+    try {
+      return localStorage.getItem('chanakya-coding-model') || '';
+    } catch {
+      return '';
+    }
+  });
+  const setModel = useCallback((value) => {
+    setModelState((current) => {
+      const next = typeof value === 'function' ? value(current) : value;
+      try {
+        if (next) localStorage.setItem('chanakya-coding-model', next);
+      } catch {}
+      return next;
+    });
+  }, []);
   const [contextWindow, setContextWindow] = useState(8192);
   const [connected, setConnected] = useState(null);
+  const [modelsLoading, setModelsLoading] = useState(true);
+  const [modelError, setModelError] = useState('');
   const [writeAuthorized, setWriteAuthorized] = useState(false);
+  // Composer: attached text files and Manual/Automatic preference (Read only = no write grant).
+  const [attachments, setAttachments] = useState([]);
+  const [autoMode, setAutoMode] = useState(() => {
+    try {
+      return localStorage.getItem('chanakya-coding-access') === 'automatic';
+    } catch {
+      return false;
+    }
+  });
+  const autoApproved = useRef(new Set());
+  const [runtimeInfo, setRuntimeInfo] = useState(null);
+  const [runtimeError, setRuntimeError] = useState('');
   const [entries, setEntries] = useState([]);
   const [treeLimited, setTreeLimited] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
@@ -50,21 +99,27 @@ export default function CodingPanel() {
   const [workspaceName, setWorkspaceName] = useState('');
   const [workspaceRoot, setWorkspaceRoot] = useState('');
   const [showConnect, setShowConnect] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
+  // Where new projects are created; empty = backend default (Documents\ChanakyaProjects).
+  const [newProjectParent, setNewProjectParent] = useState(() => {
+    try {
+      return localStorage.getItem('chanakya-projects-parent') || '';
+    } catch {
+      return '';
+    }
+  });
   const workspaceRef = useRef(workspaceId);
   const readRevision = useRef(0);
   const taskRevision = useRef(0);
   const mounted = useRef(true);
+  const busyOperations = useRef(0);
+  const modelRetryDelay = useRef(5000);
   workspaceRef.current = workspaceId;
   const active = workspaces.find((item) => item.id === workspaceId);
   const finished = terminal(snapshot);
   const running = Boolean(snapshot?.id && !finished);
   const approvals = pendingApprovals(snapshot);
-  const usableModels = models.filter(
-    (item) =>
-      item.installed !== false &&
-      list(item.capabilities).includes('completion') &&
-      list(item.capabilities).includes('tools'),
-  );
+  const usableModels = models.filter(isCodingModel);
   const modelContextLimit = Math.min(
     32768,
     usableModels.find((item) => item.id === model)?.contextWindow || 32768,
@@ -88,20 +143,35 @@ export default function CodingPanel() {
   }, []);
 
   const refreshModels = useCallback(async (signal) => {
-    const response = await apiService.coding.models(signal);
-    if (signal?.aborted || !mounted.current) return;
-    const available = list(response.data.models);
-    setModels(available);
-    setConnected(response.data.connected !== false);
-    setModel((current) => {
-      const eligible = available.filter(
-        (item) =>
-          item.installed !== false &&
-          list(item.capabilities).includes('completion') &&
-          list(item.capabilities).includes('tools'),
-      );
-      return eligible.some((item) => item.id === current) ? current : eligible[0]?.id || '';
-    });
+    setModelsLoading(true);
+    try {
+      const response = await apiService.coding.models(signal);
+      if (signal?.aborted || !mounted.current) return;
+      if (response.data.connected === false) {
+        setConnected(false);
+        throw new Error('Ollama is unavailable. Start Ollama, then refresh models.');
+      }
+      const available = list(response.data.models);
+      setModels(available);
+      setConnected(true);
+      setModelError('');
+      setModel((current) => {
+        const eligible = available.filter(isCodingModel);
+        return preferredCodingModel(eligible, current, response.data.defaultModel);
+      });
+      return true;
+    } catch (failure) {
+      modelRetryDelay.current = retryDelay(failure);
+      if (!signal?.aborted && mounted.current)
+        setModelError(
+          failure.response?.status === 429
+            ? 'Model refresh is temporarily busy. Retrying shortly.'
+            : message(failure),
+        );
+      throw failure;
+    } finally {
+      if (!signal?.aborted && mounted.current) setModelsLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -118,7 +188,7 @@ export default function CodingPanel() {
             : available.find((item) => item.active)?.id || available[0]?.id || '',
         );
       }),
-      refreshModels(controller.signal),
+      refreshModels(controller.signal).catch(() => {}),
     ]).then((results) => {
       if (controller.signal.aborted) return;
       for (const result of results) {
@@ -129,6 +199,25 @@ export default function CodingPanel() {
     return () => controller.abort();
   }, [user?.id, refreshModels]);
 
+  useEffect(() => {
+    if (!modelError) return;
+    const controller = new AbortController();
+    let timer;
+    let failures = 0;
+    const retry = async () => {
+      try {
+        await refreshModels(controller.signal);
+      } catch (failure) {
+        if (!controller.signal.aborted) timer = setTimeout(retry, retryDelay(failure, ++failures));
+      }
+    };
+    timer = setTimeout(retry, modelRetryDelay.current);
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [modelError, refreshModels]);
+
   const refreshTree = useCallback(async (id, signal) => {
     if (!id) return;
     const response = await apiService.coding.tree(id, signal);
@@ -138,6 +227,40 @@ export default function CodingPanel() {
     if (typeof response.data.writeAuthorized === 'boolean')
       setWriteAuthorized(response.data.writeAuthorized);
   }, []);
+  const refreshRuntime = useCallback(async (id, signal) => {
+    if (!id) return;
+    const response = await apiService.coding.runtime(id, signal);
+    if (signal?.aborted || workspaceRef.current !== id || !mounted.current) return;
+    setRuntimeInfo(response.data);
+    setRuntimeError('');
+    return response.data;
+  }, []);
+  useEffect(() => {
+    setRuntimeInfo(null);
+    setRuntimeError('');
+    if (!workspaceId) return;
+    const controller = new AbortController();
+    let timer;
+    let failures = 0;
+    const poll = async () => {
+      let delay = running ? 2500 : 15000;
+      try {
+        const runtime = await refreshRuntime(workspaceId, controller.signal);
+        if (runtime?.jobs?.some((job) => ['running', 'starting'].includes(job.status)))
+          delay = 2500;
+        failures = 0;
+      } catch (failure) {
+        if (!controller.signal.aborted) setRuntimeError(message(failure));
+        delay = retryDelay(failure, ++failures);
+      }
+      if (!controller.signal.aborted) timer = setTimeout(poll, delay);
+    };
+    poll();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [workspaceId, user?.id, running, refreshRuntime]);
 
   const refreshCheckpoints = useCallback(async (id) => {
     if (!id) return;
@@ -206,17 +329,21 @@ export default function CodingPanel() {
     const id = snapshot.id;
     const revision = taskRevision.current;
     let timer;
+    let failures = 0;
     const poll = async () => {
+      let delay = 1200;
       try {
         const response = await apiService.coding.task(id, controller.signal);
         if (!controller.signal.aborted && taskRevision.current === revision) {
           setSnapshot(taskBody(response));
           setError('');
+          failures = 0;
         }
       } catch (failure) {
         if (!controller.signal.aborted) setError(`Task status is unavailable: ${message(failure)}`);
+        delay = retryDelay(failure, ++failures);
       } finally {
-        if (!controller.signal.aborted) timer = setTimeout(poll, 1200);
+        if (!controller.signal.aborted) timer = setTimeout(poll, delay);
       }
     };
     timer = setTimeout(poll, 700);
@@ -240,6 +367,7 @@ export default function CodingPanel() {
   }, [snapshot?.changes?.length]);
 
   const perform = async (operation) => {
+    busyOperations.current++;
     setBusy(true);
     setError('');
     setNotice('');
@@ -248,7 +376,8 @@ export default function CodingPanel() {
     } catch (failure) {
       if (mounted.current) setError(message(failure));
     } finally {
-      if (mounted.current) setBusy(false);
+      busyOperations.current--;
+      if (mounted.current) setBusy(busyOperations.current > 0);
     }
   };
 
@@ -266,8 +395,13 @@ export default function CodingPanel() {
     }
   };
 
-  const start = (goal = taskText.trim()) => {
-    if (!goal || running) return;
+  const start = (typed = taskText.trim()) => {
+    if (!typed || running) return;
+    const goal = typed === taskText.trim() ? withAttachments(typed, attachments) : typed;
+    if (!usableModels.some((item) => item.id === model) || connected !== true) {
+      setError('Choose an available local coding model before starting.');
+      return;
+    }
     perform(async () => {
       const revision = ++taskRevision.current;
       const id = workspaceId;
@@ -290,6 +424,7 @@ export default function CodingPanel() {
       );
       setSnapshot(task);
       setTaskText('');
+      setAttachments([]);
       try {
         localStorage.setItem(storedTaskKey(user?.id, id), task.id);
       } catch {
@@ -297,6 +432,156 @@ export default function CodingPanel() {
       }
     });
   };
+
+  // Projects with a task still running (other projects keep working in the background).
+  const [runningWorkspaces, setRunningWorkspaces] = useState([]);
+  useEffect(() => {
+    if (!user?.id) return undefined;
+    const controller = new AbortController();
+    let timer;
+    const poll = async () => {
+      try {
+        const response = await apiService.coding.tasks(controller.signal);
+        if (!controller.signal.aborted)
+          setRunningWorkspaces([
+            ...new Set(
+              list(response.data.tasks)
+                .filter((task) => !terminal(task))
+                .map((task) => task.workspaceId),
+            ),
+          ]);
+      } catch {
+        /* indicator only */
+      }
+      if (!controller.signal.aborted) timer = setTimeout(poll, 4000);
+    };
+    poll();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [user?.id]);
+
+  const newTask = () => {
+    if (running) return;
+    setTurns([]);
+    setSnapshot(null);
+    setTaskText('');
+    setAttachments([]);
+    setError('');
+    setNotice('New task: the agent starts fresh (earlier messages are not sent).');
+    try {
+      localStorage.removeItem(storedTaskKey(user?.id, workspaceId));
+    } catch {}
+  };
+
+  // Edit-only = write grant without project commands (older projects): installs/builds cannot run.
+  const accessMode = !writeAuthorized
+    ? 'readonly'
+    : runtimeInfo?.policy && !runtimeInfo.policy.commands
+      ? 'editonly'
+      : autoMode
+        ? 'automatic'
+        : 'manual';
+  const lastMetrics = list(snapshot?.metrics).at(-1);
+  const usage =
+    lastMetrics?.contextWindow && Number.isFinite(lastMetrics.prompt_eval_count)
+      ? {
+          used: lastMetrics.prompt_eval_count + (lastMetrics.eval_count || 0),
+          limit: lastMetrics.contextWindow,
+          speed:
+            lastMetrics.eval_count && lastMetrics.eval_duration
+              ? lastMetrics.eval_count / (lastMetrics.eval_duration / 1e9)
+              : 0,
+        }
+      : null;
+  const applyAccessMode = (mode, id = workspaceId) =>
+    perform(async () => {
+      if (!id) throw new Error('Open a project folder first.');
+      const automatic = mode === 'automatic';
+      if (mode !== 'readonly') {
+        setAutoMode(automatic);
+        try {
+          localStorage.setItem('chanakya-coding-access', mode);
+        } catch {}
+      }
+      const response = await apiService.coding.authorize(id, mode !== 'readonly');
+      const granted = response.data.writeAuthorized === true;
+      if (workspaceRef.current === id) setWriteAuthorized(granted);
+      // Both editing modes may run project commands and package installs; Manual
+      // still reviews each risky action, Automatic approves them (see effect below).
+      if (granted) await apiService.coding.executionPolicy(id, { commands: true, downloads: true });
+      await refreshRuntime(id).catch(() => {});
+      setNotice(
+        mode === 'readonly'
+          ? 'Read only: the agent cannot change files or run commands.'
+          : automatic
+            ? 'Automatic: edits, commands and package installs run without asking, inside this project only.'
+            : 'Manual: you will review risky actions before they run.',
+      );
+    });
+
+  const openFolder = (typedRoot) =>
+    perform(async () => {
+      const root = typeof typedRoot === 'string' ? typedRoot : await pickFolder();
+      if (!root) return;
+      const known = workspaces.find(
+        (item) => String(item.root).toLowerCase() === root.toLowerCase(),
+      );
+      let id = known?.id;
+      if (!id) {
+        const response = await apiService.workspaces.create({
+          name: root.split(/[\\/]/).filter(Boolean).at(-1) || 'Project',
+          root,
+        });
+        id = response.data.workspace.id;
+        const all = await apiService.workspaces.get();
+        setWorkspaces(list(all.data.workspaces));
+      }
+      setWorkspaceId(id);
+      setShowConnect(false);
+      workspaceRef.current = id;
+      await applyAccessMode(autoMode ? 'automatic' : 'manual', id);
+    });
+
+  const attachFiles = async (files) => {
+    const next = [...attachments];
+    const skipped = [];
+    for (const file of files.slice(0, 10)) {
+      if (file.size > 200 * 1024) {
+        skipped.push(`${file.name} (too large)`);
+        continue;
+      }
+      const text = await file.text().catch(() => null);
+      if (text === null || text.includes('\u0000')) {
+        skipped.push(`${file.name} (not a text file)`);
+        continue;
+      }
+      const item = { name: file.name, size: text.length, text };
+      const index = next.findIndex((entry) => entry.name === file.name);
+      if (index >= 0) next[index] = item;
+      else next.push(item);
+    }
+    setAttachments(next);
+    setError(skipped.length ? `Skipped: ${skipped.join(', ')}` : '');
+  };
+
+  // Automatic mode: approve pending reviews, except system-level runtime installs.
+  useEffect(() => {
+    if (!autoMode || !writeAuthorized || busy) return;
+    const pending = [
+      ...approvals.map((approval) => ({ approval, task: true })),
+      ...(toolApproval ? [{ approval: toolApproval, task: false }] : []),
+    ].find(
+      ({ approval }) =>
+        (approval.tool || approval.action) !== 'runtime.install' &&
+        !autoApproved.current.has(approval.approvalId || approval.id),
+    );
+    if (!pending) return;
+    autoApproved.current.add(pending.approval.approvalId || pending.approval.id);
+    if (pending.task) decide(pending.approval, true);
+    else decideTool(true);
+  }, [autoMode, writeAuthorized, busy, approvals, toolApproval]);
 
   const decide = (approval, approved) =>
     perform(async () => {
@@ -319,6 +604,7 @@ export default function CodingPanel() {
       setNotice(body(response.data).message || 'The workspace action completed.');
       await refreshCheckpoints(workspaceId);
       await refreshTree(workspaceId);
+      await refreshRuntime(workspaceId);
     });
 
   const decideTool = (approved) =>
@@ -356,7 +642,48 @@ export default function CodingPanel() {
       await refreshTree(workspaceId);
       await refreshCheckpoints(workspaceId);
       if (selectedFile?.path) await selectFile(selectedFile.path);
+      await refreshRuntime(workspaceId);
     });
+
+  const createProject = (event) => {
+    event.preventDefault();
+    perform(async () => {
+      const parent = newProjectParent.trim();
+      const response = await apiService.coding.createProject({
+        name: newProjectName.trim(),
+        ...(parent ? { parent } : {}),
+      });
+      const saved = response.data.workspace;
+      try {
+        if (parent) localStorage.setItem('chanakya-projects-parent', parent);
+        else localStorage.removeItem('chanakya-projects-parent');
+      } catch {}
+      const all = await apiService.workspaces.get();
+      setWorkspaces(list(all.data.workspaces));
+      setWorkspaceId(saved.id);
+      workspaceRef.current = saved.id;
+      setNewProjectName('');
+      setShowConnect(false);
+      await applyAccessMode(autoMode ? 'automatic' : 'manual', saved.id);
+      setNotice(`New project created at ${saved.root}.`);
+    });
+  };
+
+  // Desktop app: Electron dialog. Browser (localhost), or when the desktop
+  // dialog is refused: the backend's native Windows dialog.
+  const pickFolder = async () => {
+    let chosen = null;
+    if (window.workspaceAPI?.chooseDirectory) {
+      try {
+        chosen = await window.workspaceAPI.chooseDirectory();
+      } catch {
+        chosen = null;
+      }
+    }
+    if (!chosen || chosen.error) chosen = body(await apiService.workspaces.chooseDirectory());
+    if (chosen.error) throw new Error(message(chosen.error));
+    return !chosen.cancelled && chosen.root ? chosen.root : null;
+  };
 
   const connect = (event) => {
     event.preventDefault();
@@ -385,7 +712,11 @@ export default function CodingPanel() {
         contextChoices,
         loading,
         connected,
+        modelsLoading,
+        modelError,
         writeAuthorized,
+        runtimeInfo,
+        runtimeError,
         busy,
         running,
         error,
@@ -409,18 +740,38 @@ export default function CodingPanel() {
         onWorkspaceName: setWorkspaceName,
         onWorkspaceRoot: setWorkspaceRoot,
         onShowConnect: setShowConnect,
+        newProjectName,
+        onNewProjectName: setNewProjectName,
+        onCreateProject: createProject,
+        attachments,
+        onAttachFiles: attachFiles,
+        onRemoveAttachment: (name) =>
+          setAttachments((current) => current.filter((item) => item.name !== name)),
+        accessMode,
+        onAccessMode: (mode) => applyAccessMode(mode),
+        onOpenFolder: () => openFolder(),
+        onOpenPath: (root) => openFolder(root),
+        onNewTask: newTask,
+        runningWorkspaces,
+        usage,
+        newProjectParent,
+        onNewProjectParent: setNewProjectParent,
+        onChooseProjectParent: () =>
+          perform(async () => {
+            const root = await pickFolder();
+            if (root) setNewProjectParent(root);
+          }),
         onConnect: connect,
         onChooseFolder: () =>
           perform(async () => {
-            const chosen = await window.workspaceAPI.chooseDirectory();
-            if (chosen.error) throw new Error(message(chosen.error));
-            if (!chosen.cancelled && chosen.root) {
-              setWorkspaceRoot(chosen.root);
+            const root = await pickFolder();
+            if (root) {
+              setWorkspaceRoot(root);
               if (!workspaceName.trim())
-                setWorkspaceName(chosen.root.split(/[\\/]/).filter(Boolean).at(-1) || 'Workspace');
+                setWorkspaceName(root.split(/[\\/]/).filter(Boolean).at(-1) || 'Workspace');
             }
           }),
-        onRefreshModels: () => perform(() => refreshModels()),
+        onRefreshModels: () => refreshModels().catch(() => {}),
         onAuthorize: () =>
           perform(async () => {
             const response = await apiService.coding.authorize(workspaceId, !writeAuthorized);
@@ -440,6 +791,26 @@ export default function CodingPanel() {
         onToolDecision: decideTool,
         onCheckpoint: () => operatorTool('checkpoint.create'),
         onRestore: (checkpointId) => operatorTool('checkpoint.restore', { checkpointId }),
+        onRuntimeAction: operatorTool,
+        onExecutionPolicy: (policy) =>
+          perform(async () => {
+            await apiService.coding.executionPolicy(workspaceId, policy);
+            await refreshRuntime(workspaceId);
+            setNotice(
+              policy.commands
+                ? 'Project commands enabled. Each command is reviewed before it runs.'
+                : 'Project commands disabled.',
+            );
+          }),
+        onStopProcess: (jobId) =>
+          perform(async () => {
+            await apiService.coding.stopProcess(workspaceId, jobId);
+            await refreshRuntime(workspaceId);
+          }),
+        onOpenPreview: (jobId) =>
+          perform(async () => {
+            await apiService.coding.openPreview(workspaceId, jobId);
+          }),
       }}
     />
   );

@@ -1,6 +1,7 @@
 import { appLaunchTask } from './AppLaunchTask.js';
 import { browserTask } from './BrowserTask.js';
 import { genericDesktopTask } from './GenericDesktopTask.js';
+import { explorerTask } from './ExplorerTask.js';
 import { freeformDesktopTask, setInstalledApps } from './FreeformDesktopTask.js';
 import { astraTask } from './AstraTask.js';
 import { softwareTask } from './SoftwareTask.js';
@@ -156,6 +157,32 @@ export function settingsDesktopTask(message) {
     },
   };
 }
+/**
+ * "open <app> <goal>" runs as an Astra task: open the app - installing it through a validated provider (with your
+ * approval) when it is missing - and then reach the goal in the grounded desktop loop, or through a documented deep
+ * link when the app has one (AppIntents.js). Closing, Settings pages and Calculator keep their dedicated flows.
+ */
+function astraGoalTask(desktop, text) {
+  if (
+    !desktop?.goal ||
+    desktop.closeOnly ||
+    desktop.settings ||
+    /^(?:windows\s+)?(?:calculator|calc)$/i.test(desktop.query) ||
+    /\b(?:settings?|control panel|file explorer|explorer)\b/i.test(desktop.query)
+  )
+    return null;
+  return {
+    requiresTools: true,
+    requiresUI: true,
+    astra: {
+      app: desktop.query,
+      steps: [{ op: 'goal', goal: desktop.goal }],
+      install: true,
+      task: text,
+      rules: true,
+    },
+  };
+}
 /** Tool-first admission for desktop actions. This never evaluates user expressions. */
 export function computerTask(message) {
   const text = String(message || '').trim();
@@ -165,6 +192,9 @@ export function computerTask(message) {
   if (browser) return { requiresTools: true, requiresBrowser: true, call: browser };
   const calculation = calculatorTask(text);
   if (calculation) return calculation;
+  // Drives and folders ("open D drive", "list drives", "open desktop", folder sizes).
+  const explorer = explorerTask(text);
+  if (explorer) return { requiresTools: true, explorer };
   if (/^open settings and show bluetooth[.!]?$/i.test(text))
     return {
       requiresTools: true,
@@ -212,7 +242,13 @@ export function computerTask(message) {
     };
   const implicitDesktop = genericDesktopTask(text);
   if (implicitDesktop?.implicitGoal)
-    return { requiresTools: true, requiresUI: true, genericDesktop: implicitDesktop };
+    return (
+      astraGoalTask(implicitDesktop, text) || {
+        requiresTools: true,
+        requiresUI: true,
+        genericDesktop: implicitDesktop,
+      }
+    );
   const astra = astraTask(text);
   if (astra) return { requiresTools: true, requiresUI: true, astra };
   // Notepad++ and other "notepad+..." editors are different applications from Windows Notepad.
@@ -235,7 +271,14 @@ export function computerTask(message) {
     }
   }
   const desktop = genericDesktopTask(text);
-  if (desktop) return { requiresTools: true, requiresUI: true, genericDesktop: desktop };
+  if (desktop)
+    return (
+      astraGoalTask(desktop, text) || {
+        requiresTools: true,
+        requiresUI: true,
+        genericDesktop: desktop,
+      }
+    );
   // Free-form wording that names an installed app in an action context enters the same verified desktop loop.
   const freeform = freeformDesktopTask(text);
   if (freeform) return { requiresTools: true, requiresUI: true, genericDesktop: freeform };
