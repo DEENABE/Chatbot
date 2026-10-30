@@ -13,6 +13,7 @@ import { saveDocumentStructure } from '../docqa/structuredStore.js';
 import { indexChunks } from './vectorService.js';
 import { appendDocuments, getDocument, deleteDocument } from './documentsStore.js';
 import { discoverModels } from './modelRouter.js';
+import { keepOriginal } from '../docintel/originals.js';
 import {
   isSupportedChatImage,
   prepareImageAttachment,
@@ -200,6 +201,8 @@ export async function indexDocumentFiles(
         signal?.throwIfAborted();
         await appendDocuments([doc], userId);
         signal?.throwIfAborted();
+        // Read-only copy for exact sheet rows, formulas, conversions and edits (Document Intelligence).
+        await keepOriginal(userId, doc, original.path);
         documents.push(doc);
         if (previousDocumentId) {
           // A fully usable replacement exists before the old index retires.

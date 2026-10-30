@@ -1,4 +1,4 @@
-export const DOCUMENT_ACCEPT = '.pdf,.docx,.txt,.md,.csv,.xlsx';
+export const DOCUMENT_ACCEPT = '.pdf,.docx,.doc,.txt,.md,.csv,.tsv,.xlsx,.xlsm,.xls,.json';
 export const ATTACHMENT_ACCEPT = `${DOCUMENT_ACCEPT},.png,.jpg,.jpeg,.webp`;
 export const MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024;
 export const MAX_IMAGE_ATTACHMENT_SIZE = 10 * 1024 * 1024;
@@ -9,7 +9,7 @@ export function validateAttachment(file) {
   if (!supported.has(extension))
     return /\.(png|jpe?g|gif|webp|bmp|tiff?)$/i.test(file.name)
       ? 'Image files require a compatible local vision model. Use screen capture when vision is available.'
-      : 'Supported formats: PDF, DOCX, TXT, Markdown, CSV, XLSX, PNG, JPEG and WebP. Images require a compatible local vision model.';
+      : 'Supported formats: PDF, DOCX, DOC, TXT, Markdown, CSV, TSV, XLSX, XLSM, XLS, JSON, PNG, JPEG and WebP. Images require a compatible local vision model.';
   if (!file.size) return 'This file is empty.';
   if (/\.(png|jpe?g|webp)$/i.test(file.name) && file.size > MAX_IMAGE_ATTACHMENT_SIZE)
     return 'This image exceeds the 10 MB upload limit.';

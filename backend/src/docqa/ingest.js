@@ -8,8 +8,53 @@ import path from 'node:path';
 import pdf from 'pdf-parse';
 import { chunkText } from '../lib/chunkText.js';
 import { ValidationError } from '../lib/validate.js';
-import { assertFileContentMatchesExtension, extractDocument } from '../services/documentService.js';
-import { parseDocxTables, parseSpreadsheet, tableToChunks } from './tableParser.js';
+import {
+  assertFileContentMatchesExtension,
+  extractDocument,
+  isDocIntelOnlyFormat,
+} from '../services/documentService.js';
+import {
+  buildTable,
+  formatValue,
+  parseDocxTables,
+  parseSpreadsheet,
+  tableToChunks,
+} from './tableParser.js';
+import { parseDocument } from '../docintel/parser.js';
+import { DocIntelError } from '../docintel/errors.js';
+import { pdfOcr } from '../docintel/runtime.js';
+
+/** XLSM / XLS / TSV / JSON / DOC (and OCR for scanned PDFs) through the Document Intelligence parser. */
+async function prepareWithDocIntel(file, { ocr } = {}) {
+  let doc;
+  try {
+    doc = await parseDocument(file.path, file.originalname, { mime: file.mimetype, ocr });
+  } catch (error) {
+    if (error instanceof DocIntelError) throw new ValidationError(error.message);
+    throw error;
+  }
+  const name = file.originalname;
+  const tables = doc.tables
+    .map((t) => buildTable(t.name, [t.columns, ...t.rows.map((r) => r.values.map(formatValue))]))
+    .filter(Boolean);
+  if (doc.pages) {
+    const chunks = [];
+    doc.pages.forEach((p) => {
+      for (const chunk of chunkText(p.text || '')) chunks.push(`[Page ${p.number}] ${chunk}`);
+    });
+    return {
+      text: doc.pages.map((p) => p.text).join('\n\n'),
+      chunks,
+      tables: [],
+      warnings: doc.warnings,
+    };
+  }
+  const chunks =
+    tables.length && doc.kind !== 'word'
+      ? tables.flatMap((t) => tableToChunks(name, t))
+      : [...chunkText(doc.text), ...tables.flatMap((t) => tableToChunks(name, t))];
+  return { text: doc.text, chunks, tables, warnings: doc.warnings };
+}
 
 async function extractPdfPages(filePath) {
   const pages = [];
@@ -40,6 +85,7 @@ async function extractPdfPages(filePath) {
 export async function prepareDocument(file) {
   const extension = path.extname(file.originalname).toLowerCase();
   const name = file.originalname;
+  if (isDocIntelOnlyFormat(name)) return prepareWithDocIntel(file);
 
   if (extension === '.xlsx' || extension === '.csv') {
     await assertFileContentMatchesExtension(file.path, extension);
@@ -65,7 +111,14 @@ export async function prepareDocument(file) {
       for (const chunk of chunkText(pageText)) chunks.push(`[Page ${index + 1}] ${chunk}`);
     });
     const text = pages.join('\n\n');
-    if (!text.trim()) throw new ValidationError('No extractable text (scanned/image-only PDF?).');
+    if (!text.trim()) {
+      // Scanned / image-only PDF: local OCR (offline) when page images and language data are available.
+      const ocrResult = await prepareWithDocIntel(file, { ocr: pdfOcr });
+      if (ocrResult.text.trim()) return ocrResult;
+      throw new ValidationError(
+        `No extractable text (scanned/image-only PDF). ${(ocrResult.warnings || []).find((w) => /scanned|OCR/i.test(w)) || ''}`.trim(),
+      );
+    }
     return { text, chunks, tables: [] };
   }
 

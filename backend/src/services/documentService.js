@@ -6,6 +6,9 @@ import readXlsxFile from 'read-excel-file/node';
 import { ValidationError } from '../lib/validate.js';
 
 const allowed = new Set(['.pdf', '.docx', '.xlsx', '.csv', '.txt', '.md']);
+// Read by the Document Intelligence parser (src/docintel/parser.js), which validates
+// their signatures itself; .xls/.doc additionally need LibreOffice installed.
+const DOCINTEL_ONLY = new Set(['.xlsm', '.xls', '.tsv', '.json', '.doc']);
 const MIME_TYPES = {
   '.pdf': ['application/pdf'],
   '.docx': ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
@@ -13,6 +16,14 @@ const MIME_TYPES = {
   '.csv': ['text/csv', 'application/csv', 'application/vnd.ms-excel', 'text/plain'],
   '.txt': ['text/plain'],
   '.md': ['text/markdown', 'text/x-markdown', 'text/plain'],
+  '.xlsm': [
+    'application/vnd.ms-excel.sheet.macroenabled.12',
+    'application/vnd.ms-excel.sheet.macroEnabled.12',
+  ],
+  '.xls': ['application/vnd.ms-excel'],
+  '.tsv': ['text/tab-separated-values', 'text/plain'],
+  '.json': ['application/json', 'text/json', 'text/plain'],
+  '.doc': ['application/msword'],
 };
 
 export function sanitizeDocumentName(filename) {
@@ -34,7 +45,7 @@ export function validateDocumentMime(filename, mimeType) {
   if (
     mime &&
     mime !== 'application/octet-stream' &&
-    !(MIME_TYPES[extension] || []).includes(mime)
+    !(MIME_TYPES[extension] || []).map((m) => m.toLowerCase()).includes(mime)
   ) {
     throw new ValidationError('File type does not match its filename.');
   }
@@ -62,8 +73,12 @@ const BINARY_SIGNATURES = {
 const TEXT_EXTENSIONS = new Set(['.csv', '.txt', '.md']);
 
 export function isSupportedDocument(filename) {
-  return allowed.has(path.extname(filename).toLowerCase());
+  const extension = path.extname(filename).toLowerCase();
+  return allowed.has(extension) || DOCINTEL_ONLY.has(extension);
 }
+
+export const isDocIntelOnlyFormat = (filename) =>
+  DOCINTEL_ONLY.has(path.extname(filename).toLowerCase());
 
 export async function assertFileContentMatchesExtension(filePath, extension) {
   const signatures = BINARY_SIGNATURES[extension];

@@ -157,8 +157,12 @@ const NUMBERING = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>
 </w:numbering>`;
 
-/** @param {{title?: string, blocks: object[]}} doc */
-export function toDocx({ title, blocks }) {
+/**
+ * @param {{title?: string, blocks: object[], header?: string, pageNumbers?: boolean}} doc
+ * Optional `header` text and `pageNumbers` ("Page X of Y" footer) add a header/footer part.
+ * Extra block types: { type: 'pagebreak' }, { type: 'chart', title, labels, values } (written as a table).
+ */
+export function toDocx({ title, blocks, header, pageNumbers = false }) {
   const body = [];
   if (title) body.push(paraXml(title, { style: 'Title' }));
   for (const b of blocks) {
@@ -166,13 +170,36 @@ export function toDocx({ title, blocks }) {
     else if (b.type === 'paragraph') body.push(paraXml(b.text, { italic: b.italic }));
     else if (b.type === 'bullets') for (const item of b.items) body.push(paraXml(item, { style: 'ListBullet' }));
     else if (b.type === 'table') body.push(tableXml(b));
+    else if (b.type === 'pagebreak') body.push('<w:p><w:r><w:br w:type="page"/></w:r></w:p>');
+    else if (b.type === 'chart') {
+      if (b.title) body.push(paraXml(b.title, { style: 'Heading3' }));
+      body.push(tableXml({ columns: [b.labelTitle || 'Item', b.valueTitle || 'Value'], rows: b.labels.map((l, i) => [l, b.values[i]]) }));
+    }
   }
+  const withHeader = typeof header === 'string' && header.trim();
+  const refs =
+    (withHeader ? '<w:headerReference w:type="default" r:id="rIdHdr1"/>' : '') +
+    (pageNumbers ? '<w:footerReference w:type="default" r:id="rIdFtr1"/>' : '');
   const document =
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
     '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>' +
     body.join('') +
-    '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="567" w:footer="567" w:gutter="0"/></w:sectPr>' +
+    `<w:sectPr>${refs}<w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="567" w:footer="567" w:gutter="0"/></w:sectPr>` +
     '</w:body></w:document>';
+  const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+  const fld = (instr) =>
+    `<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> ${instr} </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>`;
+  const extraParts = [];
+  if (withHeader)
+    extraParts.push({
+      name: 'word/header1.xml',
+      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:hdr ${W}><w:p><w:pPr><w:jc w:val="right"/></w:pPr>${runXml({ text: header.trim() }, '<w:color w:val="666666"/><w:sz w:val="16"/>')}</w:p></w:hdr>`,
+    });
+  if (pageNumbers)
+    extraParts.push({
+      name: 'word/footer1.xml',
+      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr ${W}><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t xml:space="preserve">Page </w:t></w:r>${fld('PAGE')}<w:r><w:t xml:space="preserve"> of </w:t></w:r>${fld('NUMPAGES')}</w:p></w:ftr>`,
+    });
   return zip([
     {
       name: '[Content_Types].xml',
@@ -182,6 +209,8 @@ export function toDocx({ title, blocks }) {
         '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
         '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>' +
         '<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>' +
+        (withHeader ? '<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>' : '') +
+        (pageNumbers ? '<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>' : '') +
         '</Types>',
     },
     {
@@ -195,11 +224,15 @@ export function toDocx({ title, blocks }) {
       data:
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
         '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
-        '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/></Relationships>',
+        '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>' +
+        (withHeader ? '<Relationship Id="rIdHdr1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>' : '') +
+        (pageNumbers ? '<Relationship Id="rIdFtr1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>' : '') +
+        '</Relationships>',
     },
     { name: 'word/document.xml', data: document },
     { name: 'word/styles.xml', data: STYLES },
     { name: 'word/numbering.xml', data: NUMBERING },
+    ...extraParts,
   ]);
 }
 

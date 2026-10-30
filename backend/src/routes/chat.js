@@ -37,6 +37,9 @@ import { nextExplorerDecision } from '../orchestrator/ExplorerTask.js';
 import { detectFileTask, runFileAgent } from '../fileagent/index.js';
 import { fileAgentDeps } from '../fileagent/runtime.js';
 import { listTables } from '../docqa/structuredStore.js';
+import { isTableCleanup } from '../fileagent/intent.js';
+import { runDocumentIntelligence } from '../docintel/agent.js';
+import { docintelDeps } from '../docintel/runtime.js';
 
 export const chatRouter = Router();
 
@@ -665,6 +668,66 @@ chatRouter.post('/', requireAuth, async (request, response) => {
                   attachmentIds.length > 0 &&
                   !imageAttachmentIds.length,
               });
+          // Document Intelligence Agent: exact ID ranges, filters, calculations, comparisons,
+          // conversions, edits and reports with verified outputs and source references.
+          // Folder organizing, entity extraction, table cleaning and upload-only turns stay with
+          // the file agent; open questions ("who joined in 2021?") fall through to docqa.
+          const fileAgentFirst =
+            fileTask &&
+            (['organize', 'extract', 'auto'].includes(fileTask.kind) ||
+              (fileTask.kind === 'table' && isTableCleanup(trimmedMessage)));
+          if (
+            !computerRequest &&
+            !fileAgentFirst &&
+            trimmedMessage &&
+            process.env.DOCINTEL_CHAT !== '0' &&
+            (hasTextAttachments || !hasAttachments)
+          ) {
+            const docResult = await runDocumentIntelligence({
+              message: trimmedMessage,
+              userId,
+              documentIds: hasTextAttachments ? textDocumentIds : [],
+              signal,
+              emit: (text) => send({ type: 'token', text }),
+              status: (text) => send({ type: 'status', text }),
+              deps: await docintelDeps({ routing, signal, keepAlive: '5m' }),
+            });
+            if (docResult) {
+              console.log(
+                `[chat] document intelligence: ${docResult.task.action} (${docResult.result.status})`,
+              );
+              const docSources = (docResult.result.sources || [])
+                .slice(0, 20)
+                .map((item, index) => ({
+                  index: index + 1,
+                  filename: item.file,
+                  chunk:
+                    `${item.where}${item.rows ? ` · ${item.rowKind || 'rows'} ${item.rows}` : ''}`.slice(
+                      0,
+                      200,
+                    ),
+                  scope: 'attachment',
+                }));
+              if (docSources.length) send({ type: 'sources', sources: docSources });
+              const saved = await appendHistory(
+                {
+                  conversationId,
+                  role: 'assistant',
+                  content: docResult.content,
+                  ...(docSources.length ? { sources: docSources } : {}),
+                },
+                userId,
+              );
+              send({
+                type: 'done',
+                conversationId,
+                hasToolCall: false,
+                toolCalls: [],
+                message: saved,
+              });
+              return;
+            }
+          }
           if (fileTask) {
             console.log(
               `[chat] file agent: ${fileTask.kind}${fileTask.format ? ` → ${fileTask.format}` : ''}`,

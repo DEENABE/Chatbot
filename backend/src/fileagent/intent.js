@@ -59,6 +59,9 @@ export function messagePath(text) {
   return cut.length > 2 ? cut : `${cut}\\`;
 }
 
+/** Cleaning / merging / de-duplicating tables (rewrites the data): stays with the file agent. */
+export const isTableCleanup = (message) => TABLE_ACTION.test(String(message || ''));
+
 export function wantedFormat(message) {
   const found = FORMATS.filter(([, re]) => re.test(message)).map(([f]) => f);
   return found[0] || null;

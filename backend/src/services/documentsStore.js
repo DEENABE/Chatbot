@@ -1,6 +1,7 @@
 import { db } from './db.js';
 import { deleteChunks } from './vectorService.js';
 import { deleteDocumentStructure } from '../docqa/structuredStore.js';
+import { forgetOriginal } from '../docintel/originals.js';
 import { ValidationError } from '../lib/validate.js';
 import { isValidUuid } from '../lib/validateUuid.js';
 
@@ -150,4 +151,6 @@ export async function deleteDocument(documentId, userId) {
   await deleteChunks(documentId, userId);
   deleteDocumentStructure(documentId, userId);
   db.prepare('DELETE FROM documents WHERE id = ? AND userId = ?').run(documentId, userId);
+  // The app's own read-only copy for Document Intelligence (never the user's file).
+  await forgetOriginal(userId, documentId);
 }

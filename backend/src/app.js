@@ -20,6 +20,13 @@ import { repairRouter } from './routes/repair.js';
 import { orchestrateRouter } from './routes/orchestrate.js';
 import { translateRouter } from './routes/translate.js';
 import { fileAgentRouter } from './routes/fileAgent.js';
+import { createDocIntelRouter } from './routes/docintel.js';
+import {
+  docintelDeps,
+  jobs as docintelJobs,
+  results as docintelResults,
+} from './docintel/runtime.js';
+import { routeChatModel } from './services/modelRouter.js';
 import { askLimiter } from './middleware/rateLimiter.js';
 import {
   isAllowedLocalOrigin,
@@ -139,6 +146,20 @@ app.use('/api/repair', askLimiter, repairRouter);
 app.use('/api/orchestrate', askLimiter, orchestrateRouter);
 app.use('/api/translate', translateRouter);
 app.use('/api/file-agent', fileAgentRouter);
+// Document Intelligence Agent: exact search/range/filter/aggregate with source references,
+// plus conversion/generation jobs (see src/docintel/). The local model is resolved only
+// for jobs that need prose (summaries, explanations, new documents).
+app.use(
+  '/api/docintel',
+  createDocIntelRouter({
+    makeDeps: (request) =>
+      docintelDeps({
+        resolveRouting: () => routeChatModel({ userId: request.userId, hasAttachments: true }),
+      }),
+    jobs: docintelJobs,
+    results: docintelResults,
+  }),
+);
 
 app.use('/ocr', express.static(config.ocrDir));
 app.use(express.static(config.frontendDist));

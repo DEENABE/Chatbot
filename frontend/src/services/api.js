@@ -231,6 +231,15 @@ export const fileAgent = {
   undo: (id) => api.post(`/file-agent/plans/${encodeURIComponent(id)}/undo`, {}, { timeout: 300000 }),
 };
 
+export const docintel = {
+  capabilities: () => api.get('/docintel/capabilities'),
+  inspect: (id) => api.get(`/docintel/documents/${encodeURIComponent(id)}`),
+  result: (id, page = 1, pageSize = 100) =>
+    api.get(`/docintel/results/${encodeURIComponent(id)}`, { params: { page, pageSize } }),
+  job: (id) => api.get(`/docintel/jobs/${encodeURIComponent(id)}`),
+  cancel: (id) => api.post(`/docintel/jobs/${encodeURIComponent(id)}/cancel`),
+};
+
 export const workspaces = {
   get: () => api.get('/workspaces'),
   create: (data) => api.post('/workspaces', data),

@@ -24,16 +24,21 @@ export class OutputStore {
     this.directory = directory;
   }
 
-  async save(userId, name, data, mime) {
+  /**
+   * @param {object} [extra] optional metadata kept with the file (e.g. { taskId, verification })
+   */
+  async save(userId, name, data, mime, extra = {}) {
     const id = randomUUID();
     const dir = path.join(this.directory, id);
     await fs.mkdir(dir, { recursive: true });
     const fileName = safeOutputName(name);
     const buffer = Buffer.isBuffer(data) ? data : Buffer.from(String(data), 'utf8');
-    await fs.writeFile(path.join(dir, 'data'), buffer);
+    // Atomic: a download never sees a half-written file.
+    await fs.writeFile(path.join(dir, 'data.tmp'), buffer);
+    await fs.rename(path.join(dir, 'data.tmp'), path.join(dir, 'data'));
     await fs.writeFile(
       path.join(dir, 'meta.json'),
-      JSON.stringify({ id, userId, name: fileName, mime, size: buffer.length, createdAt: new Date().toISOString() }),
+      JSON.stringify({ ...extra, id, userId, name: fileName, mime, size: buffer.length, createdAt: new Date().toISOString() }),
     );
     this.cleanup().catch(() => {});
     return { id, name: fileName, size: buffer.length, mime };

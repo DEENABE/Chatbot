@@ -1,19 +1,24 @@
 import React, { useEffect, useState } from 'react';
 import { Download, FolderCheck, Undo2, Loader2 } from 'lucide-react';
 import * as apiService from '../services/api.js';
+import DocIntelResultPager from './DocIntelResultPager.jsx';
 
 /**
  * Links written by the backend file agent:
  *   [report.pdf (12 KB)](#chanakya-output=<id>)   → authenticated download button
  *   [Apply this plan](#chanakya-plan-apply=<id>)  → Apply / Undo for a folder plan
+ *   [Show all 240 rows](#chanakya-docintel=<id>)  → paged view of a Document Intelligence result
  * Any other link renders as a normal anchor.
  */
 const OUTPUT = /^#chanakya-output=([0-9a-f-]{36})$/;
 const PLAN = /^#chanakya-plan-apply=([0-9a-f-]{36})$/;
+const RESULT = /^#chanakya-docintel=([0-9a-f-]{36})$/;
 
 const textOf = (children) =>
   React.Children.toArray(children)
-    .map((c) => (typeof c === 'string' || typeof c === 'number' ? String(c) : textOf(c?.props?.children)))
+    .map((c) =>
+      typeof c === 'string' || typeof c === 'number' ? String(c) : textOf(c?.props?.children),
+    )
     .join('');
 
 const errorText = async (error) => {
@@ -140,6 +145,8 @@ export default function FileAgentLink({ href = '', children, node: _node, ...pro
   if (output) return <DownloadButton id={output[1]} label={children} />;
   const plan = href.match(PLAN);
   if (plan) return <PlanButtons id={plan[1]} />;
+  const result = href.match(RESULT);
+  if (result) return <DocIntelResultPager id={result[1]} label={textOf(children)} />;
   return (
     <a href={href} {...props}>
       {children}
